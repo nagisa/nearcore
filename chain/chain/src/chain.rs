@@ -433,6 +433,7 @@ pub struct Chain {
     orphans: OrphanBlockPool,
     pub blocks_with_missing_chunks: MissingChunksPool<Orphan>,
     genesis: Block,
+    max_gas_limit: Gas,
     pub transaction_validity_period: NumBlocks,
     pub epoch_length: BlockHeightDelta,
     /// Block economics, relevant to changes when new block must be produced.
@@ -523,6 +524,7 @@ impl Chain {
             blocks_with_missing_chunks: MissingChunksPool::new(),
             blocks_in_processing: BlocksInProcessing::new(),
             genesis,
+            max_gas_limit: chain_genesis.gas_limit,
             transaction_validity_period: chain_genesis.transaction_validity_period,
             epoch_length: chain_genesis.epoch_length,
             block_economics_config: BlockEconomicsConfig::from(chain_genesis),
@@ -673,6 +675,7 @@ impl Chain {
             blocks_in_processing: BlocksInProcessing::new(),
             invalid_blocks: LruCache::new(INVALID_CHUNKS_POOL_SIZE),
             genesis: genesis.clone(),
+            max_gas_limit: chain_genesis.gas_limit,
             transaction_validity_period: chain_genesis.transaction_validity_period,
             epoch_length: chain_genesis.epoch_length,
             block_economics_config: BlockEconomicsConfig::from(chain_genesis),
@@ -3783,6 +3786,7 @@ impl Chain {
                         &prev_chunk_extra,
                         prev_chunk_height_included,
                         chunk_header,
+                        self.max_gas_limit,
                     )
                     .map_err(|e| {
                         warn!(target: "chain", "Failed to validate chunk extra: {:?}.\n\

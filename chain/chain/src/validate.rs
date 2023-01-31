@@ -1,3 +1,4 @@
+use actix::run;
 use std::collections::HashMap;
 
 use borsh::BorshDeserialize;
@@ -7,6 +8,7 @@ use near_primitives::block::{Block, BlockHeader};
 use near_primitives::challenge::{
     BlockDoubleSign, Challenge, ChallengeBody, ChunkProofs, ChunkState, MaybeEncodedShardChunk,
 };
+use near_primitives::checked_feature;
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::merklize;
 use near_primitives::sharding::{
@@ -14,7 +16,7 @@ use near_primitives::sharding::{
 };
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::types::chunk_extra::ChunkExtra;
-use near_primitives::types::{AccountId, BlockHeight, EpochId, Nonce};
+use near_primitives::types::{AccountId, BlockHeight, EpochId, Gas, Nonce};
 
 use crate::{byzantine_assert, Chain};
 use crate::{ChainStore, Error, RuntimeWithEpochManagerAdapter};
@@ -117,6 +119,11 @@ pub fn validate_transactions_order(transactions: &[SignedTransaction]) -> bool {
     true
 }
 
+fn gas_limit_outside_adjustment(chunk_header: &ShardChunkHeader, prev_gas_limit: Gas) -> bool {
+    chunk_header.gas_limit() < prev_gas_limit - prev_gas_limit / GAS_LIMIT_ADJUSTMENT_FACTOR
+        || chunk_header.gas_limit() > prev_gas_limit + prev_gas_limit / GAS_LIMIT_ADJUSTMENT_FACTOR
+}
+
 /// Validate that all next chunk information matches previous chunk extra.
 pub fn validate_chunk_with_chunk_extra(
     chain_store: &ChainStore,
@@ -125,6 +132,7 @@ pub fn validate_chunk_with_chunk_extra(
     prev_chunk_extra: &ChunkExtra,
     prev_chunk_height_included: BlockHeight,
     chunk_header: &ShardChunkHeader,
+    max_gas_limit: Gas,
 ) -> Result<(), Error> {
     if *prev_chunk_extra.state_root() != chunk_header.prev_state_root() {
         return Err(Error::InvalidStateRoot);
@@ -170,11 +178,33 @@ pub fn validate_chunk_with_chunk_extra(
         return Err(Error::InvalidReceiptsProof);
     }
 
+    let epoch_id = runtime_adapter.get_epoch_id_from_prev_block(&prev_block_hash)?;
+    let protocol_version = runtime_adapter.get_epoch_protocol_version(&epoch_id)?;
+    let gas_limit = chunk_header.gas_limit();
     let prev_gas_limit = prev_chunk_extra.gas_limit();
-    if chunk_header.gas_limit() < prev_gas_limit - prev_gas_limit / GAS_LIMIT_ADJUSTMENT_FACTOR
-        || chunk_header.gas_limit() > prev_gas_limit + prev_gas_limit / GAS_LIMIT_ADJUSTMENT_FACTOR
-    {
-        return Err(Error::InvalidGasLimit);
+
+    if checked_feature!("nightly", ZeroGasLimit, protocol_version) {
+        if gas_limit > max_gas_limit {
+            return Err(Error::InvalidGasLimit);
+        }
+
+        if too_long_finality() {
+            if limit != 0 {
+                return Err(Error::InvalidGasLimit);
+            }
+        } else if prev_gas_limit == 0 {
+            if gas_limit != max_gas_limit {
+                return Err(Error::InvalidGasLimit);
+            }
+        } else {
+            if gas_limit_outside_adjustment(&chunk_header, prev_gas_limit) {
+                return Err(Error::InvalidGasLimit);
+            }
+        }
+    } else {
+        if gas_limit_outside_adjustment(&chunk_header, prev_gas_limit) {
+            return Err(Error::InvalidGasLimit);
+        }
     }
 
     Ok(())
