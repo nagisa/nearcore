@@ -197,6 +197,20 @@ impl<D: Database> super::Database for ColdDB<D> {
         self.cold.write(transaction)
     }
 
+    fn write_raw(&self, mut batch: Vec<(Box<[u8]>, Box<[u8]>)>, column: DBCol) -> std::io::Result<()> {
+        // println!("Raw write {:?}", column);
+        let mut buffer = [0; 32];
+        for (key, _) in batch.iter_mut() {
+            // println!("1. {:?}", key);
+            if let Some(new_key) = get_cold_key(column, key, &mut buffer) {
+                *key = new_key.into();
+                // println!("2. {:?}", key);
+            }
+        }
+        // println!("3. {:?}", batch);
+        self.cold.write_raw(batch, column)
+    }
+
     fn compact(&self) -> std::io::Result<()> {
         self.cold.compact()
     }
@@ -289,8 +303,9 @@ fn adjust_op(op: &mut DBOp) -> bool {
             false
         }
         DBOp::DeleteAll { col } => {
-            near_o11y::log_assert!(false, "Unexpected delete of {col} in cold store");
-            false
+            true
+            // near_o11y::log_assert!(false, "Unexpected delete of {col} in cold store");
+            // false
         }
         DBOp::DeleteRange { col, from, to } => {
             near_o11y::log_assert!(
@@ -531,5 +546,122 @@ mod test {
         // When fetching raw bytes, refcount of 1 is returned.
         let got = db.get_raw_bytes(col, key).unwrap();
         assert_eq!(Some([VALUE, &1i64.to_le_bytes()].concat()).as_deref(), got.as_deref());
+    }
+
+    /// Tests that keys are correctly adjusted when saved in cold store.
+    #[test]
+    fn test_write_raw() {
+        let db = create_test_db();
+
+        // Populate data
+        let height_columns = [
+            DBCol::BlockHeight,
+            DBCol::BlockPerHeight,
+            DBCol::ChunkHashesByHeight,
+            DBCol::ProcessedBlockHeights,
+            DBCol::HeaderHashesByHeight,
+        ];
+
+        for col in height_columns {
+            let mut key =  [0; 8];
+            let mut value = [0; 6];
+            key.copy_from_slice(HEIGHT_LE);
+            value.copy_from_slice(VALUE);
+            db.write_raw(vec![(Box::new(key), Box::new(value))], col).unwrap();
+        }
+        {
+            let col = DBCol::State;
+            let mut key =  [0; 40];
+            let mut value = [0; 6];
+            key.copy_from_slice([SHARD, HASH].concat().as_slice());
+            value.copy_from_slice(VALUE);
+            db.write_raw(vec![(Box::new(key), Box::new(value))], col).unwrap();
+        }
+        {
+            let col = DBCol::Block;
+            let mut key =  [0; 32];
+            let mut value = [0; 6];
+            key.copy_from_slice(HASH);
+            value.copy_from_slice(VALUE);
+            db.write_raw(vec![(Box::new(key), Box::new(value))], col).unwrap();
+        }
+
+        // Fetch data
+        let mut result = Vec::<String>::new();
+        let mut fetch = |col, key: &[u8], raw_only: bool| {
+            result.push(format!("{col} {}", pretty_key(key)));
+            let dbs: [(bool, &dyn Database); 2] = [(false, &db), (true, &db.cold)];
+            for (is_raw, db) in dbs {
+                if raw_only && !is_raw {
+                    continue;
+                }
+
+                let name = if is_raw { "raw " } else { "cold" };
+                let value = db.get_raw_bytes(col, &key).unwrap();
+                // When fetching reference counted column ColdDB adds reference
+                // count to it.
+                let value = pretty_value(value.as_deref(), col.is_rc() && !is_raw);
+                result.push(format!("    [{name}] get_raw_bytes → {value}"));
+
+                if col.is_rc() && !is_raw {
+                    let value = db.get_with_rc_stripped(col, &key).unwrap();
+                    let value = pretty_value(value.as_deref(), false);
+                    result.push(format!("    [{name}] get_sans_rc   → {value}"));
+                }
+            }
+        };
+
+        for col in height_columns {
+            fetch(col, HEIGHT_LE, false);
+            fetch(col, HEIGHT_BE, false);
+        }
+        fetch(DBCol::State, &[SHARD, HASH].concat(), false);
+        fetch(DBCol::State, &[HASH].concat(), true);
+        fetch(DBCol::Block, HASH, false);
+
+        // Check expected value.  Use cargo-insta to update the expected value:
+        //     cargo install cargo-insta
+        //     cargo insta test --accept -p near-store  -- db::colddb
+        insta::assert_display_snapshot!(result.join("\n"), @r###"
+        BlockHeight le(42)
+            [cold] get_raw_bytes → FooBar
+            [raw ] get_raw_bytes → ∅
+        BlockHeight be(42)
+            [cold] get_raw_bytes → ∅
+            [raw ] get_raw_bytes → FooBar
+        BlockPerHeight le(42)
+            [cold] get_raw_bytes → FooBar
+            [raw ] get_raw_bytes → ∅
+        BlockPerHeight be(42)
+            [cold] get_raw_bytes → ∅
+            [raw ] get_raw_bytes → FooBar
+        ChunkHashesByHeight le(42)
+            [cold] get_raw_bytes → FooBar
+            [raw ] get_raw_bytes → ∅
+        ChunkHashesByHeight be(42)
+            [cold] get_raw_bytes → ∅
+            [raw ] get_raw_bytes → FooBar
+        ProcessedBlockHeights le(42)
+            [cold] get_raw_bytes → FooBar
+            [raw ] get_raw_bytes → ∅
+        ProcessedBlockHeights be(42)
+            [cold] get_raw_bytes → ∅
+            [raw ] get_raw_bytes → FooBar
+        HeaderHashesByHeight le(42)
+            [cold] get_raw_bytes → FooBar
+            [raw ] get_raw_bytes → ∅
+        HeaderHashesByHeight be(42)
+            [cold] get_raw_bytes → ∅
+            [raw ] get_raw_bytes → FooBar
+        State `ShardUId || 11111111111111111111111111111111`
+            [cold] get_raw_bytes → FooBar; rc: 1
+            [cold] get_sans_rc   → FooBar
+            [raw ] get_raw_bytes → ∅
+        State 11111111111111111111111111111111
+            [raw ] get_raw_bytes → FooBar
+        Block 11111111111111111111111111111111
+            [cold] get_raw_bytes → FooBar
+            [raw ] get_raw_bytes → FooBar
+        "###);
     }
 }

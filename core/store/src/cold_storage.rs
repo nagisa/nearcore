@@ -23,7 +23,7 @@ struct StoreWithCache<'a> {
 }
 
 struct BatchTransaction {
-    transaction: DBTransaction,
+    batch: Vec<(Box<[u8]>, Box<[u8]>)>,
     /// Size of all values keys and values in `transaction` in bytes.
     size: usize,
     /// Threshold size, after which write is triggered.
@@ -157,9 +157,9 @@ pub fn copy_all_data_to_cold<D: Database>(
             let mut transaction = BatchTransaction::new(max_batch_size);
             for result in hot_store.iter(col) {
                 let (key, value) = result?;
-                transaction.set(cold_db, col, key.to_vec(), value.to_vec())?;
+                transaction.set(cold_db, col, key, value)?;
             }
-            transaction.write(cold_db)?;
+            transaction.write(cold_db, col)?;
         }
     }
     Ok(())
@@ -431,7 +431,7 @@ impl StoreWithCache<'_> {
 
 impl BatchTransaction {
     pub fn new(batch_size: usize) -> Self {
-        Self { transaction: DBTransaction::new(), size: 0, max_size: batch_size }
+        Self { batch: vec![], size: 0, max_size: batch_size }
     }
 
     /// Adds a set DBOp to `self.transaction`. Updates `self.size`.
@@ -440,29 +440,29 @@ impl BatchTransaction {
         &mut self,
         cold_db: &ColdDB<D>,
         col: DBCol,
-        key: Vec<u8>,
-        value: Vec<u8>,
+        key: Box<[u8]>,
+        value: Box<[u8]>,
     ) -> io::Result<()> {
         self.size += key.len() + value.len();
-        self.transaction.set(col, key, value);
+        self.batch.push((key, value));
 
         if self.size > self.max_size {
-            self.write(cold_db)?;
+            self.write(cold_db, col)?;
         }
         Ok(())
     }
 
     /// Writes `self.transaction` and replaces it with new empty DBTransaction.
     /// Sets `self.size` to 0.
-    pub fn write<D: Database>(&mut self, cold_db: &ColdDB<D>) -> io::Result<()> {
-        if !self.transaction.ops.is_empty() {
+    pub fn write<D: Database>(&mut self, cold_db: &ColdDB<D>, col: DBCol) -> io::Result<()> {
+        if !self.batch.is_empty() {
             let _span = tracing::debug_span!(target: "store", "write of initial cold db transaction", size=self.size, batch_size=self.max_size);
 
             crate::metrics::COLD_MIGRATION_INITIAL_WRITES
-                .with_label_values(&[<&str>::from(self.transaction.ops[0].col())])
+                .with_label_values(&[<&str>::from(col)])
                 .inc();
 
-            cold_db.write(std::mem::replace(&mut self.transaction, DBTransaction::new()))?;
+            cold_db.write_raw(std::mem::replace(&mut self.batch, vec![]), col)?;
 
             self.size = 0;
         }

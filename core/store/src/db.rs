@@ -47,20 +47,6 @@ pub(crate) enum DBOp {
     DeleteRange { col: DBCol, from: Vec<u8>, to: Vec<u8> },
 }
 
-impl DBOp {
-    pub fn col(&self) -> DBCol {
-        match self {
-            DBOp::Set { col, .. } => col,
-            DBOp::Insert { col, .. } => col,
-            DBOp::UpdateRefcount { col, .. } => col,
-            DBOp::Delete { col, .. } => col,
-            DBOp::DeleteAll { col } => col,
-            DBOp::DeleteRange { col, .. } => col,
-        }
-        .clone()
-    }
-}
-
 impl DBTransaction {
     pub fn new() -> Self {
         Self { ops: Vec::new() }
@@ -151,6 +137,9 @@ pub trait Database: Sync + Send {
 
     /// Atomically apply all operations in given batch at once.
     fn write(&self, batch: DBTransaction) -> io::Result<()>;
+
+    /// Atomically writes raw Sets for pairs of keys and values to column.
+    fn write_raw(&self, batch: Vec<(Box<[u8]>, Box<[u8]>)>, column: DBCol) -> io::Result<()>;
 
     /// Flush all in-memory data to disk.
     ///

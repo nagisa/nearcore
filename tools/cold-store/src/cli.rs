@@ -5,10 +5,13 @@ use near_store::cold_storage::{copy_all_data_to_cold, update_cold_db, update_col
 use near_store::{DBCol, NodeStorage, Temperature, COLD_HEAD_KEY, FINAL_HEAD_KEY, HEAD_KEY};
 use nearcore::{NearConfig, NightshadeRuntime};
 
+use strum::IntoEnumIterator;
+
 use clap::Parser;
 use std::io::Result;
 use std::path::Path;
 use std::sync::Arc;
+use near_store::db::DBTransaction;
 
 #[derive(Parser)]
 pub struct ColdStoreCommand {
@@ -28,6 +31,8 @@ enum SubCommand {
     CopyNextBlocks(CopyNextBlocksCmd),
     /// Copy all blocks to cold storage and update cold HEAD.
     CopyAllBlocks(CopyAllBlocksCmd),
+    /// Writes DeleteAll Transaction for every cold column into cold database.
+    ClearCold,
 }
 
 impl ColdStoreCommand {
@@ -55,6 +60,7 @@ impl ColdStoreCommand {
                 }
             }
             SubCommand::CopyAllBlocks(cmd) => copy_all_blocks(&store, cmd.max_batch_size),
+            SubCommand::ClearCold => clear_cold(store),
         }
     }
 }
@@ -152,6 +158,17 @@ fn copy_next_block(store: &NodeStorage, config: &NearConfig, hot_runtime: &Arc<N
         .expect(&std::format!("Failed to update cold HEAD to {}", next_height));
 }
 
+fn clear_cold(store: NodeStorage) {
+    let cold = Arc::new(store.into_inner(Temperature::Cold));
+    for col in DBCol::iter() {
+        if col.is_cold() {
+            let mut transaction = DBTransaction::new();
+            transaction.delete_all(col);
+            cold.write(transaction).unwrap();
+        }
+    }
+}
+
 fn copy_all_blocks(store: &NodeStorage, max_batch_size: usize) {
     copy_all_data_to_cold(
         &*store.cold_db().unwrap(),
@@ -174,6 +191,50 @@ fn copy_all_blocks(store: &NodeStorage, max_batch_size: usize) {
         &hot_final_head,
     )
     .expect(&std::format!("Failed to update cold HEAD to {}", hot_final_head));
+
+    println!("Performed {} State checks", check_iter(
+        &store.get_store(Temperature::Hot),
+        &store.get_store(Temperature::Cold),
+        DBCol::State,
+        &vec![],
+    ));
+
+    println!("Performed {} Block checks", check_iter(
+        &store.get_store(Temperature::Hot),
+        &store.get_store(Temperature::Cold),
+        DBCol::Block,
+        &vec![],
+    ));
+}
+
+
+fn check_key(first_store: &near_store::Store, second_store: &near_store::Store, col: DBCol, key: &[u8]) {
+    let first_res = first_store.get(col, key);
+    let second_res = second_store.get(col, key);
+
+    assert_eq!(first_res.unwrap(), second_res.unwrap());
+}
+
+fn check_iter(
+    first_store: &near_store::Store,
+    second_store: &near_store::Store,
+    col: DBCol,
+    no_check_rules: &Vec<Box<dyn Fn(DBCol, &Box<[u8]>) -> bool>>,
+) -> u64 {
+    let mut num_checks = 0;
+    for (key, value) in first_store.iter(col).map(Result::unwrap) {
+        let mut check = true;
+        for no_check in no_check_rules {
+            if no_check(col, &value) {
+                check = false;
+            }
+        }
+        if check {
+            check_key(first_store, second_store, col, &key);
+            num_checks += 1;
+        }
+    }
+    num_checks
 }
 
 /// Calls get_ser on Store with provided temperature from provided NodeStorage.
