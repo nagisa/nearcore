@@ -20,7 +20,7 @@ pub static BLOCK_PROCESSING_TIME: Lazy<Histogram> = Lazy::new(|| {
         .unwrap()
 });
 pub static SHARD_SHADOWING_DUMP_TIME: Lazy<Histogram> =
-    Lazy::new(|| try_create_histogram("near_shard_shadowing_dump_time", "").unwrap());
+    Lazy::new(|| try_create_histogram("near_shard_shadowing_dump_time", "non-empty").unwrap());
 pub static APPLYING_CHUNKS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     try_create_histogram_vec(
         "near_applying_chunks_time",
