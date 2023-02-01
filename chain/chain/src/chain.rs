@@ -2320,7 +2320,6 @@ impl Chain {
 
     fn shard_shadowing_height(&self) -> BlockHeight {
         let shadowing_head = self.shard_shadowing_head();
-        tracing::warn!(target: "shard-shadowing", ?shadowing_head);
         shadowing_head.unwrap_or_else(|_| self.genesis().height())
     }
 
