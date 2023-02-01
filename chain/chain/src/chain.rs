@@ -2284,7 +2284,7 @@ impl Chain {
 
     fn maybe_shard_shadowing_tx(&self, head: &Option<Tip>) {
         tracing::warn!(target: "shard-shadowing", "maybe_shard_shadowing_tx");
-        const SHARD_SHADOWING_STEP: BlockHeight = 100;
+        const SHARD_SHADOWING_STEP: BlockHeight = 1000;
         let head = head.as_ref().unwrap();
         let shard_shadowing_height = self.shard_shadowing_height();
         tracing::warn!(target: "shard-shadowing", cur_head=?head.height, ?shard_shadowing_height);
