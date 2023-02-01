@@ -19,6 +19,8 @@ pub static BLOCK_PROCESSING_TIME: Lazy<Histogram> = Lazy::new(|| {
     try_create_histogram("near_block_processing_time", "Time taken to process blocks successfully, from when a block is ready to be processed till when the processing is finished. Measures only the time taken by the successful attempts of block processing")
         .unwrap()
 });
+pub static SHARD_SHADOWING_DUMP_TIME: Lazy<Histogram> =
+    Lazy::new(|| try_create_histogram("near_shard_shadowing_dump_time", "").unwrap());
 pub static APPLYING_CHUNKS_TIME: Lazy<HistogramVec> = Lazy::new(|| {
     try_create_histogram_vec(
         "near_applying_chunks_time",
