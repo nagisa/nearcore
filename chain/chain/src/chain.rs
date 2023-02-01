@@ -2289,9 +2289,12 @@ impl Chain {
         let shard_shadowing_height = self.shard_shadowing_height();
         tracing::warn!(target: "shard-shadowing", cur_head=?head.height, ?shard_shadowing_height);
         if head.height > shard_shadowing_height + SHARD_SHADOWING_STEP {
+
+            let stop_at = std::cmp::max(shard_shadowing_height, head.height.saturating_sub(SHARD_SHADOWING_STEP*2));
             let mut cur_block_header = self.get_block_header(&head.last_block_hash).unwrap();
             let mut state_changes: Vec<(CryptoHash, _)> = Vec::new();
-            while cur_block_header.height() > shard_shadowing_height {
+
+            while cur_block_header.height() > stop_at {
                 tracing::warn!(target: "shard-shadowing", cur_height=cur_block_header.height(), cur_block_hash=?cur_block_header.hash());
                 let state_changes_for_block =
                     self.get_state_changes_for_block(cur_block_header.hash());
