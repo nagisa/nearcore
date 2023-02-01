@@ -84,6 +84,7 @@ use near_primitives::shard_layout::{
     account_id_to_shard_id, account_id_to_shard_uid, ShardLayout, ShardUId,
 };
 use near_primitives::version::PROTOCOL_VERSION;
+use near_store::db::SHARD_SHADOWING_HEAD_KEY;
 #[cfg(feature = "protocol_feature_flat_state")]
 use near_store::flat_state::{store_helper, FlatStateDelta};
 use near_store::flat_state::{FlatStorageCreationStatus, FlatStorageError};
@@ -2272,11 +2273,50 @@ impl Chain {
             apply_chunks_done_callback,
         );
 
+        self.maybe_shard_shadowing_tx(&new_head);
+
         // Determine the block status of this block (whether it is a side fork and updates the chain head)
         // Block status is needed in Client::on_block_accepted_with_optional_chunk_produce to
         // decide to how to update the tx pool.
         let block_status = self.determine_status(new_head, prev_head);
         Ok(AcceptedBlock { hash: *block.hash(), status: block_status, provenance })
+    }
+
+    fn maybe_shard_shadowing_tx(&self, head: &Option<Tip>) {
+        tracing::warn!(target: "shard-shadowing", "maybe_shard_shadowing_tx");
+        const SHARD_SHADOWING_STEP: BlockHeight = 100;
+        let head = head.as_ref().unwrap();
+        let shard_shadowing_height = self.shard_shadowing_height();
+        tracing::warn!(target: "shard-shadowing", cur_head=?head.height, ?shard_shadowing_height);
+        if head.height > shard_shadowing_height + SHARD_SHADOWING_STEP {
+            let mut cur_block_header = self.get_block_header(&head.last_block_hash).unwrap();
+            let mut state_changes: Vec<(CryptoHash, _)> = Vec::new();
+            while cur_block_header.height() > shard_shadowing_height {
+                tracing::warn!(target: "shard-shadowing", cur_height=cur_block_header.height(), cur_block_hash=?cur_block_header.hash());
+                let state_changes_for_block =
+                    self.get_state_changes_for_block(cur_block_header.hash());
+                tracing::warn!(target: "shard-shadowing", num_changes=state_changes_for_block.len());
+                state_changes.push((cur_block_header.hash().clone(), state_changes_for_block));
+                cur_block_header = self.get_block_header(cur_block_header.prev_hash()).unwrap();
+            }
+
+            let data = state_changes.try_to_vec().unwrap();
+
+            let output_dir = "/tmp/shadowing_deltas";
+            std::fs::create_dir_all(&output_dir).unwrap();
+            let filename = format!("from={}_to={}", shard_shadowing_height, head.height);
+            let filename = format!("{}/{}", output_dir, filename);
+            tracing::warn!(target: "shard-shadowing", ?filename, data_len=?data.len());
+            std::fs::write(&filename, data).unwrap();
+
+            self.set_shard_shadowing_height(head.height);
+        }
+    }
+
+    fn shard_shadowing_height(&self) -> BlockHeight {
+        let shadowing_head = self.shard_shadowing_head();
+        tracing::warn!(target: "shard-shadowing", ?shadowing_head);
+        shadowing_head.unwrap_or_else(|_| self.genesis().height())
     }
 
     /// Preprocess a block before applying chunks, verify that we have the necessary information
@@ -4031,6 +4071,16 @@ impl Chain {
             })
             .collect()
     }
+
+    pub fn set_shard_shadowing_height(&self, new_head: BlockHeight) {
+        tracing::warn!(target: "shard-shadowing", new_head, "set_shard_shadowing_height");
+        let mut store_update = self.store().store().store_update();
+        store_update
+            .set_ser::<BlockHeight>(DBCol::BlockMisc, SHARD_SHADOWING_HEAD_KEY, &new_head)
+            .unwrap();
+        store_update.commit().unwrap();
+        tracing::warn!(target: "shard-shadowing", "committed");
+    }
 }
 
 /// Implement block merkle proof retrieval.
@@ -4221,6 +4271,11 @@ impl Chain {
     #[inline]
     pub fn head(&self) -> Result<Tip, Error> {
         self.store.head()
+    }
+
+    #[inline]
+    pub fn shard_shadowing_head(&self) -> Result<BlockHeight, Error> {
+        self.store.shard_shadowing_head()
     }
 
     /// Gets chain tail height
@@ -5618,6 +5673,18 @@ impl BlocksCatchUpState {
 }
 
 impl Chain {
+    pub fn get_state_changes_for_block(
+        &self,
+        block_hash: &CryptoHash,
+    ) -> Vec<(Box<[u8]>, Box<[u8]>)> {
+        let key_prefix = &block_hash.0;
+        self.store
+            .store()
+            .iter_prefix(DBCol::StateChanges, key_prefix)
+            .map(|x| x.unwrap())
+            .collect()
+    }
+
     // Get status for debug page
     pub fn get_block_catchup_status(
         &self,

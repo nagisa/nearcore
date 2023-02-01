@@ -46,7 +46,7 @@ use near_store::{
 use crate::chunks_store::ReadOnlyChunksStore;
 use crate::types::{Block, BlockHeader, LatestKnown};
 use crate::{byzantine_assert, RuntimeWithEpochManagerAdapter};
-use near_store::db::StoreStatistics;
+use near_store::db::{StoreStatistics, SHARD_SHADOWING_HEAD_KEY};
 use near_store::flat_state::{BlockInfo, ChainAccessForFlatStorage};
 use std::sync::Arc;
 
@@ -308,6 +308,8 @@ pub trait ChainStoreAccess {
             shard_id = runtime_adapter.get_prev_shard_ids(&candidate_hash, vec![shard_id])?[0];
         }
     }
+
+    fn shard_shadowing_head(&self) -> Result<BlockHeight, Error>;
 }
 
 /// All chain-related database operations.
@@ -1131,6 +1133,24 @@ impl ChainStoreAccess for ChainStore {
         .map(|r| r.is_some())
         .map_err(|e| e.into())
     }
+
+    fn shard_shadowing_head(&self) -> Result<BlockHeight, Error> {
+        option_to_not_found(
+            self.store.get_ser::<BlockHeight>(DBCol::BlockMisc, SHARD_SHADOWING_HEAD_KEY),
+            "SHARD_SHADOWING_HEAD",
+        )
+    }
+
+    /*
+    fn set_shard_shadowing_head(&self, new_head: BlockHeight) -> Result<(), Error> {
+            let mut store_update = self.store().store_update();
+            let mut new_head = Some(new_head);
+            Self::write_col_misc(&mut store_update, SHARD_SHADOWING_HEAD_KEY, &mut new_head)?;
+            store_update.commit()?;
+            Ok(())
+    }
+
+     */
 }
 
 impl ChainAccessForFlatStorage for ChainStore {
@@ -1541,6 +1561,10 @@ impl<'a> ChainStoreAccess for ChainStoreUpdate<'a> {
         } else {
             self.chain_store.is_height_processed(height)
         }
+    }
+
+    fn shard_shadowing_head(&self) -> Result<BlockHeight, Error> {
+        todo!()
     }
 }
 
