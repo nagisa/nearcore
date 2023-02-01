@@ -2287,7 +2287,7 @@ impl Chain {
         let head = head.as_ref().unwrap();
         let shard_shadowing_height = self.shard_shadowing_height();
         if head.height > shard_shadowing_height + SHARD_SHADOWING_STEP {
-            tracing::info_span!(target: "shard-shadowing", cur_head=?head.height, ?shard_shadowing_height, "maybe_shard_shadowing_tx");
+            tracing::info_span!(target: "shard-shadowing", "maybe_shard_shadowing_tx", cur_head = ?head.height, ?shard_shadowing_height);
             let _timer = metrics::SHARD_SHADOWING_DUMP_TIME.start_timer();
 
             let stop_at = std::cmp::max(
@@ -2300,7 +2300,7 @@ impl Chain {
             while cur_block_header.height() > stop_at {
                 let state_changes_for_block =
                     self.get_state_changes_for_block(cur_block_header.hash());
-                tracing::warn!(target: "shard-shadowing", cur_height = cur_block_header.height(), cur_block_hash = ?cur_block_header.hash(), num_changes=state_changes_for_block.len());
+                tracing::warn!(target: "shard-shadowing", cur_height = cur_block_header.height(), cur_block_hash = ?cur_block_header.hash(), num_changes = state_changes_for_block.len());
                 state_changes.push((cur_block_header.hash().clone(), state_changes_for_block));
                 cur_block_header = self.get_block_header(cur_block_header.prev_hash()).unwrap();
             }
@@ -2311,7 +2311,7 @@ impl Chain {
             std::fs::create_dir_all(&output_dir).unwrap();
             let filename = format!("from={}_to={}", stop_at, head.height);
             let filename = format!("{}/{}", output_dir, filename);
-            tracing::warn!(target: "shard-shadowing", ?filename, data_len=?data.len());
+            tracing::warn!(target: "shard-shadowing", ?filename, data_len = ?data.len());
             std::fs::write(&filename, data).unwrap();
 
             self.set_shard_shadowing_height(head.height);
