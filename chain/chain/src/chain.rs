@@ -2283,13 +2283,11 @@ impl Chain {
     }
 
     fn maybe_shard_shadowing_tx(&self, head: &Option<Tip>) {
-        tracing::warn!(target: "shard-shadowing", "maybe_shard_shadowing_tx");
         const SHARD_SHADOWING_STEP: BlockHeight = 1000;
         let head = head.as_ref().unwrap();
         let shard_shadowing_height = self.shard_shadowing_height();
-        tracing::warn!(target: "shard-shadowing", cur_head=?head.height, ?shard_shadowing_height);
         if head.height > shard_shadowing_height + SHARD_SHADOWING_STEP {
-            tracing::info_span!(target: "shard-shadowing", "maybe_shard_shadowing_tx");
+            tracing::info_span!(target: "shard-shadowing", cur_head=?head.height, ?shard_shadowing_height, "maybe_shard_shadowing_tx");
             let _timer = metrics::SHARD_SHADOWING_DUMP_TIME.start_timer();
 
             let stop_at = std::cmp::max(
@@ -2300,10 +2298,9 @@ impl Chain {
             let mut state_changes: Vec<(CryptoHash, _)> = Vec::new();
 
             while cur_block_header.height() > stop_at {
-                tracing::warn!(target: "shard-shadowing", cur_height=cur_block_header.height(), cur_block_hash=?cur_block_header.hash());
                 let state_changes_for_block =
                     self.get_state_changes_for_block(cur_block_header.hash());
-                tracing::warn!(target: "shard-shadowing", num_changes=state_changes_for_block.len());
+                tracing::warn!(target: "shard-shadowing", cur_height = cur_block_header.height(), cur_block_hash = ?cur_block_header.hash(), num_changes=state_changes_for_block.len());
                 state_changes.push((cur_block_header.hash().clone(), state_changes_for_block));
                 cur_block_header = self.get_block_header(cur_block_header.prev_hash()).unwrap();
             }
@@ -2312,7 +2309,7 @@ impl Chain {
 
             let output_dir = "/tmp/shadowing_deltas";
             std::fs::create_dir_all(&output_dir).unwrap();
-            let filename = format!("from={}_to={}", shard_shadowing_height, head.height);
+            let filename = format!("from={}_to={}", stop_at, head.height);
             let filename = format!("{}/{}", output_dir, filename);
             tracing::warn!(target: "shard-shadowing", ?filename, data_len=?data.len());
             std::fs::write(&filename, data).unwrap();
@@ -4081,13 +4078,11 @@ impl Chain {
     }
 
     pub fn set_shard_shadowing_height(&self, new_head: BlockHeight) {
-        tracing::warn!(target: "shard-shadowing", new_head, "set_shard_shadowing_height");
         let mut store_update = self.store().store().store_update();
         store_update
             .set_ser::<BlockHeight>(DBCol::BlockMisc, SHARD_SHADOWING_HEAD_KEY, &new_head)
             .unwrap();
         store_update.commit().unwrap();
-        tracing::warn!(target: "shard-shadowing", "committed");
     }
 }
 
