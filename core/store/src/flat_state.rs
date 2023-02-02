@@ -1222,6 +1222,7 @@ mod tests {
 
     use assert_matches::assert_matches;
     use std::collections::HashMap;
+    use tracing::debug;
 
     struct MockChain {
         height_to_hashes: HashMap<BlockHeight, CryptoHash>,
@@ -1532,6 +1533,7 @@ mod tests {
 
         // 2. Check that the flat_state at block i reads the value of key &[1] as &[i]
         for i in 0..10 {
+            debug!("{}", i);
             let block_hash = chain.get_block_hash(i);
             let blocks = flat_storage_state.get_blocks_to_head(&block_hash).unwrap();
             assert_eq!(blocks.len(), i as usize);
