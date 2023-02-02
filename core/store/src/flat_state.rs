@@ -465,6 +465,11 @@ impl FlatStateDelta {
         block_hash: CryptoHash,
         store_update: &mut StoreUpdate,
     ) -> Result<(), FlatStorageError> {
+        let key = NewKeyForFlatStateDelta::db_prefix(shard_id, block_hash);
+        let empty_value: Option<ValueRef> = None;
+        store_update
+            .set_ser(crate::DBCol::FlatStateDeltas, &key, &empty_value)
+            .map_err(|_| FlatStorageError::StorageInternalError)?;
         for (key, value) in self.0.iter() {
             let item_key = NewKeyForFlatStateDelta { shard_id, block_hash, key: key.clone() };
             let bytes = item_key.encode();
