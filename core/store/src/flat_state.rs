@@ -639,7 +639,8 @@ impl Into<i64> for &FlatStorageCreationStatus {
 #[cfg(feature = "protocol_feature_flat_state")]
 pub mod store_helper {
     use crate::flat_state::{
-        FetchingStateStatus, FlatStorageCreationStatus, FlatStorageError, NewKeyForFlatStateDelta,
+        FetchingStateStatus, FlatStorageCreationStatus, FlatStorageError, KeyForFlatStateDelta,
+        NewKeyForFlatStateDelta,
     };
     use crate::{DBCol, FlatStateDelta, Store, StoreUpdate};
     use borsh::{BorshDeserialize, BorshSerialize};
@@ -658,6 +659,18 @@ pub mod store_helper {
     /// Prefixes for keys in `FlatStateMisc` DB column.
     pub const FLAT_STATE_HEAD_KEY_PREFIX: &[u8; 4] = b"HEAD";
     pub const FLAT_STATE_CREATION_STATUS_KEY_PREFIX: &[u8; 6] = b"STATUS";
+
+    pub fn old_get_delta(
+        store: &Store,
+        shard_id: ShardId,
+        block_hash: CryptoHash,
+    ) -> Result<Option<Arc<FlatStateDelta>>, FlatStorageError> {
+        let key = KeyForFlatStateDelta { shard_id, block_hash };
+        Ok(store
+            .get_ser::<FlatStateDelta>(crate::DBCol::FlatStateDeltas, &key.try_to_vec().unwrap())
+            .map_err(|_| FlatStorageError::StorageInternalError)?
+            .map(|delta| Arc::new(delta)))
+    }
 
     pub fn get_delta(
         store: &Store,
@@ -833,6 +846,14 @@ pub mod store_helper {
     use near_primitives::types::ShardId;
     use std::sync::Arc;
 
+    pub fn old_get_delta(
+        _store: &Store,
+        _shard_id: ShardId,
+        _block_hash: CryptoHash,
+    ) -> Result<Option<Arc<FlatStateDelta>>, FlatStorageError> {
+        Err(FlatStorageError::StorageInternalError)
+    }
+
     pub fn get_flat_head(_store: &Store, _shard_id: ShardId) -> Option<CryptoHash> {
         None
     }
@@ -969,6 +990,14 @@ impl FlatStorageState {
                 );
                 blocks.insert(hash, block_info);
                 metrics.cached_blocks.inc();
+
+                /// !!! MIGRATION TO NEW FORMAT
+                if let Ok(Some(delta)) = store_helper::old_get_delta(&store, shard_id, hash) {
+                    let mut store_update = store.store_update();
+                    store_helper::set_delta(&mut store_update, shard_id, hash, &delta).unwrap();
+                    store_update.commit().unwrap();
+                }
+
                 let delta = store_helper::get_delta(&store, shard_id, hash)
                     .expect(BORSH_ERR)
                     .unwrap_or_else(|| {
