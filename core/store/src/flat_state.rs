@@ -468,6 +468,7 @@ impl FlatStateDelta {
         for (key, value) in self.0.iter() {
             let item_key = NewKeyForFlatStateDelta { shard_id, block_hash, key: key.clone() };
             let bytes = item_key.encode();
+            debug!("set key bytes {:?}", bytes);
             store_update
                 .set_ser(crate::DBCol::FlatStateDeltas, &bytes, value)
                 .map_err(|_| FlatStorageError::StorageInternalError)?;
@@ -495,6 +496,7 @@ use near_primitives::shard_layout::ShardLayout;
 #[cfg(feature = "protocol_feature_flat_state")]
 use near_primitives::trie_key::trie_key_parsers::parse_account_id_from_raw_key;
 use std::sync::{Arc, RwLock};
+use tracing::debug;
 #[cfg(feature = "protocol_feature_flat_state")]
 use tracing::info;
 
@@ -641,6 +643,7 @@ pub mod store_helper {
     use near_primitives::state::ValueRef;
     use near_primitives::types::ShardId;
     use std::sync::Arc;
+    use tracing::debug;
 
     /// Prefixes determining type of flat storage creation status stored in DB.
     /// Note that non-existent status is treated as SavingDeltas if flat storage
@@ -659,8 +662,10 @@ pub mod store_helper {
     ) -> Result<Option<Arc<FlatStateDelta>>, FlatStorageError> {
         let key_prefix = NewKeyForFlatStateDelta::db_prefix(shard_id, block_hash);
         let mut delta = FlatStateDelta::default();
+        debug!("iterate over {:?}", key_prefix);
         for item in store.iter_prefix_ser(DBCol::FlatStateDeltas, &key_prefix) {
             let (key, value) = item.map_err(|_| FlatStorageError::StorageInternalError)?;
+            debug!("found {:?}", key);
             delta.insert(key.to_vec(), value);
         }
         if delta.len() == 0 {
@@ -958,7 +963,10 @@ impl FlatStorageState {
                 let delta = store_helper::get_delta(&store, shard_id, hash)
                     .expect(BORSH_ERR)
                     .unwrap_or_else(|| {
-                        panic!("Cannot find block delta for block {:?} shard {}", hash, shard_id)
+                        panic!(
+                            "Cannot find block delta for block {:?} on height {} for shard {}",
+                            hash, height, shard_id
+                        )
                     });
                 metrics.cached_deltas.inc();
                 metrics.cached_deltas_num_items.add(delta.len() as i64);
