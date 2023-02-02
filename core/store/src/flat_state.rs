@@ -1023,7 +1023,7 @@ impl FlatStorageState {
         for block_hash in blocks_to_head.iter() {
             // If we found a key in delta, we can return a value because it is the most recent key update.
             let delta = guard.get_delta(block_hash)?;
-            eprintln!("bh = {} len = {}", block_hash, delta.len());
+            eprintln!("bh = {} len = {} delta = {:?}", block_hash, delta.len(), delta);
             match delta.get(key) {
                 Some(value_ref) => {
                     eprintln!("found");
