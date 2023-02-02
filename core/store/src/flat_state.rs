@@ -666,8 +666,10 @@ pub mod store_helper {
     ) -> Result<Option<Arc<FlatStateDelta>>, FlatStorageError> {
         let key_prefix = NewKeyForFlatStateDelta::db_prefix(shard_id, block_hash);
         let mut delta = FlatStateDelta::default();
+        let mut found = false;
         eprintln!("iterate over {:?}", key_prefix);
         for item in store.iter_prefix_ser(DBCol::FlatStateDeltas, &key_prefix) {
+            found = true;
             let (key, value) = item.map_err(|_| FlatStorageError::StorageInternalError)?;
             let delta_key = &key[key_prefix.len()..];
             if !delta_key.is_empty() {
@@ -675,10 +677,10 @@ pub mod store_helper {
                 delta.insert(delta_key.to_vec(), value);
             }
         }
-        if delta.len() == 0 {
-            Ok(None)
-        } else {
+        if found {
             Ok(Some(Arc::new(delta)))
+        } else {
+            Ok(None)
         }
     }
 
