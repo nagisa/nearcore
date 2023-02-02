@@ -1221,7 +1221,6 @@ mod tests {
 
     use assert_matches::assert_matches;
     use std::collections::HashMap;
-    use tracing::debug;
 
     struct MockChain {
         height_to_hashes: HashMap<BlockHeight, CryptoHash>,
