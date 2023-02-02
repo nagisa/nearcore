@@ -1209,8 +1209,8 @@ mod tests {
         FlatStorageState,
     };
     use crate::test_utils::create_test_store;
-    use crate::FlatStateDelta;
     use crate::StorageError;
+    use crate::{FlatStateDelta, TrieDBStorage, TrieStorage};
     use borsh::BorshSerialize;
     use near_primitives::borsh::maybestd::collections::HashSet;
     use near_primitives::hash::{hash, CryptoHash};
@@ -1221,6 +1221,7 @@ mod tests {
     };
 
     use assert_matches::assert_matches;
+    use near_primitives::shard_layout::ShardUId;
     use std::collections::HashMap;
 
     struct MockChain {
@@ -1538,6 +1539,9 @@ mod tests {
             assert_eq!(blocks.len(), i as usize);
             let flat_state =
                 flat_state_factory.new_flat_state_for_shard(0, Some(block_hash), false).unwrap();
+            let value_ref = flat_state.get_ref(&[1]).unwrap();
+            let storage = TrieDBStorage::new(store.clone(), ShardUId::single_shard());
+            eprintln!("{:?}", storage.retrieve_raw_bytes(&value_ref.unwrap().hash));
             assert_eq!(flat_state.get_ref(&[1]).unwrap(), Some(ValueRef::new(&[i as u8])));
         }
 
