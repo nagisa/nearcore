@@ -1,8 +1,4 @@
-use std::collections::{HashMap, HashSet};
-
-use std::sync::Arc;
-use std::time::{Duration as TimeDuration, Instant};
-
+use borsh::BorshDeserialize;
 use borsh::BorshSerialize;
 use chrono::Duration;
 use itertools::Itertools;
@@ -12,6 +8,9 @@ use near_primitives::time::Clock;
 use rand::seq::SliceRandom;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::{Duration as TimeDuration, Instant};
 use tracing::{debug, error, info, warn, Span};
 
 use near_chain_primitives::error::{BlockKnownError, Error, LogTransientStorageError};
@@ -2283,7 +2282,7 @@ impl Chain {
     }
 
     fn maybe_shard_shadowing_tx(&self, head: &Option<Tip>) {
-        const SHARD_SHADOWING_STEP: BlockHeight = 1000;
+        const SHARD_SHADOWING_STEP: BlockHeight = 30;
         let head = head.as_ref().unwrap();
         let shard_shadowing_height = self.shard_shadowing_height();
         if head.height > shard_shadowing_height + SHARD_SHADOWING_STEP {
@@ -2295,17 +2294,23 @@ impl Chain {
                 head.height.saturating_sub(SHARD_SHADOWING_STEP * 2),
             );
             let mut cur_block_header = self.get_block_header(&head.last_block_hash).unwrap();
-            let mut state_changes: Vec<(CryptoHash, _)> = Vec::new();
+            let mut state_changes: StateChangesStructForManyBlocks =
+                StateChangesStructForManyBlocks { blocks: vec![] };
 
             while cur_block_header.height() > stop_at {
-                let state_changes_for_block =
+                let state_changes_for_block: Vec<StateChangeStruct> =
                     self.get_state_changes_for_block(cur_block_header.hash());
                 tracing::warn!(target: "shard-shadowing", cur_height = cur_block_header.height(), cur_block_hash = ?cur_block_header.hash(), num_changes = state_changes_for_block.len());
-                state_changes.push((cur_block_header.hash().clone(), state_changes_for_block));
+                state_changes.blocks.push(StateChangesStructForOneBlock {
+                    block_hash: cur_block_header.hash().clone(),
+                    state_changes: state_changes_for_block,
+                });
                 cur_block_header = self.get_block_header(cur_block_header.prev_hash()).unwrap();
             }
 
             let data = state_changes.try_to_vec().unwrap();
+            let x: StateChangesStructForManyBlocks =
+                StateChangesStructForManyBlocks::try_from_slice(&data).unwrap();
 
             let output_dir = "/tmp/shadowing_deltas";
             std::fs::create_dir_all(&output_dir).unwrap();
@@ -5674,16 +5679,35 @@ impl BlocksCatchUpState {
     }
 }
 
+pub type XType = (Vec<u8>, Vec<u8>);
+pub type CType = Vec<(Vec<u8>, Vec<XType>)>;
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct StateChangeStruct {
+    x: Vec<u8>,
+    y: Vec<u8>,
+}
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct StateChangesStructForOneBlock {
+    block_hash: CryptoHash,
+    state_changes: Vec<StateChangeStruct>,
+}
+
+#[derive(BorshDeserialize, BorshSerialize)]
+pub struct StateChangesStructForManyBlocks {
+    pub blocks: Vec<StateChangesStructForOneBlock>,
+}
+
 impl Chain {
-    pub fn get_state_changes_for_block(
-        &self,
-        block_hash: &CryptoHash,
-    ) -> Vec<(Box<[u8]>, Box<[u8]>)> {
+    pub fn get_state_changes_for_block(&self, block_hash: &CryptoHash) -> Vec<StateChangeStruct> {
         let key_prefix = &block_hash.0;
         self.store
             .store()
             .iter_prefix(DBCol::StateChanges, key_prefix)
             .map(|x| x.unwrap())
+            .map(|(x, y)| StateChangeStruct {
+                x: x.as_ref().clone().into(),
+                y: y.as_ref().clone().into(),
+            })
             .collect()
     }
 
