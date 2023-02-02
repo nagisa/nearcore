@@ -648,7 +648,6 @@ pub mod store_helper {
     use near_primitives::state::ValueRef;
     use near_primitives::types::ShardId;
     use std::sync::Arc;
-    use tracing::debug;
 
     /// Prefixes determining type of flat storage creation status stored in DB.
     /// Note that non-existent status is treated as SavingDeltas if flat storage
@@ -667,11 +666,14 @@ pub mod store_helper {
     ) -> Result<Option<Arc<FlatStateDelta>>, FlatStorageError> {
         let key_prefix = NewKeyForFlatStateDelta::db_prefix(shard_id, block_hash);
         let mut delta = FlatStateDelta::default();
-        debug!("iterate over {:?}", key_prefix);
+        eprintln!("iterate over {:?}", key_prefix);
         for item in store.iter_prefix_ser(DBCol::FlatStateDeltas, &key_prefix) {
             let (key, value) = item.map_err(|_| FlatStorageError::StorageInternalError)?;
-            debug!("found {:?}", key);
-            delta.insert(key.to_vec(), value);
+            let delta_key = &key[key_prefix.len()..];
+            if !delta_key.is_empty() {
+                eprintln!("found {:?}", key);
+                delta.insert(delta_key.to_vec(), value);
+            }
         }
         if delta.len() == 0 {
             Ok(None)
