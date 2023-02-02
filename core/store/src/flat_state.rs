@@ -1059,6 +1059,12 @@ impl FlatStorageState {
         guard.deltas.insert(*block_hash, Arc::new(delta));
         guard.blocks.insert(*block_hash, block);
         guard.metrics.cached_blocks.inc();
+
+        let cached_deltas = guard.metrics.cached_deltas.get();
+        let cached_deltas_num_items = guard.metrics.cached_deltas_num_items.get();
+        let cached_deltas_size = guard.metrics.cached_deltas_size.get();
+
+        info!(target: "chain", %shard_id, %block_hash, %block_height, %cached_deltas, %cached_deltas_num_items, %cached_deltas_size);
         Ok(store_update)
     }
 
