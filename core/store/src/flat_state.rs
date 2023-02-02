@@ -1533,7 +1533,7 @@ mod tests {
 
         // 2. Check that the flat_state at block i reads the value of key &[1] as &[i]
         for i in 0..10 {
-            debug!("{}", i);
+            eprintln!("{}", i);
             let block_hash = chain.get_block_hash(i);
             let blocks = flat_storage_state.get_blocks_to_head(&block_hash).unwrap();
             assert_eq!(blocks.len(), i as usize);
