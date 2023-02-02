@@ -1531,6 +1531,10 @@ mod tests {
         flat_state_factory.add_flat_storage_state_for_shard(0, flat_storage_state);
         let flat_storage_state = flat_state_factory.get_flat_storage_state_for_shard(0).unwrap();
 
+        for i in 0..10 {
+            eprintln!("{:?} {:?}", i, ValueRef::new(&[i]));
+        }
+
         // 2. Check that the flat_state at block i reads the value of key &[1] as &[i]
         for i in 0..10 {
             eprintln!("{}", i);
@@ -1540,8 +1544,6 @@ mod tests {
             let flat_state =
                 flat_state_factory.new_flat_state_for_shard(0, Some(block_hash), false).unwrap();
             let value_ref = flat_state.get_ref(&[1]).unwrap();
-            let storage = TrieDBStorage::new(store.clone(), ShardUId::single_shard());
-            eprintln!("{:?}", storage.retrieve_raw_bytes(&value_ref.unwrap().hash));
             assert_eq!(flat_state.get_ref(&[1]).unwrap(), Some(ValueRef::new(&[i as u8])));
         }
 
