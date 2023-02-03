@@ -332,7 +332,7 @@ mod imp {
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
-use crate::{metrics, CryptoHash, Store, StoreUpdate};
+use crate::{metrics, CryptoHash, DBCol, Store, StoreUpdate};
 pub use imp::{FlatState, FlatStateFactory};
 use near_primitives::state::ValueRef;
 use near_primitives::types::{BlockHeight, RawStateChangesWithTrieKey, ShardId};
@@ -889,6 +889,18 @@ impl FlatStorageStateInner {
         FlatStorageError::BlockNotSupported((self.flat_head, *block_hash))
     }
 
+    fn get_ref(&self, block_hash: &CryptoHash, key: &[u8]) -> Option<Option<ValueRef>> {
+        let delta_key = NewKeyForFlatStateDelta {
+            shard_id: self.shard_id,
+            block_hash: block_hash.clone(),
+            key: key.to_vec(),
+        };
+        let bytes_key = delta_key.encode();
+        let result: Option<Option<ValueRef>> =
+            self.store.get_ser(DBCol::FlatStateDeltas, &bytes_key).unwrap();
+        result
+    }
+
     /// Gets delta for the given block and shard `self.shard_id`.
     fn get_delta(&self, block_hash: &CryptoHash) -> Result<Arc<FlatStateDelta>, FlatStorageError> {
         // TODO (#7327): add limitation on cached deltas number to limit RAM usage
@@ -1055,15 +1067,20 @@ impl FlatStorageState {
             guard.get_blocks_to_head(block_hash).map_err(|e| StorageError::from(e))?;
         for block_hash in blocks_to_head.iter() {
             // If we found a key in delta, we can return a value because it is the most recent key update.
-            let delta = guard.get_delta(block_hash)?;
-            // eprintln!("bh = {} len = {} delta = {:?}", block_hash, delta.len(), delta);
-            match delta.get(key) {
-                Some(value_ref) => {
-                    // eprintln!("found");
+            if let Ok(delta) = guard.get_delta(block_hash) {
+                // eprintln!("bh = {} len = {} delta = {:?}", block_hash, delta.len(), delta);
+                match delta.get(key) {
+                    Some(value_ref) => {
+                        // eprintln!("found");
+                        return Ok(value_ref);
+                    }
+                    None => {}
+                };
+            } else {
+                if let Some(value_ref) = guard.get_ref(block_hash, key) {
                     return Ok(value_ref);
                 }
-                None => {}
-            };
+            }
         }
 
         Ok(store_helper::get_ref(&guard.store, key)?)
@@ -1180,10 +1197,15 @@ impl FlatStorageState {
         }
         let mut store_update = StoreUpdate::new(guard.store.storage.clone());
         store_helper::set_delta(&mut store_update, guard.shard_id, block_hash.clone(), &delta)?;
-        guard.metrics.cached_deltas.inc();
-        guard.metrics.cached_deltas_num_items.add(delta.len() as i64);
-        guard.metrics.cached_deltas_size.add(delta.total_size() as i64);
-        guard.deltas.insert(*block_hash, Arc::new(delta));
+
+        let cached_deltas = guard.metrics.cached_deltas.get();
+        if cached_deltas < 12 {
+            guard.metrics.cached_deltas.inc();
+            guard.metrics.cached_deltas_num_items.add(delta.len() as i64);
+            guard.metrics.cached_deltas_size.add(delta.total_size() as i64);
+            guard.deltas.insert(*block_hash, Arc::new(delta));
+        }
+
         guard.blocks.insert(*block_hash, block);
         guard.metrics.cached_blocks.inc();
         Ok(store_update)
