@@ -1056,10 +1056,10 @@ impl FlatStorageState {
         for block_hash in blocks_to_head.iter() {
             // If we found a key in delta, we can return a value because it is the most recent key update.
             let delta = guard.get_delta(block_hash)?;
-            eprintln!("bh = {} len = {} delta = {:?}", block_hash, delta.len(), delta);
+            // eprintln!("bh = {} len = {} delta = {:?}", block_hash, delta.len(), delta);
             match delta.get(key) {
                 Some(value_ref) => {
-                    eprintln!("found");
+                    // eprintln!("found");
                     return Ok(value_ref);
                 }
                 None => {}
@@ -1565,13 +1565,8 @@ mod tests {
         flat_state_factory.add_flat_storage_state_for_shard(0, flat_storage_state);
         let flat_storage_state = flat_state_factory.get_flat_storage_state_for_shard(0).unwrap();
 
-        for i in 0..10 {
-            eprintln!("{:?} {:?}", i, ValueRef::new(&[i]));
-        }
-
         // 2. Check that the flat_state at block i reads the value of key &[1] as &[i]
         for i in 0..10 {
-            eprintln!("{}", i);
             let block_hash = chain.get_block_hash(i);
             let blocks = flat_storage_state.get_blocks_to_head(&block_hash).unwrap();
             assert_eq!(blocks.len(), i as usize);
