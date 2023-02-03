@@ -134,7 +134,7 @@ impl ThreadStats {
 
         if show_stats {
             let class_name = format!("{:?}", self.classes);
-            warn!(
+            eprintln!(
                 "    {:?}: ratio: {:.3} {}:{:?} C mem: {}",
                 tid,
                 ratio,
@@ -147,7 +147,7 @@ impl ThreadStats {
                 || self.write_buf_added.as_u64() > 0
                 || self.write_buf_drained.as_u64() > 0
             {
-                info!(
+                eprintln!(
                     "        Write_buffer len: {} cap: {} added: {} drained: {}",
                     self.write_buf_len,
                     self.write_buf_capacity,
@@ -162,7 +162,7 @@ impl ThreadStats {
             stat.sort_by_key(|f| f.0);
 
             for entry in stat {
-                warn!(
+                eprintln!(
                     "        func {}:{}:{} cnt: {} total: {}ms max: {}ms",
                     (entry.0).0,
                     (entry.0).1,
@@ -234,7 +234,7 @@ impl Stats {
     }
 
     fn print_stats(&mut self, sleep_time: Duration) {
-        info!(
+        eprintln!(
             "Performance stats {} threads (min ratio = {})",
             self.stats.len(),
             MIN_OCCUPANCY_RATIO_THRESHOLD
