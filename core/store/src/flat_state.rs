@@ -680,13 +680,13 @@ pub mod store_helper {
         let key_prefix = NewKeyForFlatStateDelta::db_prefix(shard_id, block_hash);
         let mut delta = FlatStateDelta::default();
         let mut found = false;
-        eprintln!("iterate over {:?}", key_prefix);
+        // eprintln!("iterate over {:?}", key_prefix);
         for item in store.iter_prefix_ser(DBCol::FlatStateDeltas, &key_prefix) {
             found = true;
             let (key, value) = item.map_err(|_| FlatStorageError::StorageInternalError)?;
             let delta_key = &key[key_prefix.len()..];
             if !delta_key.is_empty() {
-                eprintln!("found {:?}", key);
+                // eprintln!("found {:?}", key);
                 delta.insert(delta_key.to_vec(), value);
             }
         }
