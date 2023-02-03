@@ -51,7 +51,7 @@ anyhow.workspace = true
 rustc_version = "0.4"
 
 [features]
-default = ["json_rpc", "rosetta_rpc"]
+default = ["json_rpc", "rosetta_rpc", "shard_shadowing_rx"]
 
 performance_stats = ["nearcore/performance_stats"]
 c_memory_stats = ["nearcore/c_memory_stats"]
@@ -90,6 +90,9 @@ sandbox = ["nearcore/sandbox"]
 force_wasmer2 = ["nearcore/force_wasmer2"]
 force_wasmer0 = ["nearcore/force_wasmer0"]
 force_wasmtime = ["nearcore/force_wasmtime"]
+
+shard_shadowing_rx = ["nearcore/shard_shadowing_rx"]
+shard_shadowing_tx = ["nearcore/shard_shadowing_tx"]
 
 [package.metadata.workspaces]
 independent = true

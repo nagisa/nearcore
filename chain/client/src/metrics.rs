@@ -6,6 +6,11 @@ use near_o11y::metrics::{
 };
 use once_cell::sync::Lazy;
 
+pub static SHARD_SHADOWING_READ_TIME: Lazy<Histogram> =
+    Lazy::new(|| try_create_histogram("near_shard_shadowing_read_time", "non-empty").unwrap());
+pub static SHARD_SHADOWING_ACTUALLY_READ_TIME: Lazy<Histogram> = Lazy::new(|| {
+    try_create_histogram("near_shard_shadowing_actually_read_time", "non-empty").unwrap()
+});
 pub(crate) static BLOCK_PRODUCED_TOTAL: Lazy<IntCounter> = Lazy::new(|| {
     try_create_int_counter(
         "near_block_produced_total",

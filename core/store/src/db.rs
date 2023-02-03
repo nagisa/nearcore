@@ -25,6 +25,7 @@ pub const GENESIS_JSON_HASH_KEY: &[u8; 17] = b"GENESIS_JSON_HASH";
 pub const GENESIS_STATE_ROOTS_KEY: &[u8; 19] = b"GENESIS_STATE_ROOTS";
 pub const COLD_HEAD_KEY: &[u8; 9] = b"COLD_HEAD";
 pub const SHARD_SHADOWING_HEAD_KEY: &[u8; 20] = b"SHARD_SHADOWING_HEAD";
+pub const SHARD_SHADOWING_APPLIED_HEAD_KEY: &[u8; 28] = b"SHARD_SHADOWING_APPLIED_HEAD";
 
 #[derive(Default)]
 pub struct DBTransaction {

@@ -145,3 +145,5 @@ sandbox = [
 io_trace = ["near-vm-runner/io_trace"]
 
 calimero_zero_storage = ["near-primitives/calimero_zero_storage"]
+shard_shadowing_rx = ["near-chain/shard_shadowing_rx", "near-client/shard_shadowing_rx"]
+shard_shadowing_tx = ["near-chain/shard_shadowing_tx", "near-client/shard_shadowing_tx"]

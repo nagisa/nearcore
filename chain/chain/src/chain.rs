@@ -40,7 +40,8 @@ use near_primitives::transaction::{
 use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::{
     AccountId, Balance, BlockExtra, BlockHeight, BlockHeightDelta, EpochId, Gas, MerkleHash,
-    NumBlocks, NumShards, ShardId, StateChangesForSplitStates, StateRoot,
+    NumBlocks, NumShards, RawStateChangesWithTrieKey, ShardId, StateChangesForSplitStates,
+    StateRoot,
 };
 use near_primitives::unwrap_or_return;
 use near_primitives::utils::MaybeValidated;
@@ -83,7 +84,7 @@ use near_primitives::shard_layout::{
     account_id_to_shard_id, account_id_to_shard_uid, ShardLayout, ShardUId,
 };
 use near_primitives::version::PROTOCOL_VERSION;
-use near_store::db::SHARD_SHADOWING_HEAD_KEY;
+use near_store::db::{SHARD_SHADOWING_APPLIED_HEAD_KEY, SHARD_SHADOWING_HEAD_KEY};
 #[cfg(feature = "protocol_feature_flat_state")]
 use near_store::flat_state::{store_helper, FlatStateDelta};
 use near_store::flat_state::{FlatStorageCreationStatus, FlatStorageError};
@@ -2272,7 +2273,9 @@ impl Chain {
             apply_chunks_done_callback,
         );
 
-        self.maybe_shard_shadowing_tx(&new_head);
+        if cfg!(feature = "shard_shadowing_tx") {
+            self.maybe_shard_shadowing_tx(&new_head);
+        }
 
         // Determine the block status of this block (whether it is a side fork and updates the chain head)
         // Block status is needed in Client::on_block_accepted_with_optional_chunk_produce to
@@ -2326,6 +2329,12 @@ impl Chain {
     fn shard_shadowing_height(&self) -> BlockHeight {
         let shadowing_head = self.shard_shadowing_head();
         shadowing_head.unwrap_or_else(|_| self.genesis().height())
+    }
+
+    pub fn shard_shadowing_applied_head_unwrap(&self) -> Option<BlockHeight> {
+        let shadowing_head = self.shard_shadowing_applied_head();
+        tracing::warn!(target: "shard-shadowing-rx", ?shadowing_head);
+        shadowing_head.ok()
     }
 
     /// Preprocess a block before applying chunks, verify that we have the necessary information
@@ -4088,6 +4097,25 @@ impl Chain {
             .unwrap();
         store_update.commit().unwrap();
     }
+
+    pub fn write_state_changes(&self, state_changes: Vec<StateChangeStruct>) {
+        let mut store_update = self.store().store().store_update();
+
+        for s in state_changes {
+            let y_vec = s.y.try_to_vec().unwrap();
+            store_update.set(DBCol::StateChanges, &s.x, &y_vec);
+        }
+
+        store_update.commit().unwrap();
+    }
+
+    pub fn set_shard_shadowing_applied_head(&self, new_head: BlockHeight) {
+        let mut store_update = self.store().store().store_update();
+        store_update
+            .set_ser::<BlockHeight>(DBCol::BlockMisc, SHARD_SHADOWING_APPLIED_HEAD_KEY, &new_head)
+            .unwrap();
+        store_update.commit().unwrap();
+    }
 }
 
 /// Implement block merkle proof retrieval.
@@ -4283,6 +4311,11 @@ impl Chain {
     #[inline]
     pub fn shard_shadowing_head(&self) -> Result<BlockHeight, Error> {
         self.store.shard_shadowing_head()
+    }
+
+    #[inline]
+    pub fn shard_shadowing_applied_head(&self) -> Result<BlockHeight, Error> {
+        self.store.shard_shadowing_applied_head()
     }
 
     /// Gets chain tail height
@@ -5681,15 +5714,15 @@ impl BlocksCatchUpState {
 
 pub type XType = (Vec<u8>, Vec<u8>);
 pub type CType = Vec<(Vec<u8>, Vec<XType>)>;
-#[derive(BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub struct StateChangeStruct {
-    x: Vec<u8>,
-    y: Vec<u8>,
+    pub x: Vec<u8>,
+    pub y: RawStateChangesWithTrieKey,
 }
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct StateChangesStructForOneBlock {
-    block_hash: CryptoHash,
-    state_changes: Vec<StateChangeStruct>,
+    pub block_hash: CryptoHash,
+    pub state_changes: Vec<StateChangeStruct>,
 }
 
 #[derive(BorshDeserialize, BorshSerialize)]
@@ -5704,9 +5737,9 @@ impl Chain {
             .store()
             .iter_prefix(DBCol::StateChanges, key_prefix)
             .map(|x| x.unwrap())
-            .map(|(x, y)| StateChangeStruct {
-                x: x.as_ref().clone().into(),
-                y: y.as_ref().clone().into(),
+            .map(|(x, y)| {
+                let vy = RawStateChangesWithTrieKey::try_from_slice(y.as_ref()).unwrap();
+                StateChangeStruct { x: x.as_ref().clone().into(), y: vy }
             })
             .collect()
     }

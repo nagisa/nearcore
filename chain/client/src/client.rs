@@ -1,25 +1,20 @@
 //! Client is responsible for tracking the chain, chunks, and producing them when needed.
 //! This client works completely synchronously and must be operated by some async actor outside.
 
-use std::cmp::max;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-
+use crate::adapter::ProcessTxResponse;
+use crate::debug::BlockProductionTracker;
+use crate::debug::PRODUCTION_TIMES_CACHE_SIZE;
+use crate::sync::block::BlockSync;
+use crate::sync::epoch::EpochSync;
+use crate::sync::header::HeaderSync;
+use crate::sync::state::{StateSync, StateSyncResult};
+use crate::{metrics, SyncStatus};
+use borsh::BorshDeserialize;
 use lru::LruCache;
-use near_chunks::adapter::ShardsManagerAdapterForClient;
-use near_chunks::client::ShardedTransactionPool;
-use near_chunks::logic::{
-    cares_about_shard_this_or_next_epoch, decode_encoded_chunk, persist_chunk,
-};
-use near_client_primitives::debug::ChunkProduction;
-use near_primitives::time::Clock;
-use near_store::metadata::DbKind;
-use tracing::{debug, error, info, trace, warn};
-
 use near_chain::chain::{
     ApplyStatePartsRequest, BlockCatchUpRequest, BlockMissingChunks, BlocksCatchUpState,
-    OrphanMissingChunks, StateSplitRequest, TX_ROUTING_HEIGHT_HORIZON,
+    OrphanMissingChunks, StateChangesStructForManyBlocks, StateSplitRequest,
+    TX_ROUTING_HEIGHT_HORIZON,
 };
 use near_chain::flat_storage_creator::FlatStorageCreator;
 use near_chain::test_utils::format_hash;
@@ -30,42 +25,53 @@ use near_chain::{
     RuntimeWithEpochManagerAdapter,
 };
 use near_chain_configs::{ClientConfig, UpdateableClientConfig};
+use near_chunks::adapter::ShardsManagerAdapterForClient;
+use near_chunks::client::ShardedTransactionPool;
+use near_chunks::logic::{
+    cares_about_shard_this_or_next_epoch, decode_encoded_chunk, persist_chunk,
+};
 use near_chunks::ShardsManager;
+use near_client_primitives::debug::ChunkProduction;
+use near_client_primitives::types::{Error, ShardSyncDownload, ShardSyncStatus};
+use near_network::types::{AccountKeys, ChainInfo, PeerManagerMessageRequest, SetChainInfo};
 use near_network::types::{
     HighestHeightPeerInfo, NetworkRequests, PeerManagerAdapter, ReasonForBan,
 };
+use near_o11y::{log_assert, WithSpanContextExt};
 use near_primitives::block::{Approval, ApprovalInner, ApprovalMessage, Block, BlockHeader, Tip};
+use near_primitives::block_header::ApprovalType;
 use near_primitives::challenge::{Challenge, ChallengeBody};
+use near_primitives::epoch_manager::RngSeed;
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::{merklize, MerklePath, PartialMerkleTree};
+use near_primitives::network::PeerId;
 use near_primitives::receipt::Receipt;
 use near_primitives::sharding::{
     ChunkHash, EncodedShardChunk, PartialEncodedChunk, ReedSolomonWrapper, ShardChunk,
     ShardChunkHeader, ShardInfo,
 };
+use near_primitives::time::Clock;
 use near_primitives::transaction::SignedTransaction;
+use near_primitives::trie_key::trie_key_parsers::parse_account_id_from_raw_key;
+use near_primitives::trie_key::TrieKey;
 use near_primitives::types::chunk_extra::ChunkExtra;
-use near_primitives::types::{AccountId, ApprovalStake, BlockHeight, EpochId, NumBlocks, ShardId};
+use near_primitives::types::{
+    AccountId, ApprovalStake, BlockHeight, EpochId, NumBlocks, RawStateChangesWithTrieKey, ShardId,
+    StateRoot,
+};
 use near_primitives::unwrap_or_return;
 use near_primitives::utils::MaybeValidated;
 use near_primitives::validator_signer::ValidatorSigner;
-
-use crate::adapter::ProcessTxResponse;
-use crate::debug::BlockProductionTracker;
-use crate::debug::PRODUCTION_TIMES_CACHE_SIZE;
-use crate::sync::block::BlockSync;
-use crate::sync::epoch::EpochSync;
-use crate::sync::header::HeaderSync;
-use crate::sync::state::{StateSync, StateSyncResult};
-use crate::{metrics, SyncStatus};
-use near_client_primitives::types::{Error, ShardSyncDownload, ShardSyncStatus};
-use near_network::types::{AccountKeys, ChainInfo, PeerManagerMessageRequest, SetChainInfo};
-use near_o11y::{log_assert, WithSpanContextExt};
-use near_primitives::block_header::ApprovalType;
-use near_primitives::epoch_manager::RngSeed;
-use near_primitives::network::PeerId;
 use near_primitives::version::PROTOCOL_VERSION;
 use near_primitives::views::{CatchupStatusView, DroppedReason};
+use near_store::metadata::DbKind;
+use near_store::WrappedTrieChanges;
+use std::cmp::max;
+use std::collections::{HashMap, HashSet};
+use std::fs::read_dir;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tracing::{debug, error, info, trace, warn};
 
 const NUM_REBROADCAST_BLOCKS: usize = 30;
 const CHUNK_HEADERS_FOR_INCLUSION_CACHE_SIZE: usize = 2048;
@@ -93,6 +99,8 @@ pub struct Client {
     pub produce_invalid_chunks: bool,
     #[cfg(feature = "test_features")]
     pub produce_invalid_tx_in_chunks: bool,
+
+    pub prev_state_roots: (BlockHeight, Vec<StateRoot>),
 
     /// Fast Forward accrued delta height used to calculate fast forwarded timestamps for each block.
     #[cfg(feature = "sandbox")]
@@ -266,6 +274,7 @@ impl Client {
             produce_invalid_chunks: false,
             #[cfg(feature = "test_features")]
             produce_invalid_tx_in_chunks: false,
+            prev_state_roots: (0, vec![]),
             #[cfg(feature = "sandbox")]
             accrued_fastforward_delta: 0,
             config,
@@ -1188,7 +1197,133 @@ impl Client {
         }
         self.last_time_head_progress_made =
             max(self.chain.get_last_time_head_updated(), self.last_time_head_progress_made);
+
+        if cfg!(feature = "shard_shadowing_rx") {
+            self.maybe_shard_shadowing_rx();
+        }
+
         (accepted_blocks_hashes, errors)
+    }
+
+    pub fn maybe_shard_shadowing_rx(&mut self) {
+        tracing::warn_span!(target: "shard-shadowing-rx", "maybe_shard_shadowing_rx");
+        let _timer = metrics::SHARD_SHADOWING_READ_TIME.start_timer();
+        let runtime_adapter = self.runtime_adapter.clone();
+        let head = self.chain.head().unwrap();
+        let num_shards = runtime_adapter.num_shards(&head.epoch_id).unwrap();
+        let is_shard_tracked: Vec<bool> = (0..num_shards)
+            .map(|shard_id| {
+                runtime_adapter.cares_about_shard(None, &head.last_block_hash, shard_id, false)
+            })
+            .collect();
+
+        let zshead = self.chain.shard_shadowing_applied_head_unwrap();
+        let sshead = zshead.unwrap_or(0);
+
+        tracing::warn!(target: "shard-shadowing-rx", num_shards, ?is_shard_tracked, head_height = head.height, sshead);
+
+        let re = regex::Regex::new(r"^from=(\d*)_to=(\d*)$").unwrap();
+        let paths = std::fs::read_dir("/tmp/shadowing_deltas").unwrap();
+        let mut max_to: Option<u64> = None;
+        let mut max_path: Option<String> = None;
+        for path in paths {
+            let path = path.unwrap().file_name();
+            let path = path.to_str();
+            let path = path.unwrap();
+            if let Some(caps) = re.captures(path) {
+                if let Some(to) = caps.get(2) {
+                    let to = to.as_str().parse().unwrap();
+                    // tracing::error!(target: "shard-shadowing-rx", ?path, ?to);
+                    if to < head.height && to > sshead {
+                        if max_to.is_none() || to < max_to.unwrap() {
+                            max_to = Some(to);
+                            max_path = Some(path.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        tracing::warn!(target: "shard-shadowing-rx", ?max_path, ?max_to);
+        if max_path.is_none() {
+            return;
+        }
+        let max_to = max_to.unwrap();
+        if max_to > sshead {
+            tracing::warn!(target: "shard-shadowing-rx", "doit");
+            let _timer = metrics::SHARD_SHADOWING_ACTUALLY_READ_TIME.start_timer();
+            let max_path = max_path.unwrap();
+            let data = std::fs::read(format!("/tmp/shadowing_deltas/{}", max_path)).unwrap();
+            let state_changes = StateChangesStructForManyBlocks::try_from_slice(&data).unwrap();
+
+            let mut state_changes_to_apply = vec![];
+
+            if zshead.is_none() {
+                let block = self.chain.genesis_block();
+                self.prev_state_roots = (
+                    block.header().height(),
+                    block.chunks().iter().map(|chunk| chunk.prev_state_root()).collect(),
+                );
+            }
+
+            for state_changes_for_one_block in state_changes.blocks {
+                let block_hash = state_changes_for_one_block.block_hash.clone();
+                for state_change in state_changes_for_one_block.state_changes {
+                    let block_hash_and_trie_key = state_change.x.clone();
+                    let raw_state_changes_with_trie_key = state_change.y.clone();
+                    tracing::warn!(target: "shard-shadowing-rx", ?block_hash);
+                    let block_header = self.chain.get_block_header(&block_hash).unwrap();
+
+                    tracing::warn!(target: "shard-shadowing-rx", ?block_hash, block_height=block_header.height());
+                    let shard_id = get_shard_id_from_trie_key(
+                        raw_state_changes_with_trie_key.trie_key.clone(),
+                        runtime_adapter.clone(),
+                        block_header.epoch_id(),
+                    );
+                    tracing::warn!(target: "shard-shadowing-rx", ?shard_id);
+                    if !is_shard_tracked[shard_id as usize] {
+                        tracing::warn!(target: "shard-shadowing-rx", "apply");
+                        state_changes_to_apply.push(state_change);
+
+                        let shard_uid = runtime_adapter
+                            .shard_id_to_uid(shard_id, block_header.epoch_id())
+                            .unwrap();
+                        // let chunk_extra = self.chain.get_chunk_extra(block_header.hash(), &shard_uid).unwrap();
+                        let state_root = self.prev_state_roots.1[shard_id as usize];
+                        tracing::warn!(target: "shard-shadowing-rx", ?state_root);
+                        let trie = runtime_adapter
+                            .get_trie_for_shard(shard_id, &block_header.hash(), state_root, false)
+                            .unwrap();
+
+                        let raw_key = raw_state_changes_with_trie_key.trie_key.to_vec();
+                        let data = raw_state_changes_with_trie_key
+                            .changes
+                            .last()
+                            .map(|x| x.data.clone())
+                            .flatten();
+                        let trie_update = trie.update(vec![(raw_key, data)]).unwrap();
+
+                        tracing::warn!(target: "shard-shadowing-rx", old_root=?trie_update.old_root, new_root=?trie_update.new_root);
+                        self.prev_state_roots.1[shard_id as usize] = trie_update.new_root.clone();
+
+                        let wrapped_trie_changes = WrappedTrieChanges::new(
+                            runtime_adapter.get_tries(),
+                            shard_uid,
+                            trie_update,
+                            vec![raw_state_changes_with_trie_key],
+                            block_header.hash().clone(),
+                        );
+                        let mut store_update = self.chain.mut_store().store_update();
+                        store_update.save_trie_changes(wrapped_trie_changes);
+                        store_update.commit().unwrap();
+                    }
+                }
+            }
+
+            tracing::warn!(target: "shard-shadowing-rx", num_state_changes_to_write = state_changes_to_apply.len(), "writing state changes");
+            self.chain.write_state_changes(state_changes_to_apply);
+
+            self.chain.set_shard_shadowing_applied_head(max_to);
+        }
     }
 
     /// Process the result of block processing from chain, finish the steps that can't be done
@@ -2236,6 +2371,32 @@ impl Client {
         // An archival node with legacy storage or in the midst of migration to split
         // storage should do the legacy clear_archive_data.
         self.chain.clear_archive_data(self.config.gc.gc_blocks_limit)
+    }
+}
+
+fn get_shard_id_from_trie_key(
+    trie_key: TrieKey,
+    runtime_adapter: Arc<dyn RuntimeWithEpochManagerAdapter>,
+    epoch_id: &EpochId,
+) -> ShardId {
+    let account_id = get_account_id_from_trie_key(trie_key);
+    let shard_id = runtime_adapter.account_id_to_shard_id(&account_id, epoch_id).unwrap();
+    tracing::warn!(target: "shard-shadowing-rx", ?account_id, ?shard_id);
+    shard_id
+}
+
+fn get_account_id_from_trie_key(trie_key: TrieKey) -> AccountId {
+    match trie_key {
+        TrieKey::Account { account_id, .. } => account_id.clone(),
+        TrieKey::ContractCode { account_id, .. } => account_id.clone(),
+        TrieKey::AccessKey { account_id, .. } => account_id.clone(),
+        TrieKey::ReceivedData { .. } => unimplemented!(),
+        TrieKey::PostponedReceiptId { .. } => unimplemented!(),
+        TrieKey::PendingDataCount { .. } => unimplemented!(),
+        TrieKey::PostponedReceipt { .. } => unimplemented!(),
+        TrieKey::DelayedReceiptIndices => unimplemented!(),
+        TrieKey::DelayedReceipt { .. } => unimplemented!(),
+        TrieKey::ContractData { account_id, .. } => account_id.clone(),
     }
 }
 

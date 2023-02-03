@@ -62,3 +62,5 @@ nightly_protocol = [
 ]
 mock_node = []
 sandbox = ["near-primitives/sandbox"]
+shard_shadowing_rx = []
+shard_shadowing_tx = []
