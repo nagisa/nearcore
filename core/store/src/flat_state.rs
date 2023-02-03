@@ -1084,6 +1084,11 @@ impl FlatStorageState {
     /// returns an error.
     #[cfg(feature = "protocol_feature_flat_state")]
     pub fn update_flat_head(&self, new_head: &CryptoHash) -> Result<(), FlatStorageError> {
+        // Fake check to stop updating flat head.
+        if new_head != &CryptoHash::default() {
+            return Ok(());
+        }
+
         let mut guard = self.0.write().expect(POISONED_LOCK_ERR);
         let blocks = guard.get_blocks_to_head(new_head)?;
         for block in blocks.into_iter().rev() {
