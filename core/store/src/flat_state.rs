@@ -991,7 +991,7 @@ impl FlatStorageState {
                 blocks.insert(hash, block_info);
                 metrics.cached_blocks.inc();
 
-                /// !!! MIGRATION TO NEW FORMAT
+                // !!! MIGRATION TO NEW FORMAT
                 if let Ok(Some(delta)) = store_helper::old_get_delta(&store, shard_id, hash) {
                     let mut store_update = store.store_update();
                     store_helper::set_delta(&mut store_update, shard_id, hash, &delta).unwrap();
