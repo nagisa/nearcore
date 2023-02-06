@@ -392,7 +392,7 @@ impl NightshadeRuntime {
         state_patch: SandboxStatePatch,
     ) -> Result<ApplyTransactionResult, Error> {
         let _span = tracing::debug_span!(target: "runtime", "process_state_update").entered();
-        debug!(target: "chain", "inside process_state_update for {shard_id} {height}");
+        debug!(target: "chain", "inside process_state_update for {shard_id} {block_height}");
         let epoch_id = self.get_epoch_id_from_prev_block(prev_block_hash)?;
         let validator_accounts_update = {
             let epoch_manager = self.epoch_manager.read();
