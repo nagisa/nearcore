@@ -2312,8 +2312,6 @@ impl Chain {
             }
 
             let data = state_changes.try_to_vec().unwrap();
-            let x: StateChangesStructForManyBlocks =
-                StateChangesStructForManyBlocks::try_from_slice(&data).unwrap();
 
             let output_dir = "/tmp/shadowing_deltas";
             std::fs::create_dir_all(&output_dir).unwrap();
@@ -2329,12 +2327,6 @@ impl Chain {
     fn shard_shadowing_height(&self) -> BlockHeight {
         let shadowing_head = self.shard_shadowing_head();
         shadowing_head.unwrap_or_else(|_| self.genesis().height())
-    }
-
-    pub fn shard_shadowing_applied_head_unwrap(&self) -> Option<BlockHeight> {
-        let shadowing_head = self.shard_shadowing_applied_head();
-        tracing::warn!(target: "shard-shadowing-rx", ?shadowing_head);
-        shadowing_head.ok()
     }
 
     /// Preprocess a block before applying chunks, verify that we have the necessary information
@@ -4098,21 +4090,19 @@ impl Chain {
         store_update.commit().unwrap();
     }
 
-    pub fn write_state_changes(&self, state_changes: Vec<StateChangeStruct>) {
+    pub fn set_shard_shadowing_applied_head(
+        &self,
+        new_head: BlockHeight,
+        prev_state_roots: Vec<StateRoot>,
+    ) {
         let mut store_update = self.store().store().store_update();
-
-        for s in state_changes {
-            let y_vec = s.y.try_to_vec().unwrap();
-            store_update.set(DBCol::StateChanges, &s.x, &y_vec);
-        }
-
-        store_update.commit().unwrap();
-    }
-
-    pub fn set_shard_shadowing_applied_head(&self, new_head: BlockHeight) {
-        let mut store_update = self.store().store().store_update();
+        let value = (new_head, prev_state_roots);
         store_update
-            .set_ser::<BlockHeight>(DBCol::BlockMisc, SHARD_SHADOWING_APPLIED_HEAD_KEY, &new_head)
+            .set_ser::<(BlockHeight, Vec<StateRoot>)>(
+                DBCol::BlockMisc,
+                SHARD_SHADOWING_APPLIED_HEAD_KEY,
+                &value,
+            )
             .unwrap();
         store_update.commit().unwrap();
     }
@@ -4314,7 +4304,7 @@ impl Chain {
     }
 
     #[inline]
-    pub fn shard_shadowing_applied_head(&self) -> Result<BlockHeight, Error> {
+    pub fn shard_shadowing_applied_head(&self) -> Result<(BlockHeight, Vec<StateRoot>), Error> {
         self.store.shard_shadowing_applied_head()
     }
 
@@ -5717,7 +5707,7 @@ pub type CType = Vec<(Vec<u8>, Vec<XType>)>;
 #[derive(BorshDeserialize, BorshSerialize, Clone, Debug)]
 pub struct StateChangeStruct {
     pub x: Vec<u8>,
-    pub y: RawStateChangesWithTrieKey,
+    pub raw_state_changes_with_trie_key: RawStateChangesWithTrieKey,
 }
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct StateChangesStructForOneBlock {
@@ -5739,7 +5729,10 @@ impl Chain {
             .map(|x| x.unwrap())
             .map(|(x, y)| {
                 let vy = RawStateChangesWithTrieKey::try_from_slice(y.as_ref()).unwrap();
-                StateChangeStruct { x: x.as_ref().clone().into(), y: vy }
+                StateChangeStruct {
+                    x: x.as_ref().clone().into(),
+                    raw_state_changes_with_trie_key: vy,
+                }
             })
             .collect()
     }

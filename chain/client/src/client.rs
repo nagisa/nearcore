@@ -52,13 +52,9 @@ use near_primitives::sharding::{
 };
 use near_primitives::time::Clock;
 use near_primitives::transaction::SignedTransaction;
-use near_primitives::trie_key::trie_key_parsers::parse_account_id_from_raw_key;
 use near_primitives::trie_key::TrieKey;
 use near_primitives::types::chunk_extra::ChunkExtra;
-use near_primitives::types::{
-    AccountId, ApprovalStake, BlockHeight, EpochId, NumBlocks, RawStateChangesWithTrieKey, ShardId,
-    StateRoot,
-};
+use near_primitives::types::{AccountId, ApprovalStake, BlockHeight, EpochId, NumBlocks, ShardId};
 use near_primitives::unwrap_or_return;
 use near_primitives::utils::MaybeValidated;
 use near_primitives::validator_signer::ValidatorSigner;
@@ -68,7 +64,6 @@ use near_store::metadata::DbKind;
 use near_store::WrappedTrieChanges;
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
-use std::fs::read_dir;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, trace, warn};
@@ -99,8 +94,6 @@ pub struct Client {
     pub produce_invalid_chunks: bool,
     #[cfg(feature = "test_features")]
     pub produce_invalid_tx_in_chunks: bool,
-
-    pub prev_state_roots: (BlockHeight, Vec<StateRoot>),
 
     /// Fast Forward accrued delta height used to calculate fast forwarded timestamps for each block.
     #[cfg(feature = "sandbox")]
@@ -274,7 +267,6 @@ impl Client {
             produce_invalid_chunks: false,
             #[cfg(feature = "test_features")]
             produce_invalid_tx_in_chunks: false,
-            prev_state_roots: (0, vec![]),
             #[cfg(feature = "sandbox")]
             accrued_fastforward_delta: 0,
             config,
@@ -1217,10 +1209,8 @@ impl Client {
             })
             .collect();
 
-        let zshead = self.chain.shard_shadowing_applied_head_unwrap();
-        let sshead = zshead.unwrap_or(0);
-
-        tracing::warn!(target: "shard-shadowing-rx", num_shards, ?is_shard_tracked, head_height = head.height, sshead);
+        let maybe_applied_head = self.chain.shard_shadowing_applied_head().ok();
+        let applied_head = maybe_applied_head.clone().unwrap_or((0, vec![])).0;
 
         let re = regex::Regex::new(r"^from=(\d*)_to=(\d*)$").unwrap();
         let paths = std::fs::read_dir("/tmp/shadowing_deltas").unwrap();
@@ -1234,7 +1224,7 @@ impl Client {
                 if let Some(to) = caps.get(2) {
                     let to = to.as_str().parse().unwrap();
                     // tracing::error!(target: "shard-shadowing-rx", ?path, ?to);
-                    if to < head.height && to > sshead {
+                    if to < head.height && to > applied_head {
                         if max_to.is_none() || to < max_to.unwrap() {
                             max_to = Some(to);
                             max_path = Some(path.to_string());
@@ -1243,86 +1233,99 @@ impl Client {
                 }
             }
         }
-        tracing::warn!(target: "shard-shadowing-rx", ?max_path, ?max_to);
         if max_path.is_none() {
             return;
         }
         let max_to = max_to.unwrap();
-        if max_to > sshead {
-            tracing::warn!(target: "shard-shadowing-rx", "doit");
+        if max_to > applied_head {
             let _timer = metrics::SHARD_SHADOWING_ACTUALLY_READ_TIME.start_timer();
             let max_path = max_path.unwrap();
             let data = std::fs::read(format!("/tmp/shadowing_deltas/{}", max_path)).unwrap();
             let state_changes = StateChangesStructForManyBlocks::try_from_slice(&data).unwrap();
 
-            let mut state_changes_to_apply = vec![];
+            let mut prev_state_roots = match maybe_applied_head {
+                Some(x) => x.1,
+                None => {
+                    let block = self.chain.genesis_block();
+                    block.chunks().iter().map(|chunk| chunk.prev_state_root()).collect()
+                }
+            };
+            tracing::warn!(target: "shard-shadowing-rx", num_shards, ?is_shard_tracked, head_height = head.height, applied_head, ?max_path, ?max_to, ?prev_state_roots);
 
-            if zshead.is_none() {
-                let block = self.chain.genesis_block();
-                self.prev_state_roots = (
-                    block.header().height(),
-                    block.chunks().iter().map(|chunk| chunk.prev_state_root()).collect(),
-                );
-            }
-
+            let mut prev_block_height = 0;
             for state_changes_for_one_block in state_changes.blocks {
                 let block_hash = state_changes_for_one_block.block_hash.clone();
-                for state_change in state_changes_for_one_block.state_changes {
-                    let block_hash_and_trie_key = state_change.x.clone();
-                    let raw_state_changes_with_trie_key = state_change.y.clone();
-                    tracing::warn!(target: "shard-shadowing-rx", ?block_hash);
-                    let block_header = self.chain.get_block_header(&block_hash).unwrap();
+                let block_header = self.chain.get_block_header(&block_hash).unwrap();
+                let block_height = block_header.height();
+                let epoch_id = block_header.epoch_id();
+                assert!(
+                    block_height > prev_block_height,
+                    "{} needs to be > {}",
+                    block_height,
+                    prev_block_height
+                );
 
-                    tracing::warn!(target: "shard-shadowing-rx", ?block_hash, block_height=block_header.height());
+                let mut state_changes_per_shard = vec![vec![]; is_shard_tracked.len()];
+                for state_change in state_changes_for_one_block.state_changes {
+                    let raw_state_changes_with_trie_key =
+                        state_change.raw_state_changes_with_trie_key.clone();
+
                     let shard_id = get_shard_id_from_trie_key(
                         raw_state_changes_with_trie_key.trie_key.clone(),
                         runtime_adapter.clone(),
-                        block_header.epoch_id(),
+                        epoch_id,
                     );
-                    tracing::warn!(target: "shard-shadowing-rx", ?shard_id);
                     if !is_shard_tracked[shard_id as usize] {
-                        tracing::warn!(target: "shard-shadowing-rx", "apply");
-                        state_changes_to_apply.push(state_change);
-
-                        let shard_uid = runtime_adapter
-                            .shard_id_to_uid(shard_id, block_header.epoch_id())
-                            .unwrap();
-                        // let chunk_extra = self.chain.get_chunk_extra(block_header.hash(), &shard_uid).unwrap();
-                        let state_root = self.prev_state_roots.1[shard_id as usize];
-                        tracing::warn!(target: "shard-shadowing-rx", ?state_root);
-                        let trie = runtime_adapter
-                            .get_trie_for_shard(shard_id, &block_header.hash(), state_root, false)
-                            .unwrap();
-
-                        let raw_key = raw_state_changes_with_trie_key.trie_key.to_vec();
-                        let data = raw_state_changes_with_trie_key
-                            .changes
-                            .last()
-                            .map(|x| x.data.clone())
-                            .flatten();
-                        let trie_update = trie.update(vec![(raw_key, data)]).unwrap();
-
-                        tracing::warn!(target: "shard-shadowing-rx", old_root=?trie_update.old_root, new_root=?trie_update.new_root);
-                        self.prev_state_roots.1[shard_id as usize] = trie_update.new_root.clone();
-
-                        let wrapped_trie_changes = WrappedTrieChanges::new(
-                            runtime_adapter.get_tries(),
-                            shard_uid,
-                            trie_update,
-                            vec![raw_state_changes_with_trie_key],
-                            block_header.hash().clone(),
-                        );
-                        let mut store_update = self.chain.mut_store().store_update();
-                        store_update.save_trie_changes(wrapped_trie_changes);
-                        store_update.commit().unwrap();
+                        state_changes_per_shard[shard_id as usize]
+                            .push(raw_state_changes_with_trie_key);
                     }
                 }
+
+                for shard_id in (0..state_changes_per_shard.len())
+                    .filter(|&shard_id| !is_shard_tracked[shard_id])
+                {
+                    let shard_uid =
+                        runtime_adapter.shard_id_to_uid(shard_id as ShardId, epoch_id).unwrap();
+                    // let chunk_extra = self.chain.get_chunk_extra(block_header.hash(), &shard_uid).unwrap();
+                    let state_root = prev_state_roots[shard_id];
+                    let trie = runtime_adapter
+                        .get_trie_for_shard(shard_id as ShardId, &block_hash, state_root, false)
+                        .unwrap();
+
+                    let trie_update = trie
+                        .update(state_changes_per_shard[shard_id].iter().map(
+                            |raw_state_changes_with_trie_key| {
+                                let raw_key = raw_state_changes_with_trie_key.trie_key.to_vec();
+                                let data = raw_state_changes_with_trie_key
+                                    .changes
+                                    .last()
+                                    .map(|x| x.data.clone())
+                                    .flatten();
+                                (raw_key, data)
+                            },
+                        ))
+                        .unwrap();
+
+                    tracing::warn!(target: "shard-shadowing-rx", ?shard_id, old_root = ?trie_update.old_root, new_root = ?trie_update.new_root);
+                    prev_state_roots[shard_id] = trie_update.new_root.clone();
+
+                    let wrapped_trie_changes = WrappedTrieChanges::new(
+                        runtime_adapter.get_tries(),
+                        shard_uid,
+                        trie_update,
+                        state_changes_per_shard[shard_id].clone(),
+                        block_hash.clone(),
+                    );
+                    let mut store_update = self.chain.mut_store().store_update();
+                    store_update.save_trie_changes(wrapped_trie_changes);
+                    // Need to commit every change, because in case of multiple changes affecting the same shard in the block
+                    store_update.commit().unwrap();
+                }
+                prev_block_height = block_height;
+                tracing::warn!(target: "shard-shadowing-rx", ?block_hash, block_height, num_changes = ?state_changes_per_shard.iter().map(|x|x.len()).collect::<Vec<usize>>());
             }
 
-            tracing::warn!(target: "shard-shadowing-rx", num_state_changes_to_write = state_changes_to_apply.len(), "writing state changes");
-            self.chain.write_state_changes(state_changes_to_apply);
-
-            self.chain.set_shard_shadowing_applied_head(max_to);
+            self.chain.set_shard_shadowing_applied_head(max_to, prev_state_roots);
         }
     }
 

@@ -30,7 +30,7 @@ use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::{
     BlockExtra, BlockHeight, BlockHeightDelta, EpochId, NumBlocks, ShardId, StateChanges,
     StateChangesExt, StateChangesForSplitStates, StateChangesKinds, StateChangesKindsExt,
-    StateChangesRequest,
+    StateChangesRequest, StateRoot,
 };
 use near_primitives::utils::{
     get_block_shard_id, get_outcome_id_block_hash, get_outcome_id_block_hash_rev, index_to_bytes,
@@ -310,7 +310,7 @@ pub trait ChainStoreAccess {
     }
 
     fn shard_shadowing_head(&self) -> Result<BlockHeight, Error>;
-    fn shard_shadowing_applied_head(&self) -> Result<BlockHeight, Error>;
+    fn shard_shadowing_applied_head(&self) -> Result<(BlockHeight, Vec<StateRoot>), Error>;
 }
 
 /// All chain-related database operations.
@@ -1142,9 +1142,12 @@ impl ChainStoreAccess for ChainStore {
         )
     }
 
-    fn shard_shadowing_applied_head(&self) -> Result<BlockHeight, Error> {
+    fn shard_shadowing_applied_head(&self) -> Result<(BlockHeight, Vec<StateRoot>), Error> {
         option_to_not_found(
-            self.store.get_ser::<BlockHeight>(DBCol::BlockMisc, SHARD_SHADOWING_APPLIED_HEAD_KEY),
+            self.store.get_ser::<(BlockHeight, Vec<StateRoot>)>(
+                DBCol::BlockMisc,
+                SHARD_SHADOWING_APPLIED_HEAD_KEY,
+            ),
             "SHARD_SHADOWING_APPLIED_HEAD",
         )
     }
@@ -1575,7 +1578,7 @@ impl<'a> ChainStoreAccess for ChainStoreUpdate<'a> {
         todo!()
     }
 
-    fn shard_shadowing_applied_head(&self) -> Result<BlockHeight, Error> {
+    fn shard_shadowing_applied_head(&self) -> Result<(BlockHeight, Vec<StateRoot>), Error> {
         todo!()
     }
 }
