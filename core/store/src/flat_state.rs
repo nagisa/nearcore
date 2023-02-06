@@ -500,7 +500,7 @@ use near_primitives::shard_layout::account_id_to_shard_id;
 use near_primitives::shard_layout::ShardLayout;
 #[cfg(feature = "protocol_feature_flat_state")]
 use near_primitives::trie_key::trie_key_parsers::parse_account_id_from_raw_key;
-use rand::SeedableRng;
+use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use std::sync::{Arc, RwLock};
 use tracing::debug;
