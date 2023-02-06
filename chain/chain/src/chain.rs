@@ -1945,6 +1945,7 @@ impl Chain {
             block_received_time,
             state_patch,
         );
+        debug!(target: "chain", "preprocess_block finished for {block_height}");
         let preprocess_res = match preprocess_res {
             Ok(preprocess_res) => {
                 preprocess_timer.observe_duration();
@@ -2036,6 +2037,7 @@ impl Chain {
         self.blocks_in_processing.add(block, block_preprocess_info)?;
 
         // 2) schedule apply chunks, which will be executed in the rayon thread pool.
+        debug!(target: "chain", "calling schedule_apply_chunks for {block_height}");
         self.schedule_apply_chunks(
             block_hash,
             block_height,
@@ -2059,6 +2061,7 @@ impl Chain {
         apply_chunks_done_callback: DoneApplyChunkCallback,
     ) {
         let sc = self.apply_chunks_sender.clone();
+        debug!(target: "chain", "inside schedule_apply_chunks for {block_height}");
         spawn(move || {
             // do_apply_chunks runs `work` parallelly, but still waits for all of them to finish
             let res = do_apply_chunks(block_hash, block_height, work);
@@ -3875,6 +3878,7 @@ impl Chain {
                             "new_chunk",
                             shard_id)
                         .entered();
+                        debug!(target: "chain", "inside apply chunks new chunk work for {shard_id} {height}");
                         let _timer = CryptoHashTimer::new(chunk.chunk_hash().0);
                         match runtime_adapter.apply_transactions(
                             shard_id,
@@ -3937,6 +3941,7 @@ impl Chain {
                             "existing_chunk",
                             shard_id)
                         .entered();
+                        debug!(target: "chain", "inside apply chunks no chunk work for {shard_id} {height}");
                         match runtime_adapter.apply_transactions(
                             shard_id,
                             new_extra.state_root(),
@@ -5491,6 +5496,7 @@ pub fn do_apply_chunks(
     let parent_span =
         tracing::debug_span!(target: "chain", "do_apply_chunks", block_height, %block_hash)
             .entered();
+    debug!(target: "chain", "inside do_apply_chunks for {block_height}");
     work.into_par_iter()
         .map(|task| {
             // As chunks can be processed in parallel, make sure they are all tracked as children of
