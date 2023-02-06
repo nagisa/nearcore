@@ -500,6 +500,8 @@ use near_primitives::shard_layout::account_id_to_shard_id;
 use near_primitives::shard_layout::ShardLayout;
 #[cfg(feature = "protocol_feature_flat_state")]
 use near_primitives::trie_key::trie_key_parsers::parse_account_id_from_raw_key;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
 use std::sync::{Arc, RwLock};
 use tracing::debug;
 #[cfg(feature = "protocol_feature_flat_state")]
@@ -1021,7 +1023,9 @@ impl FlatStorageState {
                 metrics.cached_deltas.inc();
                 metrics.cached_deltas_num_items.add(delta.len() as i64);
                 metrics.cached_deltas_size.add(delta.total_size() as i64);
-                deltas.insert(hash, delta);
+                if deltas.len() < 12 {
+                    deltas.insert(hash, delta);
+                }
             }
         }
 
@@ -1196,7 +1200,25 @@ impl FlatStorageState {
             return Err(guard.create_block_not_supported_error(block_hash));
         }
         let mut store_update = StoreUpdate::new(guard.store.storage.clone());
-        store_helper::set_delta(&mut store_update, guard.shard_id, block_hash.clone(), &delta)?;
+
+        // BLOW DELTA UP TO 10 MEGS
+        let mut blown_delta = delta.clone();
+        let current_size = blown_delta.total_size() as u32;
+        let delta_items = (10_000_000u32.saturating_sub(current_size)) / 1_000;
+        let mut rng: ChaCha20Rng = SeedableRng::seed_from_u64(123);
+
+        for i in 0..delta_items {
+            // 50 MB / key length
+            let mut key = vec![100u8]; // start from non-existent byte
+            key.extend_from_slice(&(0..939).map(|_| rng.gen_range(0..20)).collect::<Vec<_>>()); // 900 B per length + 100 B approximate overhead
+            blown_delta.insert(key, Some(ValueRef::new(&[(i / 256 % 256) as u8, (i % 256) as u8])));
+        }
+        store_helper::set_delta(
+            &mut store_update,
+            guard.shard_id,
+            block_hash.clone(),
+            &blown_delta,
+        )?;
 
         let cached_deltas = guard.metrics.cached_deltas.get();
         if cached_deltas < 12 {
