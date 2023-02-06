@@ -1216,6 +1216,7 @@ impl Client {
         let paths = std::fs::read_dir("/tmp/shadowing_deltas").unwrap();
         let mut max_to: Option<u64> = None;
         let mut max_path: Option<String> = None;
+        let mut from: Option<u64> = None;
         for path in paths {
             let path = path.unwrap().file_name();
             let path = path.to_str();
@@ -1228,6 +1229,7 @@ impl Client {
                         if max_to.is_none() || to < max_to.unwrap() {
                             max_to = Some(to);
                             max_path = Some(path.to_string());
+                            from = Some(caps.get(1).unwrap().as_str().parse().unwrap());
                         }
                     }
                 }
@@ -1246,8 +1248,32 @@ impl Client {
             let mut prev_state_roots = match maybe_applied_head {
                 Some(x) => x.1,
                 None => {
-                    let block = self.chain.genesis_block();
-                    block.chunks().iter().map(|chunk| chunk.prev_state_root()).collect()
+                    tracing::warn!(target: "shard-shadowing-rx", "Looking for last known chunk extra");
+                    let mut shard_id = 0;
+                    while shard_id < is_shard_tracked.len() && is_shard_tracked[shard_id] {
+                        shard_id += 1;
+                    }
+                    assert_ne!(shard_id, is_shard_tracked.len());
+                    tracing::warn!(target: "shard-shadowing-rx", ?shard_id, "Using the shard which is not tracked");
+                    let mut from = from.unwrap();
+                    loop {
+                        tracing::warn!(target: "shard-shadowing-rx", ?shard_id, block_height = ?from, "Checking block height");
+                        let block_header = self.chain.get_block_header_by_height(from).unwrap();
+                        let shard_uid = self
+                            .runtime_adapter
+                            .shard_id_to_uid(shard_id as ShardId, block_header.epoch_id())
+                            .unwrap();
+                        if self.chain.get_chunk_extra(block_header.hash(), &shard_uid).is_ok() {
+                            let block = self.chain.get_block(block_header.hash()).unwrap();
+                            tracing::warn!(target: "shard-shadowing-rx", ?shard_id, block_height = ?from, "This block has chunk extra for the shard");
+                            break block
+                                .chunks()
+                                .iter()
+                                .map(|chunk| chunk.prev_state_root())
+                                .collect();
+                        }
+                        from -= 1;
+                    }
                 }
             };
             tracing::warn!(target: "shard-shadowing-rx", num_shards, ?is_shard_tracked, head_height = head.height, applied_head, ?max_path, ?max_to, ?prev_state_roots);
@@ -1286,7 +1312,6 @@ impl Client {
                 {
                     let shard_uid =
                         runtime_adapter.shard_id_to_uid(shard_id as ShardId, epoch_id).unwrap();
-                    // let chunk_extra = self.chain.get_chunk_extra(block_header.hash(), &shard_uid).unwrap();
                     let state_root = prev_state_roots[shard_id];
                     let trie = runtime_adapter
                         .get_trie_for_shard(shard_id as ShardId, &block_hash, state_root, false)
