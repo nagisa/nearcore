@@ -556,6 +556,7 @@ impl FlatStateDelta {
 }
 
 use byteorder::{BigEndian, ReadBytesExt};
+use lru::LruCache;
 use near_o11y::metrics::IntGauge;
 use near_primitives::errors::StorageError;
 #[cfg(feature = "protocol_feature_flat_state")]
@@ -621,6 +622,11 @@ struct FlatStorageStateInner {
     deltas: HashMap<CryptoHash, Arc<FlatStateDelta>>,
     #[allow(unused)]
     metrics: FlatStorageMetrics,
+    /// Cache for the mapping from trie storage keys to value refs for `flat_head`.
+    /// Must be equivalent to the mapping stored on disk only for `flat_head`. For
+    /// other blocks, deltas have to be applied as usual.
+    #[allow(unused)]
+    value_ref_cache: LruCache<Vec<u8>, Option<ValueRef>>,
 }
 
 struct FlatStorageMetrics {
@@ -915,6 +921,11 @@ impl FlatStorageStateInner {
 
         Ok(blocks)
     }
+
+    #[cfg(feature = "protocol_feature_flat_state")]
+    fn get_cached_ref(&mut self, key: &[u8]) -> Option<Option<ValueRef>> {
+        self.value_ref_cache.get(key).cloned()
+    }
 }
 
 impl FlatStorageState {
@@ -928,6 +939,7 @@ impl FlatStorageState {
         // Unfortunately we don't have access to ChainStore inside this file because of package
         // dependencies, so we pass these functions in to access chain info
         chain_access: &dyn ChainAccessForFlatStorage,
+        cache_capacity: usize,
     ) -> Self {
         let flat_head = store_helper::get_flat_head(&store, shard_id)
             .unwrap_or_else(|| panic!("Cannot read flat head for shard {} from storage", shard_id));
@@ -996,6 +1008,7 @@ impl FlatStorageState {
             blocks,
             deltas,
             metrics,
+            value_ref_cache: LruCache::new(cache_capacity),
         })))
     }
 
