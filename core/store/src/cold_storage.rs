@@ -59,7 +59,7 @@ pub fn update_cold_db<D: Database>(
     shard_layout: &ShardLayout,
     height: &BlockHeight,
 ) -> io::Result<bool> {
-    let _span = tracing::debug_span!(target: "store", "update cold db", height = height);
+    let _span = tracing::debug_span!(target: "cold_store", "update cold db", height = height);
     let _timer = metrics::COLD_COPY_DURATION.start_timer();
 
     let mut store_with_cache = StoreWithCache { store: hot_store, cache: StoreCache::new() };
@@ -92,7 +92,7 @@ fn copy_from_store<D: Database>(
     col: DBCol,
     keys: Vec<StoreKey>,
 ) -> io::Result<()> {
-    let _span = tracing::debug_span!(target: "store", "create and write transaction to cold db", col = %col);
+    let _span = tracing::debug_span!(target: "cold_store", "create and write transaction to cold db", col = %col);
 
     let mut transaction = DBTransaction::new();
     for key in keys {
@@ -127,7 +127,7 @@ pub fn update_cold_head<D: Database>(
     hot_store: &Store,
     height: &BlockHeight,
 ) -> io::Result<()> {
-    tracing::debug!(target: "store", "update HEAD of cold db to {}", height);
+    tracing::debug!(target: "cold_store", "update HEAD of cold db to {}", height);
 
     let mut store = StoreWithCache { store: hot_store, cache: StoreCache::new() };
 
@@ -161,11 +161,20 @@ pub fn copy_all_data_to_cold<D: Database + 'static>(
     cold_db: std::sync::Arc<ColdDB<D>>,
     hot_store: &Store,
     batch_size: usize,
+    keep_going: std::sync::Arc<std::sync::atomic::AtomicBool>,
 ) -> io::Result<()> {
     for col in DBCol::iter() {
+        if !keep_going.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::debug!(target: "cold_store", "stopping copy_all_data_to_cold");
+            break;
+        }
         if col.is_cold() {
             let mut transaction = BatchTransaction::new(cold_db.clone(), batch_size);
             for result in hot_store.iter(col) {
+                if !keep_going.load(std::sync::atomic::Ordering::SeqCst) {
+                    tracing::debug!(target: "cold_store", "stopping copy_all_data_to_cold");
+                    break;
+                }
                 let (key, value) = result?;
                 transaction.set(col, key.to_vec(), value.to_vec())?;
             }
