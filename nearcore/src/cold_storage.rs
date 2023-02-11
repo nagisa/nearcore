@@ -140,10 +140,13 @@ fn cold_store_loop(
 
         tracing::info!(target: "cold_store", "triggering initial population of cold store");
         // TODO take batch_size from config
-        copy_all_data_to_cold(cold_db.clone(), &hot_store, 500_000_000, keep_going.clone())
-            .unwrap();
-
-        update_cold_head(&cold_db, &hot_store, &hot_final_head_height).unwrap();
+        if copy_all_data_to_cold(cold_db.clone(), &hot_store, 500_000_000, keep_going.clone())
+            .unwrap()
+        {
+            tracing::info!(target: "cold_store", "initial population was successful, writing cold head and hot db kind");
+            update_cold_head(&cold_db, &hot_store, &hot_final_head_height).unwrap();
+            hot_store.set_db_kind(near_store::metadata::DbKind::Hot).unwrap();
+        }
     }
 
     tracing::info!(target: "cold_store", "starting cold store loop");
