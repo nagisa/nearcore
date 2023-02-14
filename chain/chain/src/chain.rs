@@ -470,6 +470,8 @@ pub struct Chain {
     /// Used to store state parts already requested along with elapsed time
     /// to create the parts. This information is used for debugging
     pub(crate) requested_state_parts: StateRequestTracker,
+    pub flat_head_stop: Option<BlockHeight>,
+    pub chain_config: ChainConfig,
 }
 
 impl Drop for Chain {
@@ -534,6 +536,8 @@ impl Chain {
             invalid_blocks: LruCache::new(INVALID_CHUNKS_POOL_SIZE),
             pending_state_patch: Default::default(),
             requested_state_parts: StateRequestTracker::new(),
+            flat_head_stop: None,
+            chain_config: Default::default(),
         })
     }
 
@@ -546,7 +550,7 @@ impl Chain {
         // Get runtime initial state and create genesis block out of it.
         let (store, state_roots) = runtime_adapter.genesis_state();
         let mut store =
-            ChainStore::new(store, chain_genesis.height, chain_config.save_trie_changes);
+            ChainStore::new(store, chain_genesis.height, chain_config.save_trie_changes.clone());
         let genesis_chunks = genesis_chunks(
             state_roots.clone(),
             runtime_adapter.num_shards(&EpochId::default())?,
@@ -683,6 +687,8 @@ impl Chain {
             last_time_head_updated: Clock::instant(),
             pending_state_patch: Default::default(),
             requested_state_parts: StateRequestTracker::new(),
+            flat_head_stop: None,
+            chain_config,
         })
     }
 
@@ -2103,6 +2109,19 @@ impl Chain {
         block: &Block,
         shard_id: ShardId,
     ) -> Result<(), Error> {
+        let need_fs_update = match self.chain_config.flat_head_catchup_period.clone() {
+            0 => true,
+            period @ _ => {
+                let head_height = self.head().unwrap().height.clone();
+                let step = head_height % (period as u64);
+                step >= self.chain_config.flat_head_skip_blocks as u64
+            }
+        };
+
+        if !need_fs_update {
+            return Ok(());
+        }
+
         if let Some(flat_storage_state) =
             self.runtime_adapter.get_flat_storage_state_for_shard(shard_id)
         {

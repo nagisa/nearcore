@@ -60,7 +60,7 @@ mod imp {
     use near_primitives::state::ValueRef;
     use near_primitives::types::ShardId;
     use std::collections::HashMap;
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, Mutex, RwLock};
     use tracing::debug;
 
     use crate::{Store, StoreUpdate};
@@ -73,7 +73,6 @@ mod imp {
     /// requested only once during applying chunk.
     // TODO (#7327): lock flat state when `get_ref` is called or head is being updated. Otherwise, `apply_chunks` and
     // `postprocess_block` parallel execution may corrupt the state.
-    #[derive(Clone)]
     pub struct FlatState {
         /// Used to access flat state stored at the head of flat storage.
         /// It should store all trie keys and values/value refs for the state on top of
@@ -90,6 +89,10 @@ mod imp {
         /// blocks' state are stored in flat storage.
         #[allow(unused)]
         flat_storage_state: FlatStorageState,
+        #[allow(unused)]
+        reads_sum_ns: RwLock<u64>,
+        #[allow(unused)]
+        reads_cnt: RwLock<u64>,
     }
 
     #[derive(Clone)]
@@ -104,7 +107,14 @@ mod imp {
             cache: FlatStateCache,
             flat_storage_state: FlatStorageState,
         ) -> Self {
-            Self { store, block_hash, cache, flat_storage_state }
+            Self {
+                store,
+                block_hash,
+                cache,
+                flat_storage_state,
+                reads_sum_ns: Default::default(),
+                reads_cnt: Default::default(),
+            }
         }
         /// Returns value reference using raw trie key, taken from the state
         /// corresponding to `FlatState::block_hash`.

@@ -95,6 +95,8 @@ pub struct StoreConfig {
     pub flat_storage_creation_period: Duration,
     /// Capacity of `ValueRef`s cache for flat storage head for each shard.
     pub flat_state_cache_capacity: u64,
+    pub flat_head_skip_blocks: usize,
+    pub flat_head_catchup_period: usize,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -239,6 +241,8 @@ impl Default for StoreConfig {
             // Total size of all flat state caches can't exceed 100_000 * 2 KB (max
             // storage key length) * 4 (number of tracked shards) = 800 MB.
             flat_state_cache_capacity: 100_000,
+            flat_head_skip_blocks: 60,
+            flat_head_catchup_period: 300,
         }
     }
 }

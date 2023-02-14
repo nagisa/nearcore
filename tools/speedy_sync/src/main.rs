@@ -240,6 +240,7 @@ fn load_snapshot(load_cmd: LoadCmd) {
         ChainConfig {
             save_trie_changes: config.client_config.save_trie_changes,
             background_migration_threads: 1,
+            ..Default::default()
         },
     )
     .unwrap();
