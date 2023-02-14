@@ -1255,11 +1255,13 @@ impl Runtime {
                 reads_sum_ns: trie
                     .as_ref()
                     .flat_state
+                    .as_ref()
                     .map(|f| *f.reads_sum_ns.read().unwrap())
                     .unwrap_or_default(),
                 reads_cnt: trie
                     .as_ref()
                     .flat_state
+                    .as_ref()
                     .map(|f| *f.reads_cnt.read().unwrap())
                     .unwrap_or_default(),
             });
@@ -1459,11 +1461,13 @@ impl Runtime {
             reads_sum_ns: trie
                 .as_ref()
                 .flat_state
+                .as_ref()
                 .map(|f| *f.reads_sum_ns.read().unwrap())
                 .unwrap_or_default(),
             reads_cnt: trie
                 .as_ref()
                 .flat_state
+                .as_ref()
                 .map(|f| *f.reads_cnt.read().unwrap())
                 .unwrap_or_default(),
         })
