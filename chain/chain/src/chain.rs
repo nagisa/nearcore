@@ -2138,17 +2138,18 @@ impl Chain {
                 if step >= self.chain_config.flat_storage_measure_blocks as u64 {
                     // measure period stopped. aggregate all stats and remove
                     if let Some(reads_sum_ns) = self.reads_sum_ns.get(&shard_id) {
-                        let reads_cnt = self.reads_cnt.get(&shard_id).unwrap_or(&1);
+                        let mut reads_cnt = self.reads_cnt.get(&shard_id).unwrap_or(&0).clone();
+                        reads_cnt = reads_cnt.min(1);
                         let reads_blocks = self.reads_blocks.get(&shard_id).unwrap_or(&0);
                         metrics::GET_REF_SUM
                             .with_label_values(&[&shard_id.to_string()])
                             .set(*reads_sum_ns as i64);
                         metrics::GET_REF_CNT
                             .with_label_values(&[&shard_id.to_string()])
-                            .set(*reads_cnt as i64);
+                            .set(reads_cnt as i64);
                         metrics::GET_REF_AVG
                             .with_label_values(&[&shard_id.to_string()])
-                            .set(((*reads_sum_ns) / (*reads_cnt)) as i64);
+                            .set(((*reads_sum_ns) / reads_cnt) as i64);
                         metrics::GET_REF_BLOCKS
                             .with_label_values(&[&shard_id.to_string()])
                             .set(*reads_blocks as i64);
