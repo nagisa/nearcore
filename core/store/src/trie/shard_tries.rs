@@ -343,6 +343,8 @@ pub struct WrappedTrieChanges {
     trie_changes: TrieChanges,
     state_changes: Vec<RawStateChangesWithTrieKey>,
     block_hash: CryptoHash,
+    pub reads_sum_ns: u64,
+    pub reads_cnt: u64,
 }
 
 impl WrappedTrieChanges {
@@ -353,7 +355,15 @@ impl WrappedTrieChanges {
         state_changes: Vec<RawStateChangesWithTrieKey>,
         block_hash: CryptoHash,
     ) -> Self {
-        WrappedTrieChanges { tries, shard_uid, trie_changes, state_changes, block_hash }
+        WrappedTrieChanges {
+            tries,
+            shard_uid,
+            trie_changes,
+            state_changes,
+            block_hash,
+            reads_sum_ns: 0,
+            reads_cnt: 0,
+        }
     }
 
     pub fn state_changes(&self) -> &[RawStateChangesWithTrieKey] {

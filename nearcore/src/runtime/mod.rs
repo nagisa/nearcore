@@ -550,14 +550,18 @@ impl NightshadeRuntime {
 
         let shard_uid = self.get_shard_uid_from_prev_hash(shard_id, prev_block_hash)?;
 
+        let mut trie_changes = WrappedTrieChanges::new(
+            self.get_tries(),
+            shard_uid,
+            apply_result.trie_changes,
+            apply_result.state_changes,
+            *block_hash,
+        );
+        trie_changes.reads_sum_ns = apply_result.reads_sum_ns;
+        trie_changes.reads_cnt = apply_result.reads_cnt;
+
         let result = ApplyTransactionResult {
-            trie_changes: WrappedTrieChanges::new(
-                self.get_tries(),
-                shard_uid,
-                apply_result.trie_changes,
-                apply_result.state_changes,
-                *block_hash,
-            ),
+            trie_changes,
             new_root: apply_result.state_root,
             outcomes: apply_result.outcomes,
             outgoing_receipts: apply_result.outgoing_receipts,

@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration as TimeDuration, Instant};
 
 use borsh::BorshSerialize;
@@ -472,6 +472,9 @@ pub struct Chain {
     pub(crate) requested_state_parts: StateRequestTracker,
     pub flat_head_stop: Option<BlockHeight>,
     pub chain_config: ChainConfig,
+    pub reads_blocks: HashMap<ShardId, u64>,
+    pub reads_sum_ns: HashMap<ShardId, u64>,
+    pub reads_cnt: HashMap<ShardId, u64>,
 }
 
 impl Drop for Chain {
@@ -538,6 +541,9 @@ impl Chain {
             requested_state_parts: StateRequestTracker::new(),
             flat_head_stop: None,
             chain_config: Default::default(),
+            reads_blocks: Default::default(),
+            reads_sum_ns: Default::default(),
+            reads_cnt: Default::default(),
         })
     }
 
@@ -689,6 +695,9 @@ impl Chain {
             requested_state_parts: StateRequestTracker::new(),
             flat_head_stop: None,
             chain_config,
+            reads_blocks: Default::default(),
+            reads_sum_ns: Default::default(),
+            reads_cnt: Default::default(),
         })
     }
 
@@ -2093,10 +2102,22 @@ impl Chain {
         block_preprocess_info: BlockPreprocessInfo,
         apply_results: Vec<Result<ApplyChunkResult, Error>>,
     ) -> Result<Option<Tip>, Error> {
-        let mut chain_update = self.chain_update();
-        let new_head =
-            chain_update.postprocess_block(me, &block, block_preprocess_info, apply_results)?;
-        chain_update.commit()?;
+        let (mut reads_sum_ns, mut reads_cnt, new_head) = {
+            let mut chain_update = self.chain_update();
+            let new_head =
+                chain_update.postprocess_block(me, &block, block_preprocess_info, apply_results)?;
+            let reads_sum_ns = chain_update.reads_sum_ns.clone();
+            let reads_cnt = chain_update.reads_cnt.clone();
+            chain_update.commit()?;
+            (reads_sum_ns, reads_cnt, new_head)
+        };
+        for (shard_id, value) in reads_sum_ns.drain() {
+            *self.reads_sum_ns.entry(shard_id).or_default() += value;
+        }
+        for (shard_id, value) in reads_cnt.drain() {
+            *self.reads_cnt.entry(shard_id.clone()).or_default() += value;
+            *self.reads_blocks.entry(shard_id).or_default() += 1;
+        }
         Ok(new_head)
     }
 
@@ -2114,6 +2135,28 @@ impl Chain {
             period @ _ => {
                 let head_height = self.head().unwrap().height.clone();
                 let step = head_height % (period as u64);
+                if step >= self.chain_config.flat_storage_measure_blocks as u64 {
+                    // measure period stopped. aggregate all stats and remove
+                    if let Some(reads_sum_ns) = self.reads_sum_ns.get(&shard_id) {
+                        let reads_cnt = self.reads_cnt.get(&shard_id).unwrap_or(&1);
+                        let reads_blocks = self.reads_blocks.get(&shard_id).unwrap_or(&0);
+                        metrics::GET_REF_SUM
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(*reads_sum_ns as i64);
+                        metrics::GET_REF_CNT
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(*reads_cnt as i64);
+                        metrics::GET_REF_AVG
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(((*reads_sum_ns) / (*reads_cnt)) as i64);
+                        metrics::GET_REF_BLOCKS
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(*reads_blocks as i64);
+                    }
+                    self.reads_sum_ns.remove(&shard_id);
+                    self.reads_cnt.remove(&shard_id);
+                    self.reads_blocks.remove(&shard_id);
+                }
                 step >= self.chain_config.flat_head_skip_blocks as u64
             }
         };
@@ -4665,6 +4708,8 @@ pub struct ChainUpdate<'a> {
     doomslug_threshold_mode: DoomslugThresholdMode,
     #[allow(unused)]
     transaction_validity_period: BlockHeightDelta,
+    pub reads_sum_ns: HashMap<ShardId, u64>,
+    pub reads_cnt: HashMap<ShardId, u64>,
 }
 
 pub struct SameHeightResult {
@@ -4719,6 +4764,8 @@ impl<'a> ChainUpdate<'a> {
             chain_store_update,
             doomslug_threshold_mode,
             transaction_validity_period,
+            reads_sum_ns: Default::default(),
+            reads_cnt: Default::default(),
         }
     }
 
@@ -4930,6 +4977,9 @@ impl<'a> ChainUpdate<'a> {
         shard_id: ShardId,
         trie_changes: &WrappedTrieChanges,
     ) -> Result<(), Error> {
+        self.reads_sum_ns.insert(shard_id.clone(), trie_changes.reads_sum_ns);
+        self.reads_cnt.insert(shard_id.clone(), trie_changes.reads_cnt);
+
         #[cfg(feature = "protocol_feature_flat_state")]
         {
             let delta = FlatStateDelta::from_state_changes(&trie_changes.state_changes());

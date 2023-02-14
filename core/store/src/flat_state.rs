@@ -61,6 +61,7 @@ mod imp {
     use near_primitives::types::ShardId;
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex, RwLock};
+    use std::time::Instant;
     use tracing::debug;
 
     use crate::{Store, StoreUpdate};
@@ -90,9 +91,9 @@ mod imp {
         #[allow(unused)]
         flat_storage_state: FlatStorageState,
         #[allow(unused)]
-        reads_sum_ns: RwLock<u64>,
+        pub reads_sum_ns: RwLock<u64>,
         #[allow(unused)]
-        reads_cnt: RwLock<u64>,
+        pub reads_cnt: RwLock<u64>,
     }
 
     #[derive(Clone)]
@@ -124,7 +125,14 @@ mod imp {
         /// could charge users for the value length before loading the value.
         // TODO (#7327): consider inlining small values, so we could use only one db access.
         pub fn get_ref(&self, key: &[u8]) -> Result<Option<ValueRef>, crate::StorageError> {
-            self.flat_storage_state.get_ref(&self.block_hash, key)
+            let started = Instant::now();
+            let result = self.flat_storage_state.get_ref(&self.block_hash, key);
+            let elapsed = started.elapsed().as_nanos() as u64;
+            let mut reads_sum_ns = self.reads_sum_ns.write().unwrap();
+            *reads_sum_ns += elapsed;
+            let mut reads_cnt = self.reads_cnt.write().unwrap();
+            *reads_cnt += 1;
+            result
         }
     }
 

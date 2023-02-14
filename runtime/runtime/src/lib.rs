@@ -123,6 +123,8 @@ pub struct ApplyResult {
     pub stats: ApplyStats,
     pub processed_delayed_receipts: Vec<Receipt>,
     pub proof: Option<PartialStorage>,
+    pub reads_sum_ns: u64,
+    pub reads_cnt: u64,
 }
 
 #[derive(Debug)]
@@ -1250,6 +1252,14 @@ impl Runtime {
                 stats,
                 processed_delayed_receipts: vec![],
                 proof,
+                reads_sum_ns: trie
+                    .flat_state
+                    .map(|f| *f.reads_sum_ns.read().unwrap())
+                    .unwrap_or_default(),
+                reads_cnt: trie
+                    .flat_state
+                    .map(|f| *f.reads_cnt.read().unwrap())
+                    .unwrap_or_default(),
             });
         }
 
@@ -1444,6 +1454,11 @@ impl Runtime {
             stats,
             processed_delayed_receipts,
             proof,
+            reads_sum_ns: trie
+                .flat_state
+                .map(|f| *f.reads_sum_ns.read().unwrap())
+                .unwrap_or_default(),
+            reads_cnt: trie.flat_state.map(|f| *f.reads_cnt.read().unwrap()).unwrap_or_default(),
         })
     }
 

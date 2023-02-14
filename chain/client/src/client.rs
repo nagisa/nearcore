@@ -201,6 +201,7 @@ impl Client {
         let chain_config = ChainConfig {
             save_trie_changes: config.save_trie_changes,
             background_migration_threads: config.client_background_migration_threads,
+            flat_storage_measure_blocks: config.flat_storage_measure_blocks,
             flat_head_skip_blocks: config.flat_head_skip_blocks,
             flat_head_catchup_period: config.flat_head_catchup_period,
         };

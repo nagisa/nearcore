@@ -243,6 +243,7 @@ pub struct ChainConfig {
     /// Number of threads to execute background migration work.
     /// Currently used for flat storage background creation.
     pub background_migration_threads: usize,
+    pub flat_storage_measure_blocks: usize,
     pub flat_head_skip_blocks: usize,
     pub flat_head_catchup_period: usize,
 }

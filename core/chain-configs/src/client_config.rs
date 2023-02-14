@@ -171,6 +171,7 @@ pub struct ClientConfig {
     pub client_background_migration_threads: usize,
     /// Duration to perform background flat storage creation step.
     pub flat_storage_creation_period: Duration,
+    pub flat_storage_measure_blocks: usize,
     pub flat_head_skip_blocks: usize,
     pub flat_head_catchup_period: usize,
 }
@@ -243,6 +244,7 @@ impl ClientConfig {
             enable_statistics_export: true,
             client_background_migration_threads: 1,
             flat_storage_creation_period: Duration::from_secs(1),
+            flat_storage_measure_blocks: 0,
             flat_head_skip_blocks: 0,
             flat_head_catchup_period: 0,
         }
