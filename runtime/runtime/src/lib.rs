@@ -1253,10 +1253,12 @@ impl Runtime {
                 processed_delayed_receipts: vec![],
                 proof,
                 reads_sum_ns: trie
+                    .as_ref()
                     .flat_state
                     .map(|f| *f.reads_sum_ns.read().unwrap())
                     .unwrap_or_default(),
                 reads_cnt: trie
+                    .as_ref()
                     .flat_state
                     .map(|f| *f.reads_cnt.read().unwrap())
                     .unwrap_or_default(),
@@ -1455,10 +1457,15 @@ impl Runtime {
             processed_delayed_receipts,
             proof,
             reads_sum_ns: trie
+                .as_ref()
                 .flat_state
                 .map(|f| *f.reads_sum_ns.read().unwrap())
                 .unwrap_or_default(),
-            reads_cnt: trie.flat_state.map(|f| *f.reads_cnt.read().unwrap()).unwrap_or_default(),
+            reads_cnt: trie
+                .as_ref()
+                .flat_state
+                .map(|f| *f.reads_cnt.read().unwrap())
+                .unwrap_or_default(),
         })
     }
 

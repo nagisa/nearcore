@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::{Duration as TimeDuration, Instant};
 
 use borsh::BorshSerialize;
