@@ -111,11 +111,15 @@ pub static STATE_PART_ELAPSED: Lazy<HistogramVec> = Lazy::new(|| {
 pub static NUM_INVALID_BLOCKS: Lazy<IntGauge> = Lazy::new(|| {
     try_create_int_gauge("near_num_invalid_blocks", "Number of invalid blocks").unwrap()
 });
-pub static GET_REF_SUM: Lazy<IntGaugeVec> =
-    Lazy::new(|| try_create_int_gauge_vec("near_get_ref_sum", "", &["shard_id"]).unwrap());
-pub static GET_REF_AVG: Lazy<IntGaugeVec> =
-    Lazy::new(|| try_create_int_gauge_vec("near_get_ref_avg", "", &["shard_id"]).unwrap());
-pub static GET_REF_CNT: Lazy<IntGaugeVec> =
-    Lazy::new(|| try_create_int_gauge_vec("near_get_ref_cnt", "", &["shard_id"]).unwrap());
-pub static GET_REF_BLOCKS: Lazy<IntGaugeVec> =
-    Lazy::new(|| try_create_int_gauge_vec("near_get_ref_blocks", "", &["shard_id"]).unwrap());
+pub static GET_REF_SUM: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec("near_get_ref_sum", "near_get_ref_sum", &["shard_id"]).unwrap()
+});
+pub static GET_REF_AVG: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec("near_get_ref_avg", "near_get_ref_avg", &["shard_id"]).unwrap()
+});
+pub static GET_REF_CNT: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec("near_get_ref_cnt", "near_get_ref_cnt", &["shard_id"]).unwrap()
+});
+pub static GET_REF_BLOCKS: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec("near_get_ref_blocks", "near_get_ref_blocks", &["shard_id"]).unwrap()
+});
