@@ -164,10 +164,13 @@ enum ColdStoreInitialMigrationResult {
 fn cold_store_initial_migration(
     keep_going: Arc<AtomicBool>,
     hot_store: &Store,
+    cold_store: &Store,
     cold_db: Arc<ColdDB>,
 ) -> anyhow::Result<ColdStoreInitialMigrationResult> {
     // We only need to perform the migration if hot store is of kind Archive and cold store doesn't have a head yet
-    if hot_store.get_db_kind()? != Some(DbKind::Archive) || cold_store.get(DBCol::BlockMisc, HEAD_KEY)?.is_some() {
+    if hot_store.get_db_kind()? != Some(DbKind::Archive)
+        || cold_store.get(DBCol::BlockMisc, HEAD_KEY)?.is_some()
+    {
         return Ok(ColdStoreInitialMigrationResult::NoNeedForMigration);
     }
 
@@ -210,7 +213,12 @@ fn cold_store_loop(
             tracing::debug!(target: "cold_store", "stopping the initial migration loop");
             break;
         }
-        match cold_store_initial_migration(keep_going.clone(), &hot_store, cold_db.clone()) {
+        match cold_store_initial_migration(
+            keep_going.clone(),
+            &hot_store,
+            &cold_store,
+            cold_db.clone(),
+        ) {
             // We can either stop the cold store thread or hope that next time migration will not fail.
             // Here we pick the second option.
             Err(err) => {
