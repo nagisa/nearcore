@@ -11,7 +11,6 @@ use near_store::{
     DBCol, NodeStorage, Store, FINAL_HEAD_KEY, HEAD_KEY, TAIL_KEY,
 };
 
-use crate::cold_storage::ColdStoreInitialMigrationResult::SuccessfulMigration;
 use crate::{metrics, NearConfig, NightshadeRuntime};
 
 /// A handle that keeps the state of the cold store loop and can be used to stop it.
@@ -145,6 +144,23 @@ enum ColdStoreInitialMigrationResult {
     MigrationInterrupted,
 }
 
+/// This function performes intial population of cold storage if needed.
+/// Migration can be interrupted via `keep_going` flag.
+///
+/// First, checks that hot store is of kind `Archive`. If not, no migration needed.
+/// Then, captures hot final head BEFORE the migration, as migration is performed during normal neard run.
+/// If hot final head is not set, returns Err.
+/// Otherwise:
+/// 1. performed migration
+/// 2. updates head to saved hot final head
+/// 3. updates hot db kind to `Hot`.
+///
+/// Any Ok status means that this function should not be retryied:
+/// - either migration was performed (now or earlier)
+/// - or migration was interrupted, which means the `keep_going` flag was set to `false`
+///   ehich means that everything cold store thread related has to stop
+///
+/// Error status means that for some reason migration cannot be performed.
 fn cold_store_initial_migration(
     keep_going: Arc<AtomicBool>,
     hot_store: &Store,
@@ -159,15 +175,18 @@ fn cold_store_initial_migration(
 
     tracing::info!(target: "cold_store", "Starting initial population of cold store");
 
-    // If FINAL_HEAD is not set for hot storage we default it to genesis_height.
-    let hot_final_head = hot_store.get_ser::<Tip>(DBCol::BlockMisc, FINAL_HEAD_KEY)?;
+    // If FINAL_HEAD is not set for hot storage something isn't right and we will probably fail in `update_cold_head`.
+    // Let's fail early.
+    let hot_final_head = hot_store
+        .get_ser::<Tip>(DBCol::BlockMisc, FINAL_HEAD_KEY)?
+        .ok_or_else(anyhow::anyhow!("FINAL_HEAD not found in hot storage"))?;
     let hot_final_head_height = hot_final_head.map_or(genesis_height, |tip| tip.height);
 
     // TODO take batch_size from config
     if copy_all_data_to_cold(cold_db.clone(), &hot_store, 500_000_000, keep_going.clone())? {
         tracing::info!(target: "cold_store", "Initial population was successful, writing cold head and hot db kind");
-        update_cold_head(&cold_db, &hot_store, &hot_final_head_height).unwrap();
-        hot_store.set_db_kind(near_store::metadata::DbKind::Hot).unwrap();
+        update_cold_head(&cold_db, &hot_store, &hot_final_head_height)?;
+        hot_store.set_db_kind(near_store::metadata::DbKind::Hot)?;
         Ok(ColdStoreInitialMigrationResult::SuccessfulMigration)
     } else {
         Ok(ColdStoreInitialMigrationResult::MigrationInterrupted)
@@ -201,10 +220,13 @@ fn cold_store_loop(
             cold_db.clone(),
             genesis_height,
         ) {
+            // We can either stop the cold store thread or hope that next time migration will not fail.
+            // Here we pick the second option.
             Err(err) => {
                 tracing::error!(target: "cold_store", "initial migration failed, sleeping 30s and trying again");
                 std::thread::sleep(std::time::Duration::from_secs(30));
             }
+            // Any Ok status from `cold_store_initial_migration` function means that we can proceed to regular run.
             Ok(status) => {
                 tracing::info!(target: "cold_store", "Initial migration status: {:?}. Moving on.", status);
                 break;

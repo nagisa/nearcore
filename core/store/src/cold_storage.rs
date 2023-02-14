@@ -24,6 +24,7 @@ struct StoreWithCache<'a> {
 
 /// The BatchTransaction can be used to write multiple set operations to the cold db in batches.
 /// [`write`] is called every time `transaction_size` overgrows `threshold_transaction_size`.
+/// [`write`] should also be called manually before dropping BatchTransaction to write any leftovers.
 struct BatchTransaction<D: Database + 'static> {
     cold_db: std::sync::Arc<ColdDB<D>>,
     transaction: DBTransaction,
