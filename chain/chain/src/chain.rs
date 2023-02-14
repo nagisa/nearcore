@@ -2102,7 +2102,7 @@ impl Chain {
         block_preprocess_info: BlockPreprocessInfo,
         apply_results: Vec<Result<ApplyChunkResult, Error>>,
     ) -> Result<Option<Tip>, Error> {
-        let (mut reads_sum_ns, mut reads_cnt, new_head) = {
+        let (mut reads_sum_ns, reads_cnt, new_head) = {
             let mut chain_update = self.chain_update();
             let new_head =
                 chain_update.postprocess_block(me, &block, block_preprocess_info, apply_results)?;
@@ -2115,8 +2115,7 @@ impl Chain {
             if let Some(reads_sum_ns) = self.reads_sum_ns.get_mut(&shard_id) {
                 // *self.reads_sum_ns.entry(shard_id).or_default() += value;
                 *reads_sum_ns += value;
-                *self.reads_cnt.get_mut(&shard_id).unwrap() +=
-                    *self.reads_cnt.get(&shard_id).unwrap();
+                *self.reads_cnt.get_mut(&shard_id).unwrap() += *reads_cnt.get(&shard_id).unwrap();
                 *self.reads_blocks.get_mut(&shard_id).unwrap() += 1;
             }
         }
