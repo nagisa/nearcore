@@ -2112,11 +2112,13 @@ impl Chain {
             (reads_sum_ns, reads_cnt, new_head)
         };
         for (shard_id, value) in reads_sum_ns.drain() {
-            *self.reads_sum_ns.entry(shard_id).or_default() += value;
-        }
-        for (shard_id, value) in reads_cnt.drain() {
-            *self.reads_cnt.entry(shard_id.clone()).or_default() += value;
-            *self.reads_blocks.entry(shard_id).or_default() += 1;
+            if let Some(reads_sum_ns) = self.reads_sum_ns.get_mut(&shard_id) {
+                // *self.reads_sum_ns.entry(shard_id).or_default() += value;
+                *reads_sum_ns += value;
+                *self.reads_cnt.get_mut(&shard_id).unwrap() +=
+                    *self.reads_cnt.get(&shard_id).unwrap();
+                *self.reads_blocks.get_mut(&shard_id).unwrap() += 1;
+            }
         }
         Ok(new_head)
     }
@@ -2139,6 +2141,7 @@ impl Chain {
                     // measure period stopped. aggregate all stats and remove
                     if let Some(reads_sum_ns) = self.reads_sum_ns.get(&shard_id) {
                         let mut reads_cnt = self.reads_cnt.get(&shard_id).unwrap_or(&0).clone();
+                        debug!(target: "chain", "aggregating at {head_height} {shard_id} {reads_sum_ns} {reads_cnt}");
                         reads_cnt = reads_cnt.max(1);
                         let reads_blocks = self.reads_blocks.get(&shard_id).unwrap_or(&0);
                         metrics::GET_REF_SUM
@@ -2157,6 +2160,13 @@ impl Chain {
                     self.reads_sum_ns.remove(&shard_id);
                     self.reads_cnt.remove(&shard_id);
                     self.reads_blocks.remove(&shard_id);
+                } else {
+                    if self.reads_sum_ns.get(&shard_id).is_none() {
+                        debug!(target: "chain", "resetting at {head_height} {shard_id}");
+                        self.reads_sum_ns.insert(shard_id.clone(), 0);
+                        self.reads_cnt.insert(shard_id.clone(), 0);
+                        self.reads_blocks.insert(shard_id.clone(), 0);
+                    }
                 }
                 step >= self.chain_config.flat_head_skip_blocks as u64
             }
