@@ -2139,7 +2139,7 @@ impl Chain {
                     // measure period stopped. aggregate all stats and remove
                     if let Some(reads_sum_ns) = self.reads_sum_ns.get(&shard_id) {
                         let mut reads_cnt = self.reads_cnt.get(&shard_id).unwrap_or(&0).clone();
-                        reads_cnt = reads_cnt.min(1);
+                        reads_cnt = reads_cnt.max(1);
                         let reads_blocks = self.reads_blocks.get(&shard_id).unwrap_or(&0);
                         metrics::GET_REF_SUM
                             .with_label_values(&[&shard_id.to_string()])
