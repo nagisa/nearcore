@@ -4,12 +4,14 @@ use near_chain::types::Tip;
 use near_epoch_manager::EpochManagerAdapter;
 use near_primitives::{hash::CryptoHash, types::BlockHeight};
 use near_store::cold_storage::copy_all_data_to_cold;
+use near_store::metadata::DbKind;
 use near_store::{
     cold_storage::{update_cold_db, update_cold_head},
     db::ColdDB,
-    DBCol, NodeStorage, Store, FINAL_HEAD_KEY, HEAD_KEY,
+    DBCol, NodeStorage, Store, FINAL_HEAD_KEY, HEAD_KEY, TAIL_KEY,
 };
 
+use crate::cold_storage::ColdStoreInitialMigrationResult::SuccessfulMigration;
 use crate::{metrics, NearConfig, NightshadeRuntime};
 
 /// A handle that keeps the state of the cold store loop and can be used to stop it.
@@ -62,13 +64,28 @@ fn cold_store_copy(
     let hot_final_head = hot_store.get_ser::<Tip>(DBCol::BlockMisc, FINAL_HEAD_KEY)?;
     let hot_final_head_height = hot_final_head.map_or(genesis_height, |tip| tip.height);
 
-    tracing::debug!(target: "cold_store", "cold store loop, cold_head {}, hot_final_head {}", cold_head_height, hot_final_head_height);
+    // If TAIL is not set for hot storage we default it to hot_final_head_height.
+    let hot_tail = hot_store.get_ser::<Tip>(DBCol::BlockMisc, TAIL_KEY)?;
+    let hot_tail_height = hot_tail.map_or(hot_final_head_height, |tip| tip.height);
+
+    tracing::debug!(target: "cold_store", "cold store loop, cold_head {}, hot_final_head {}, hot_tail {}", cold_head_height, hot_final_head_height, hot_tail_height);
 
     if cold_head_height > hot_final_head_height {
         return Err(anyhow::anyhow!(
             "Cold head is ahead of final head. cold head height: {} final head height {}",
             cold_head_height,
             hot_final_head_height
+        ));
+    }
+
+    // Cold and Hot storages need to overlap.
+    // Without this check we would skip blocks from cold_head_height to hot_tail_height.
+    // This will result in corrupted cold storage.
+    if cold_head_height < hot_tail_height {
+        return Err(anyhow::anyhow!(
+            "Cold head is behind hot tail. cold head height: {} hot tail height {}",
+            cold_head_height,
+            hot_tail_height
         ));
     }
 
@@ -118,6 +135,45 @@ fn cold_store_copy_result_to_string(result: &anyhow::Result<ColdStoreCopyResult>
     }
 }
 
+#[derive(Debug)]
+enum ColdStoreInitialMigrationResult {
+    /// Cold storage was already initialized
+    NoNeedForMigration,
+    /// Performed a successful cold storage migration
+    SuccessfulMigration,
+    /// Migration was interrupted by keep_going flag
+    MigrationInterrupted,
+}
+
+fn cold_store_initial_migration(
+    keep_going: Arc<AtomicBool>,
+    hot_store: &Store,
+    cold_store: &Store,
+    cold_db: Arc<ColdDB>,
+    genesis_height: BlockHeight,
+) -> anyhow::Result<ColdStoreInitialMigrationResult> {
+    // If hot store is not archival there is no need for migration to split storage
+    if hot_store.get_db_kind()? != DbKind::Archive {
+        return Ok(ColdStoreInitialMigrationResult::NoNeedForMigration);
+    }
+
+    tracing::info!(target: "cold_store", "Starting initial population of cold store");
+
+    // If FINAL_HEAD is not set for hot storage we default it to genesis_height.
+    let hot_final_head = hot_store.get_ser::<Tip>(DBCol::BlockMisc, FINAL_HEAD_KEY)?;
+    let hot_final_head_height = hot_final_head.map_or(genesis_height, |tip| tip.height);
+
+    // TODO take batch_size from config
+    if copy_all_data_to_cold(cold_db.clone(), &hot_store, 500_000_000, keep_going.clone())? {
+        tracing::info!(target: "cold_store", "Initial population was successful, writing cold head and hot db kind");
+        update_cold_head(&cold_db, &hot_store, &hot_final_head_height).unwrap();
+        hot_store.set_db_kind(near_store::metadata::DbKind::Hot).unwrap();
+        Ok(ColdStoreInitialMigrationResult::SuccessfulMigration)
+    } else {
+        Ok(ColdStoreInitialMigrationResult::MigrationInterrupted)
+    }
+}
+
 // This method will copy data from hot storage to cold storage in a loop.
 // It will try to copy blocks as fast as possible up until cold head = final head.
 // Once the cold head reaches the final head it will sleep for one second before
@@ -132,21 +188,27 @@ fn cold_store_loop(
     genesis_height: BlockHeight,
     runtime: Arc<NightshadeRuntime>,
 ) {
-    // TODO all the unwraps
-    // If cold store doesn't have a head, then it was never fully initialised.
-    if cold_store.get(DBCol::BlockMisc, HEAD_KEY).unwrap().is_none() {
-        // If FINAL_HEAD is not set for hot storage we default it to genesis_height.
-        let hot_final_head = hot_store.get_ser::<Tip>(DBCol::BlockMisc, FINAL_HEAD_KEY).unwrap();
-        let hot_final_head_height = hot_final_head.map_or(genesis_height, |tip| tip.height);
-
-        tracing::info!(target: "cold_store", "triggering initial population of cold store");
-        // TODO take batch_size from config
-        if copy_all_data_to_cold(cold_db.clone(), &hot_store, 500_000_000, keep_going.clone())
-            .unwrap()
-        {
-            tracing::info!(target: "cold_store", "initial population was successful, writing cold head and hot db kind");
-            update_cold_head(&cold_db, &hot_store, &hot_final_head_height).unwrap();
-            hot_store.set_db_kind(near_store::metadata::DbKind::Hot).unwrap();
+    tracing::info!(target: "cold_store", "checking for initial migration");
+    loop {
+        if !keep_going.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::debug!(target: "cold_store", "stopping the initial migration loop");
+            break;
+        }
+        match cold_store_initial_migration(
+            keep_going.clone(),
+            &hot_store,
+            &cold_store,
+            cold_db.clone(),
+            genesis_height,
+        ) {
+            Err(err) => {
+                tracing::error!(target: "cold_store", "initial migration failed, sleeping 30s and trying again");
+                std::thread::sleep(std::time::Duration::from_secs(30));
+            }
+            Ok(status) => {
+                tracing::info!(target: "cold_store", "Initial migration status: {:?}. Moving on.", status);
+                break;
+            }
         }
     }
 
