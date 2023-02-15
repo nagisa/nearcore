@@ -1,10 +1,8 @@
-use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
-
 use crate::types::Balance;
+use once_cell::sync::Lazy;
 
 /// Data structure for semver version and github tag or commit.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, Default)]
 pub struct Version {
     pub version: String,
     pub build: String,
@@ -160,7 +158,7 @@ pub const PEER_MIN_ALLOWED_PROTOCOL_VERSION: ProtocolVersion = STABLE_PROTOCOL_V
 /// Current protocol version used on the mainnet.
 /// Some features (e. g. FixStorageUsage) require that there is at least one epoch with exactly
 /// the corresponding version
-const STABLE_PROTOCOL_VERSION: ProtocolVersion = 58;
+const STABLE_PROTOCOL_VERSION: ProtocolVersion = 59;
 
 /// Largest protocol version supported by the current binary.
 pub const PROTOCOL_VERSION: ProtocolVersion = if cfg!(feature = "nightly_protocol") {
@@ -228,7 +226,7 @@ impl ProtocolFeature {
             ProtocolFeature::AltBn128 => 55,
             ProtocolFeature::ChunkOnlyProducers | ProtocolFeature::MaxKickoutStake => 56,
             ProtocolFeature::AccountIdInFunctionCallPermission => 57,
-            ProtocolFeature::Ed25519Verify => 58,
+            ProtocolFeature::Ed25519Verify => 59,
 
             // Nightly features
             #[cfg(feature = "protocol_feature_fix_staking_threshold")]
