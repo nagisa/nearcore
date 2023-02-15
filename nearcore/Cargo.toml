@@ -36,6 +36,7 @@ tokio.workspace = true
 tracing.workspace = true
 xz2.workspace = true
 
+near-async = { path = "../core/async" }
 near-chain = { path = "../chain/chain" }
 near-chain-configs = { path = "../core/chain-configs" }
 near-chunks = { path = "../chain/chunks" }
@@ -56,6 +57,7 @@ near-store = { path = "../core/store" }
 near-telemetry = { path = "../chain/telemetry" }
 near-vm-runner = { path = "../runtime/near-vm-runner"}
 node-runtime = { path = "../runtime/runtime" }
+near-config-utils = { path = "../utils/config" }
 
 delay-detector = { path = "../tools/delay-detector" }
 
@@ -111,7 +113,6 @@ protocol_feature_nep366_delegate_action = [
   "near-primitives/protocol_feature_nep366_delegate_action",
   "near-rosetta-rpc/protocol_feature_nep366_delegate_action",
 ]
-protocol_feature_zero_balance_account = ["node-runtime/protocol_feature_zero_balance_account"]
 
 nightly = [
   "nightly_protocol",
@@ -142,3 +143,5 @@ sandbox = [
   "near-jsonrpc/sandbox",
 ]
 io_trace = ["near-vm-runner/io_trace"]
+
+calimero_zero_storage = ["near-primitives/calimero_zero_storage"]

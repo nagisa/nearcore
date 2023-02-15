@@ -2,6 +2,8 @@ use near_crypto::key_conversion::is_valid_staking_key;
 use near_primitives::checked_feature;
 use near_primitives::runtime::config::RuntimeConfig;
 use near_primitives::types::BlockHeight;
+#[cfg(feature = "protocol_feature_nep366_delegate_action")]
+use near_primitives::version::ProtocolFeature;
 use near_primitives::{
     account::AccessKeyPermission,
     config::VMLimitConfig,
@@ -132,7 +134,7 @@ fn is_zero_balance_account(
 }
 
 #[cfg(feature = "protocol_feature_nep366_delegate_action")]
-use near_primitives::transaction::SignedDelegateAction;
+use near_primitives::delegate_action::SignedDelegateAction;
 
 /// Validates the transaction without using the state. It allows any node to validate a
 /// transaction before forwarding it to the node that tracks the `signer_id` account.
@@ -164,8 +166,12 @@ pub fn validate_transaction(
         .into());
     }
 
-    validate_actions(&config.wasm_config.limit_config, &transaction.actions)
-        .map_err(InvalidTxError::ActionsValidation)?;
+    validate_actions(
+        &config.wasm_config.limit_config,
+        &transaction.actions,
+        current_protocol_version,
+    )
+    .map_err(InvalidTxError::ActionsValidation)?;
 
     let sender_is_receiver = &transaction.receiver_id == signer_id;
 
@@ -328,6 +334,7 @@ pub fn verify_and_charge_transaction(
 pub(crate) fn validate_receipt(
     limit_config: &VMLimitConfig,
     receipt: &Receipt,
+    current_protocol_version: ProtocolVersion,
 ) -> Result<(), ReceiptValidationError> {
     // We retain these checks here as to maintain backwards compatibility
     // with AccountId validation since we illegally parse an AccountId
@@ -343,7 +350,7 @@ pub(crate) fn validate_receipt(
 
     match &receipt.receipt {
         ReceiptEnum::Action(action_receipt) => {
-            validate_action_receipt(limit_config, action_receipt)
+            validate_action_receipt(limit_config, action_receipt, current_protocol_version)
         }
         ReceiptEnum::Data(data_receipt) => validate_data_receipt(limit_config, data_receipt),
     }
@@ -353,6 +360,7 @@ pub(crate) fn validate_receipt(
 fn validate_action_receipt(
     limit_config: &VMLimitConfig,
     receipt: &ActionReceipt,
+    current_protocol_version: ProtocolVersion,
 ) -> Result<(), ReceiptValidationError> {
     if receipt.input_data_ids.len() as u64 > limit_config.max_number_input_data_dependencies {
         return Err(ReceiptValidationError::NumberInputDataDependenciesExceeded {
@@ -360,7 +368,7 @@ fn validate_action_receipt(
             limit: limit_config.max_number_input_data_dependencies,
         });
     }
-    validate_actions(limit_config, &receipt.actions)
+    validate_actions(limit_config, &receipt.actions, current_protocol_version)
         .map_err(ReceiptValidationError::ActionsValidation)
 }
 
@@ -389,6 +397,7 @@ fn validate_data_receipt(
 pub(crate) fn validate_actions(
     limit_config: &VMLimitConfig,
     actions: &[Action],
+    current_protocol_version: ProtocolVersion,
 ) -> Result<(), ActionsValidationError> {
     if actions.len() as u64 > limit_config.max_actions_per_receipt {
         return Err(ActionsValidationError::TotalNumberOfActionsExceeded {
@@ -408,13 +417,23 @@ pub(crate) fn validate_actions(
         } else {
             #[cfg(feature = "protocol_feature_nep366_delegate_action")]
             if let Action::Delegate(_) = action {
+                if !checked_feature!(
+                    "protocol_feature_nep366_delegate_action",
+                    DelegateAction,
+                    current_protocol_version
+                ) {
+                    return Err(ActionsValidationError::UnsupportedProtocolFeature {
+                        protocol_feature: String::from("DelegateAction"),
+                        version: ProtocolFeature::DelegateAction.protocol_version(),
+                    });
+                }
                 if found_delegate_action {
                     return Err(ActionsValidationError::DelegateActionMustBeOnlyOne);
                 }
                 found_delegate_action = true;
             }
         }
-        validate_action(limit_config, action)?;
+        validate_action(limit_config, action, current_protocol_version)?;
     }
 
     let total_prepaid_gas =
@@ -433,6 +452,8 @@ pub(crate) fn validate_actions(
 pub fn validate_action(
     limit_config: &VMLimitConfig,
     action: &Action,
+    #[cfg_attr(not(feature = "protocol_feature_nep366_delegate_action"), allow(unused))]
+    current_protocol_version: ProtocolVersion,
 ) -> Result<(), ActionsValidationError> {
     match action {
         Action::CreateAccount(_) => Ok(()),
@@ -444,7 +465,7 @@ pub fn validate_action(
         Action::DeleteKey(_) => Ok(()),
         Action::DeleteAccount(_) => Ok(()),
         #[cfg(feature = "protocol_feature_nep366_delegate_action")]
-        Action::Delegate(a) => validate_delegate_action(limit_config, a),
+        Action::Delegate(a) => validate_delegate_action(limit_config, a, current_protocol_version),
     }
 }
 
@@ -452,9 +473,10 @@ pub fn validate_action(
 fn validate_delegate_action(
     limit_config: &VMLimitConfig,
     signed_delegate_action: &SignedDelegateAction,
+    current_protocol_version: ProtocolVersion,
 ) -> Result<(), ActionsValidationError> {
     let actions = signed_delegate_action.delegate_action.get_actions();
-    validate_actions(limit_config, &actions)?;
+    validate_actions(limit_config, &actions, current_protocol_version)?;
     Ok(())
 }
 
@@ -607,7 +629,7 @@ mod tests {
     #[cfg(feature = "protocol_feature_nep366_delegate_action")]
     use near_crypto::Signature;
     #[cfg(feature = "protocol_feature_nep366_delegate_action")]
-    use near_primitives::transaction::{DelegateAction, NonDelegateAction};
+    use near_primitives::delegate_action::{DelegateAction, NonDelegateAction};
 
     /// Initial balance used in tests.
     const TESTING_INIT_BALANCE: Balance = 1_000_000_000 * NEAR_BASE;
@@ -1240,6 +1262,59 @@ mod tests {
                     - (initial_balance - transfer_amount)
             })
         );
+        #[cfg(feature = "protocol_feature_zero_balance_account")]
+        {
+            let verification_result = res.unwrap();
+            assert_eq!(verification_result.gas_burnt, 0);
+            assert_eq!(verification_result.gas_remaining, 0);
+            assert_eq!(verification_result.burnt_amount, 0);
+        }
+    }
+
+    #[test]
+    fn test_validate_transaction_invalid_low_balance_many_keys() {
+        let mut config = RuntimeConfig::free();
+        config.fees.storage_usage_config.storage_amount_per_byte = 10_000_000;
+        let initial_balance = 1_000_000_000;
+        let transfer_amount = 950_000_000;
+        let account_id = alice_account();
+        let access_keys = vec![AccessKey::full_access(); 3];
+        let (signer, mut state_update, gas_price) = setup_accounts(vec![(
+            account_id.clone(),
+            initial_balance,
+            0,
+            access_keys,
+            false,
+            false,
+        )]);
+
+        let res = verify_and_charge_transaction(
+            &config,
+            &mut state_update,
+            gas_price,
+            &SignedTransaction::send_money(
+                1,
+                account_id.clone(),
+                bob_account(),
+                &*signer,
+                transfer_amount,
+                CryptoHash::default(),
+            ),
+            true,
+            None,
+            PROTOCOL_VERSION,
+        )
+        .expect_err("expected an error");
+
+        assert_eq!(
+            res,
+            RuntimeError::InvalidTxError(InvalidTxError::LackBalanceForState {
+                signer_id: account_id,
+                amount: Balance::from(std::mem::size_of::<Account>() as u64)
+                    * config.storage_amount_per_byte()
+                    - (initial_balance - transfer_amount)
+            })
+        );
     }
 
     #[test]
@@ -1528,8 +1603,12 @@ mod tests {
     #[test]
     fn test_validate_receipt_valid() {
         let limit_config = VMLimitConfig::test();
-        validate_receipt(&limit_config, &Receipt::new_balance_refund(&alice_account(), 10))
-            .expect("valid receipt");
+        validate_receipt(
+            &limit_config,
+            &Receipt::new_balance_refund(&alice_account(), 10),
+            PROTOCOL_VERSION,
+        )
+        .expect("valid receipt");
     }
 
     #[test]
@@ -1546,7 +1625,8 @@ mod tests {
                     output_data_receivers: vec![],
                     input_data_ids: vec![CryptoHash::default(), CryptoHash::default()],
                     actions: vec![]
-                }
+                },
+                PROTOCOL_VERSION
             )
             .expect_err("expected an error"),
             ReceiptValidationError::NumberInputDataDependenciesExceeded {
@@ -1597,7 +1677,7 @@ mod tests {
     #[test]
     fn test_validate_actions_empty() {
         let limit_config = VMLimitConfig::test();
-        validate_actions(&limit_config, &[]).expect("empty actions");
+        validate_actions(&limit_config, &[], PROTOCOL_VERSION).expect("empty actions");
     }
 
     #[test]
@@ -1611,6 +1691,7 @@ mod tests {
                 gas: 100,
                 deposit: 0,
             })],
+            PROTOCOL_VERSION,
         )
         .expect("valid function call action");
     }
@@ -1635,7 +1716,8 @@ mod tests {
                         gas: 150,
                         deposit: 0,
                     })
-                ]
+                ],
+                PROTOCOL_VERSION,
             )
             .expect_err("expected an error"),
             ActionsValidationError::TotalPrepaidGasExceeded { total_prepaid_gas: 250, limit: 220 }
@@ -1662,7 +1744,8 @@ mod tests {
                         gas: u64::max_value() / 2 + 1,
                         deposit: 0,
                     })
-                ]
+                ],
+                PROTOCOL_VERSION,
             )
             .expect_err("Expected an error"),
             ActionsValidationError::IntegerOverflow,
@@ -1679,7 +1762,8 @@ mod tests {
                 &[
                     Action::CreateAccount(CreateAccountAction {}),
                     Action::CreateAccount(CreateAccountAction {}),
-                ]
+                ],
+                PROTOCOL_VERSION,
             )
             .expect_err("Expected an error"),
             ActionsValidationError::TotalNumberOfActionsExceeded {
@@ -1701,7 +1785,8 @@ mod tests {
                         beneficiary_id: "bob".parse().unwrap()
                     }),
                     Action::CreateAccount(CreateAccountAction {}),
-                ]
+                ],
+                PROTOCOL_VERSION,
             )
             .expect_err("Expected an error"),
             ActionsValidationError::DeleteActionMustBeFinal,
@@ -1720,7 +1805,8 @@ mod tests {
                     Action::DeleteAccount(DeleteAccountAction {
                         beneficiary_id: "bob".parse().unwrap()
                     }),
-                ]
+                ],
+                PROTOCOL_VERSION,
             ),
             Ok(()),
         );
@@ -1730,8 +1816,12 @@ mod tests {
 
     #[test]
     fn test_validate_action_valid_create_account() {
-        validate_action(&VMLimitConfig::test(), &Action::CreateAccount(CreateAccountAction {}))
-            .expect("valid action");
+        validate_action(
+            &VMLimitConfig::test(),
+            &Action::CreateAccount(CreateAccountAction {}),
+            PROTOCOL_VERSION,
+        )
+        .expect("valid action");
     }
 
     #[test]
@@ -1744,6 +1834,7 @@ mod tests {
                 gas: 100,
                 deposit: 0,
             }),
+            PROTOCOL_VERSION,
         )
         .expect("valid action");
     }
@@ -1759,6 +1850,7 @@ mod tests {
                     gas: 0,
                     deposit: 0,
                 }),
+                PROTOCOL_VERSION,
             )
             .expect_err("expected an error"),
             ActionsValidationError::FunctionCallZeroAttachedGas,
@@ -1767,8 +1859,12 @@ mod tests {
 
     #[test]
     fn test_validate_action_valid_transfer() {
-        validate_action(&VMLimitConfig::test(), &Action::Transfer(TransferAction { deposit: 10 }))
-            .expect("valid action");
+        validate_action(
+            &VMLimitConfig::test(),
+            &Action::Transfer(TransferAction { deposit: 10 }),
+            PROTOCOL_VERSION,
+        )
+        .expect("valid action");
     }
 
     #[test]
@@ -1779,6 +1875,7 @@ mod tests {
                 stake: 100,
                 public_key: "ed25519:KuTCtARNzxZQ3YvXDeLjx83FDqxv2SdQTSbiq876zR7".parse().unwrap(),
             }),
+            PROTOCOL_VERSION,
         )
         .expect("valid action");
     }
@@ -1792,6 +1889,7 @@ mod tests {
                     stake: 100,
                     public_key: PublicKey::empty(KeyType::ED25519),
                 }),
+                PROTOCOL_VERSION,
             )
             .expect_err("Expected an error"),
             ActionsValidationError::UnsuitableStakingKey {
@@ -1808,6 +1906,7 @@ mod tests {
                 public_key: PublicKey::empty(KeyType::ED25519),
                 access_key: AccessKey::full_access(),
             }),
+            PROTOCOL_VERSION,
         )
         .expect("valid action");
     }
@@ -1827,6 +1926,7 @@ mod tests {
                     }),
                 },
             }),
+            PROTOCOL_VERSION,
         )
         .expect("valid action");
     }
@@ -1836,6 +1936,7 @@ mod tests {
         validate_action(
             &VMLimitConfig::test(),
             &Action::DeleteKey(DeleteKeyAction { public_key: PublicKey::empty(KeyType::ED25519) }),
+            PROTOCOL_VERSION,
         )
         .expect("valid action");
     }
@@ -1845,6 +1946,7 @@ mod tests {
         validate_action(
             &VMLimitConfig::test(),
             &Action::DeleteAccount(DeleteAccountAction { beneficiary_id: alice_account() }),
+            PROTOCOL_VERSION,
         )
         .expect("valid action");
     }
@@ -1856,7 +1958,10 @@ mod tests {
             delegate_action: DelegateAction {
                 sender_id: "bob.test.near".parse().unwrap(),
                 receiver_id: "token.test.near".parse().unwrap(),
-                actions: vec![NonDelegateAction(Action::CreateAccount(CreateAccountAction {}))],
+                actions: vec![NonDelegateAction::try_from(Action::CreateAccount(
+                    CreateAccountAction {},
+                ))
+                .unwrap()],
                 nonce: 19000001,
                 max_block_height: 57,
                 public_key: PublicKey::empty(KeyType::ED25519),
@@ -1869,14 +1974,16 @@ mod tests {
                 &[
                     Action::Delegate(signed_delegate_action.clone()),
                     Action::Delegate(signed_delegate_action.clone()),
-                ]
+                ],
+                PROTOCOL_VERSION,
             ),
             Err(ActionsValidationError::DelegateActionMustBeOnlyOne),
         );
         assert_eq!(
             validate_actions(
                 &&VMLimitConfig::test(),
-                &[Action::Delegate(signed_delegate_action.clone()),]
+                &[Action::Delegate(signed_delegate_action.clone()),],
+                PROTOCOL_VERSION,
             ),
             Ok(()),
         );
@@ -1886,7 +1993,8 @@ mod tests {
                 &[
                     Action::CreateAccount(CreateAccountAction {}),
                     Action::Delegate(signed_delegate_action.clone()),
-                ]
+                ],
+                PROTOCOL_VERSION,
             ),
             Ok(()),
         );

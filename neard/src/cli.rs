@@ -1,6 +1,5 @@
 #[cfg(unix)]
 use anyhow::Context;
-use clap::{Args, Parser};
 use near_amend_genesis::AmendGenesisCommand;
 use near_chain_configs::GenesisValidationMode;
 use near_client::ConfigUpdater;
@@ -8,6 +7,7 @@ use near_cold_store_tool::ColdStoreCommand;
 use near_dyn_configs::{UpdateableConfigLoader, UpdateableConfigLoaderError, UpdateableConfigs};
 use near_jsonrpc_primitives::types::light_client::RpcLightClientExecutionProofResponse;
 use near_mirror::MirrorCommand;
+use near_network::tcp;
 use near_o11y::tracing_subscriber::EnvFilter;
 use near_o11y::{
     default_subscriber, default_subscriber_with_opentelemetry, BuildEnvFilterError,
@@ -32,7 +32,7 @@ use tokio::sync::broadcast::Receiver;
 use tracing::{debug, error, info, warn};
 
 /// NEAR Protocol Node
-#[derive(Parser)]
+#[derive(clap::Parser)]
 #[clap(version = crate::NEARD_VERSION_STRING.as_str())]
 #[clap(subcommand_required = true, arg_required_else_help = true)]
 pub(super) struct NeardCmd {
@@ -44,7 +44,7 @@ pub(super) struct NeardCmd {
 
 impl NeardCmd {
     pub(super) fn parse_and_run() -> anyhow::Result<()> {
-        let neard_cmd = Self::parse();
+        let neard_cmd: Self = clap::Parser::parse();
 
         // Enable logging of the current thread.
         let _subscriber_guard = default_subscriber(
@@ -111,7 +111,7 @@ impl NeardCmd {
                 cmd.run()?;
             }
             NeardSubCommand::ColdStore(cmd) => {
-                cmd.run(&home_dir);
+                cmd.run(&home_dir)?;
             }
             NeardSubCommand::StateParts(cmd) => {
                 cmd.run()?;
@@ -121,7 +121,7 @@ impl NeardCmd {
     }
 }
 
-#[derive(Parser)]
+#[derive(clap::Parser)]
 pub(super) struct StateViewerCommand {
     /// By default state viewer opens rocks DB in the read only mode, which allows it to run
     /// multiple instances in parallel and be sure that no unintended changes get written to the DB.
@@ -136,7 +136,7 @@ pub(super) struct StateViewerCommand {
     subcmd: StateViewerSubCommand,
 }
 
-#[derive(Parser, Debug)]
+#[derive(clap::Parser, Debug)]
 struct NeardOpts {
     /// Sets verbose logging for the given target, or for all targets if no
     /// target is given.
@@ -164,7 +164,7 @@ impl NeardOpts {
     }
 }
 
-#[derive(Parser)]
+#[derive(clap::Parser)]
 pub(super) enum NeardSubCommand {
     /// Initializes NEAR configuration
     Init(InitCmd),
@@ -227,7 +227,7 @@ pub(super) enum NeardSubCommand {
     StateParts(StatePartsCommand),
 }
 
-#[derive(Parser)]
+#[derive(clap::Parser)]
 pub(super) struct InitCmd {
     /// Download the verified NEAR genesis file automatically.
     #[clap(long)]
@@ -337,7 +337,7 @@ impl InitCmd {
     }
 }
 
-#[derive(Parser)]
+#[derive(clap::Parser)]
 pub(super) struct RunCmd {
     /// Configure node to run as archival node which prevents deletion of old
     /// blocks.  This is a persistent setting; once client is started as
@@ -414,14 +414,16 @@ impl RunCmd {
             near_config.client_config.min_num_peers = min_peers;
         }
         if let Some(network_addr) = self.network_addr {
-            near_config.network_config.node_addr = Some(network_addr);
+            near_config.network_config.node_addr =
+                Some(near_network::tcp::ListenerAddr::new(network_addr));
         }
         #[cfg(feature = "json_rpc")]
         if self.disable_rpc {
             near_config.rpc_config = None;
         } else {
             if let Some(rpc_addr) = self.rpc_addr {
-                near_config.rpc_config.get_or_insert(Default::default()).addr = rpc_addr;
+                near_config.rpc_config.get_or_insert(Default::default()).addr =
+                    tcp::ListenerAddr::new(rpc_addr.parse().unwrap());
             }
             if let Some(rpc_prometheus_addr) = self.rpc_prometheus_addr {
                 near_config.rpc_config.get_or_insert(Default::default()).prometheus_addr =
@@ -480,7 +482,7 @@ impl RunCmd {
                 UpdateableConfigLoader::new(updateable_configs.clone(), tx_config_update);
             let config_updater = ConfigUpdater::new(rx_config_update);
 
-            let nearcore::NearNode { rpc_servers, .. } =
+            let nearcore::NearNode { rpc_servers, cold_store_loop_handle, .. } =
                 nearcore::start_with_config_and_synchronization(
                     home_dir,
                     near_config,
@@ -500,6 +502,7 @@ impl RunCmd {
                 }
             };
             warn!(target: "neard", "{}, stopping... this may take a few minutes.", sig);
+            cold_store_loop_handle.map(|handle| handle.stop());
             futures::future::join_all(rpc_servers.iter().map(|(name, server)| async move {
                 server.stop(true).await;
                 debug!(target: "neard", "{} server stopped", name);
@@ -533,14 +536,12 @@ async fn wait_for_interrupt_signal(_home_dir: &Path, rx_crash: &mut Receiver<()>
     tokio::select! {
          _ = sigint.recv()  => "SIGINT",
          _ = sigterm.recv() => "SIGTERM",
-         _ = sighup.recv() => {
-            "SIGHUP"
-         },
+         _ = sighup.recv() => "SIGHUP",
          _ = rx_crash.recv() => "ClientActor died",
     }
 }
 
-#[derive(Parser)]
+#[derive(clap::Parser)]
 pub(super) struct LocalnetCmd {
     /// Number of non-validators to initialize the localnet with.
     #[clap(short = 'n', long, alias = "n", default_value = "0")]
@@ -598,7 +599,7 @@ impl LocalnetCmd {
     }
 }
 
-#[derive(Args)]
+#[derive(clap::Args)]
 #[clap(arg_required_else_help = true)]
 pub(super) struct RecompressStorageSubCommand {
     /// Directory where to save new storage.
@@ -647,7 +648,7 @@ pub enum VerifyProofError {
     InvalidBlockHashProof,
 }
 
-#[derive(Parser)]
+#[derive(clap::Parser)]
 pub struct VerifyProofSubCommand {
     #[clap(long)]
     json_file_path: String,
@@ -676,7 +677,7 @@ impl VerifyProofSubCommand {
             "Verifying light client proof for txn id: {:?}",
             light_client_proof.outcome_proof.id
         );
-        let outcome_hashes = light_client_proof.outcome_proof.clone().to_hashes();
+        let outcome_hashes = light_client_proof.outcome_proof.to_hashes();
         println!("Hashes of the outcome are: {:?}", outcome_hashes);
 
         let outcome_hash = CryptoHash::hash_borsh(&outcome_hashes);
@@ -757,7 +758,8 @@ fn make_env_filter(verbose: Option<&str>) -> Result<EnvFilter, BuildEnvFilterErr
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{CryptoHash, NeardCmd, NeardSubCommand, VerifyProofError, VerifyProofSubCommand};
+    use clap::Parser;
     use std::str::FromStr;
 
     #[test]

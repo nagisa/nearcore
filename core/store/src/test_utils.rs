@@ -5,7 +5,7 @@ use rand::Rng;
 
 use crate::db::TestDB;
 use crate::metadata::{DbKind, DbVersion, DB_VERSION};
-use crate::{NodeStorage, ShardTries, Store, Temperature};
+use crate::{DBCol, NodeStorage, ShardTries, Store, Temperature};
 use near_primitives::account::id::AccountId;
 use near_primitives::hash::CryptoHash;
 use near_primitives::receipt::{DataReceipt, Receipt, ReceiptEnum};
@@ -70,18 +70,36 @@ pub fn test_populate_trie(
     shard_uid: ShardUId,
     changes: Vec<(Vec<u8>, Option<Vec<u8>>)>,
 ) -> CryptoHash {
-    let trie = tries.get_trie_for_shard(shard_uid, root.clone());
+    let trie = tries.get_trie_for_shard(shard_uid, *root);
     assert_eq!(trie.storage.as_caching_storage().unwrap().shard_uid.shard_id, 0);
     let trie_changes = trie.update(changes.iter().cloned()).unwrap();
     let mut store_update = tries.store_update();
     let root = tries.apply_all(&trie_changes, shard_uid, &mut store_update);
     store_update.commit().unwrap();
     let deduped = simplify_changes(&changes);
-    let trie = tries.get_trie_for_shard(shard_uid, root.clone());
+    let trie = tries.get_trie_for_shard(shard_uid, root);
     for (key, value) in deduped {
         assert_eq!(trie.get(&key), Ok(value));
     }
     root
+}
+
+/// Insert values to non-reference-counted columns in the store.
+pub fn test_populate_store(store: &Store, data: &[(DBCol, Vec<u8>, Vec<u8>)]) {
+    let mut update = store.store_update();
+    for (column, key, value) in data {
+        update.insert(*column, key, value);
+    }
+    update.commit().expect("db commit failed");
+}
+
+/// Insert values to reference-counted columns in the store.
+pub fn test_populate_store_rc(store: &Store, data: &[(DBCol, Vec<u8>, Vec<u8>)]) {
+    let mut update = store.store_update();
+    for (column, key, value) in data {
+        update.increment_refcount(*column, key, value);
+    }
+    update.commit().expect("db commit failed");
 }
 
 fn gen_accounts_from_alphabet(
