@@ -2131,53 +2131,66 @@ impl Chain {
         block: &Block,
         shard_id: ShardId,
     ) -> Result<(), Error> {
-        let need_fs_update = match self.chain_config.flat_head_catchup_period.clone() {
-            0 => true,
-            period @ _ => {
-                let head_height = self.head().unwrap().height.clone();
-                let step = head_height % (period as u64);
-                if step >= self.chain_config.flat_storage_measure_blocks as u64 {
-                    // measure period stopped. aggregate all stats and remove
-                    if let Some(reads_sum_ns) = self.reads_sum_ns.get(&shard_id) {
-                        let mut reads_cnt = self.reads_cnt.get(&shard_id).unwrap_or(&0).clone();
+        if let Some(flat_storage_state) =
+            self.runtime_adapter.get_flat_storage_state_for_shard(shard_id)
+        {
+            let need_fs_update = match self.chain_config.flat_head_catchup_period.clone() {
+                0 => true,
+                period @ _ => {
+                    let head_height = self.head().unwrap().height.clone();
+                    let step = head_height % (period as u64);
+                    if step >= self.chain_config.flat_storage_measure_blocks as u64 {
+                        let debug_metrics = flat_storage_state.load_and_mark_debug_metrics();
+                        // measure period stopped. aggregate all stats and remove
+
+                        let reads_sum_ns = debug_metrics.reads_sum_ns;
+                        let reads_cnt = debug_metrics.reads_cnt.max(1);
                         debug!(target: "chain", "aggregating at {head_height} {shard_id} {reads_sum_ns} {reads_cnt}");
-                        reads_cnt = reads_cnt.max(1);
-                        let reads_blocks = self.reads_blocks.get(&shard_id).unwrap_or(&0);
+
                         metrics::GET_REF_SUM
                             .with_label_values(&[&shard_id.to_string()])
-                            .set(*reads_sum_ns as i64);
+                            .set(reads_sum_ns as i64);
                         metrics::GET_REF_CNT
                             .with_label_values(&[&shard_id.to_string()])
                             .set(reads_cnt as i64);
                         metrics::GET_REF_AVG
                             .with_label_values(&[&shard_id.to_string()])
-                            .set(((*reads_sum_ns) / reads_cnt) as i64);
-                        metrics::GET_REF_BLOCKS
+                            .set((reads_sum_ns / reads_cnt) as i64);
+                        metrics::GET_REF_NUM_BLOCKS
                             .with_label_values(&[&shard_id.to_string()])
-                            .set(*reads_blocks as i64);
+                            .set(debug_metrics.blocks as i64);
+                        metrics::GET_REF_GET_BLOCKS
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(debug_metrics.get_blocks_sum_ns as i64);
+                        metrics::GET_REF_GET_DELTAS
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(debug_metrics.get_deltas_sum_ns as i64);
+                        metrics::GET_REF_CACHED
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(debug_metrics.get_ref_cached_sum_ns as i64);
+                        metrics::GET_REF_DISK
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(debug_metrics.get_ref_disk_sum_ns as i64);
+                        metrics::GET_REF_DELTA_CACHE_HITS
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(debug_metrics.delta_cache_hits as i64);
+                        metrics::GET_REF_DELTA_CACHE_MISSES
+                            .with_label_values(&[&shard_id.to_string()])
+                            .set(debug_metrics.delta_cache_misses as i64);
+                    } else {
+                        if flat_storage_state.get_debug_metrics_mark() {
+                            debug!(target: "chain", "resetting at {head_height} {shard_id}");
+                            flat_storage_state.reset_debug_metrics();
+                        }
                     }
-                    self.reads_sum_ns.remove(&shard_id);
-                    self.reads_cnt.remove(&shard_id);
-                    self.reads_blocks.remove(&shard_id);
-                } else {
-                    if self.reads_sum_ns.get(&shard_id).is_none() {
-                        debug!(target: "chain", "resetting at {head_height} {shard_id}");
-                        self.reads_sum_ns.insert(shard_id.clone(), 0);
-                        self.reads_cnt.insert(shard_id.clone(), 0);
-                        self.reads_blocks.insert(shard_id.clone(), 0);
-                    }
+                    step >= self.chain_config.flat_head_skip_blocks as u64
                 }
-                step >= self.chain_config.flat_head_skip_blocks as u64
+            };
+
+            if !need_fs_update {
+                return Ok(());
             }
-        };
 
-        if !need_fs_update {
-            return Ok(());
-        }
-
-        if let Some(flat_storage_state) =
-            self.runtime_adapter.get_flat_storage_state_for_shard(shard_id)
-        {
             let mut new_flat_head = *block.header().last_final_block();
             if new_flat_head == CryptoHash::default() {
                 new_flat_head = *self.genesis.hash();

@@ -120,6 +120,36 @@ pub static GET_REF_AVG: Lazy<IntGaugeVec> = Lazy::new(|| {
 pub static GET_REF_CNT: Lazy<IntGaugeVec> = Lazy::new(|| {
     try_create_int_gauge_vec("near_get_ref_cnt", "near_get_ref_cnt", &["shard_id"]).unwrap()
 });
-pub static GET_REF_BLOCKS: Lazy<IntGaugeVec> = Lazy::new(|| {
+pub static GET_REF_NUM_BLOCKS: Lazy<IntGaugeVec> = Lazy::new(|| {
     try_create_int_gauge_vec("near_get_ref_blocks", "near_get_ref_blocks", &["shard_id"]).unwrap()
+});
+pub static GET_REF_GET_BLOCKS: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec("near_get_ref_get_blocks", "near_get_ref_get_blocks", &["shard_id"])
+        .unwrap()
+});
+pub static GET_REF_GET_DELTAS: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec("near_get_ref_get_deltas", "near_get_ref_get_deltas", &["shard_id"])
+        .unwrap()
+});
+pub static GET_REF_CACHED: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec("near_get_ref_cached", "near_get_ref_cached", &["shard_id"]).unwrap()
+});
+pub static GET_REF_DISK: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec("near_get_ref_disk", "near_get_ref_disk", &["shard_id"]).unwrap()
+});
+pub static GET_REF_DELTA_CACHE_HITS: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "near_get_ref_delta_cache_hits",
+        "near_get_ref_delta_cache_hits",
+        &["shard_id"],
+    )
+    .unwrap()
+});
+pub static GET_REF_DELTA_CACHE_MISSES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "near_get_ref_delta_cache_misses",
+        "near_get_ref_delta_cache_misses",
+        &["shard_id"],
+    )
+    .unwrap()
 });

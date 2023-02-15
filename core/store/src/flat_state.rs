@@ -578,6 +578,7 @@ use near_o11y::metrics::IntGauge;
 use near_primitives::errors::StorageError;
 use near_primitives::shard_layout::ShardLayout;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 #[cfg(feature = "protocol_feature_flat_state")]
 use tracing::info;
 
@@ -640,6 +641,8 @@ struct FlatStorageStateInner {
     value_ref_cache: LruCache<Vec<u8>, Option<ValueRef>>,
     #[allow(unused)]
     metrics: FlatStorageMetrics,
+    #[allow(unused)]
+    debug_metrics: FlatStorageDebugMetrics,
 }
 
 struct FlatStorageMetrics {
@@ -656,6 +659,29 @@ struct FlatStorageMetrics {
     value_ref_cache_total_key_size: IntGauge,
 }
 
+#[derive(Default, Clone)]
+pub struct FlatStorageDebugMetrics {
+    #[allow(unused)]
+    pub marked: bool,
+    #[allow(unused)]
+    pub reads_sum_ns: u64,
+    #[allow(unused)]
+    pub reads_cnt: u64,
+    #[allow(unused)]
+    pub blocks: u64,
+    #[allow(unused)]
+    pub get_blocks_sum_ns: u64,
+    #[allow(unused)]
+    pub get_deltas_sum_ns: u64,
+    #[allow(unused)]
+    pub get_ref_cached_sum_ns: u64,
+    #[allow(unused)]
+    pub get_ref_disk_sum_ns: u64,
+    #[allow(unused)]
+    pub delta_cache_hits: u64,
+    #[allow(unused)]
+    pub delta_cache_misses: u64,
+}
 /// Number of traversed parts during a single step of fetching state.
 #[allow(unused)]
 pub const NUM_PARTS_IN_ONE_STEP: u64 = 20;
@@ -1093,6 +1119,7 @@ impl FlatStorageState {
             deltas,
             value_ref_cache: LruCache::new(cache_capacity),
             metrics,
+            debug_metrics: Default::default(),
         })))
     }
 
@@ -1124,25 +1151,45 @@ impl FlatStorageState {
         key: &[u8],
     ) -> Result<Option<ValueRef>, crate::StorageError> {
         let mut guard = self.0.write().expect(POISONED_LOCK_ERR);
+        let get_ref_started = Instant::now();
+        guard.debug_metrics.reads_cnt += 1;
+
+        let started = Instant::now();
         let blocks_to_head =
             guard.get_blocks_to_head(block_hash).map_err(|e| StorageError::from(e))?;
+        guard.debug_metrics.get_blocks_sum_ns += started.elapsed().as_nanos() as u64;
+
+        let started = Instant::now();
         for block_hash in blocks_to_head.iter() {
             // If we found a key in delta, we can return a value because it is the most recent key update.
             let delta = guard.get_delta(block_hash)?;
             match delta.get(key) {
                 Some(value_ref) => {
+                    guard.debug_metrics.delta_cache_hits += 1;
+                    guard.debug_metrics.get_deltas_sum_ns += started.elapsed().as_nanos() as u64;
+                    guard.debug_metrics.reads_sum_ns += get_ref_started.elapsed().as_nanos() as u64;
                     return Ok(value_ref);
                 }
-                None => {}
+                None => {
+                    guard.debug_metrics.delta_cache_misses += 1;
+                }
             };
         }
+        guard.debug_metrics.get_deltas_sum_ns += started.elapsed().as_nanos() as u64;
 
+        let started = Instant::now();
         if let Some(value_ref) = guard.get_cached_ref(key) {
+            guard.debug_metrics.get_ref_cached_sum_ns += started.elapsed().as_nanos() as u64;
+            guard.debug_metrics.reads_sum_ns += get_ref_started.elapsed().as_nanos() as u64;
             return Ok(value_ref);
         }
+        guard.debug_metrics.get_ref_cached_sum_ns += started.elapsed().as_nanos() as u64;
 
+        let started = Instant::now();
         let value_ref = store_helper::get_ref(&guard.store, key)?;
         guard.put_value_ref_to_cache(key.to_vec(), value_ref.clone());
+        guard.debug_metrics.get_ref_disk_sum_ns += started.elapsed().as_nanos() as u64;
+        guard.debug_metrics.reads_sum_ns += get_ref_started.elapsed().as_nanos() as u64;
         Ok(value_ref)
     }
 
@@ -1247,6 +1294,7 @@ impl FlatStorageState {
         block: BlockInfo,
     ) -> Result<StoreUpdate, FlatStorageError> {
         let mut guard = self.0.write().expect(POISONED_LOCK_ERR);
+        guard.debug_metrics.blocks += 1;
         let shard_id = guard.shard_id;
         let block_height = block.height;
         info!(target: "chain", %shard_id, %block_hash, %block_height, "Adding block to flat storage");
@@ -1310,6 +1358,23 @@ impl FlatStorageState {
 
     #[cfg(not(feature = "protocol_feature_flat_state"))]
     pub fn clear_state(&self, _shard_layout: ShardLayout) {}
+
+    pub fn load_and_mark_debug_metrics(&self) -> FlatStorageDebugMetrics {
+        let mut guard = self.0.write().expect(POISONED_LOCK_ERR);
+        let result = guard.debug_metrics.clone();
+        guard.debug_metrics.marked = true;
+        result
+    }
+
+    pub fn get_debug_metrics_mark(&self) -> bool {
+        let guard = self.0.write().expect(POISONED_LOCK_ERR);
+        guard.debug_metrics.marked
+    }
+
+    pub fn reset_debug_metrics(&self) {
+        let mut guard = self.0.write().expect(POISONED_LOCK_ERR);
+        guard.debug_metrics = FlatStorageDebugMetrics::default();
+    }
 }
 
 #[cfg(test)]
