@@ -2138,43 +2138,45 @@ impl Chain {
                     let head_height = self.head().unwrap().height.clone();
                     let step = head_height % (period as u64);
                     if step >= self.chain_config.flat_storage_measure_blocks as u64 {
-                        let debug_metrics = flat_storage_state.load_and_mark_debug_metrics();
-                        // measure period stopped. aggregate all stats and remove
+                        if !flat_storage_state.get_debug_metrics_mark() {
+                            let debug_metrics = flat_storage_state.load_and_mark_debug_metrics();
+                            // measure period stopped. aggregate all stats and remove
 
-                        let reads_sum_ns = debug_metrics.reads_sum_ns;
-                        let reads_cnt = debug_metrics.reads_cnt.max(1);
-                        debug!(target: "chain", "aggregating at {head_height} {shard_id} {reads_sum_ns} {reads_cnt}");
+                            let reads_sum_ns = debug_metrics.reads_sum_ns;
+                            let reads_cnt = debug_metrics.reads_cnt.max(1);
+                            debug!(target: "chain", "aggregating at {head_height} {shard_id} {reads_sum_ns} {reads_cnt}");
 
-                        metrics::GET_REF_SUM
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(reads_sum_ns as i64);
-                        metrics::GET_REF_CNT
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(reads_cnt as i64);
-                        metrics::GET_REF_AVG
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set((reads_sum_ns / reads_cnt) as i64);
-                        metrics::GET_REF_NUM_BLOCKS
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(debug_metrics.blocks as i64);
-                        metrics::GET_REF_GET_BLOCKS
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(debug_metrics.get_blocks_sum_ns as i64);
-                        metrics::GET_REF_GET_DELTAS
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(debug_metrics.get_deltas_sum_ns as i64);
-                        metrics::GET_REF_CACHED
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(debug_metrics.get_ref_cached_sum_ns as i64);
-                        metrics::GET_REF_DISK
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(debug_metrics.get_ref_disk_sum_ns as i64);
-                        metrics::GET_REF_DELTA_CACHE_HITS
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(debug_metrics.delta_cache_hits as i64);
-                        metrics::GET_REF_DELTA_CACHE_MISSES
-                            .with_label_values(&[&shard_id.to_string()])
-                            .set(debug_metrics.delta_cache_misses as i64);
+                            metrics::GET_REF_SUM
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(reads_sum_ns as i64);
+                            metrics::GET_REF_CNT
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(reads_cnt as i64);
+                            metrics::GET_REF_AVG
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set((reads_sum_ns / reads_cnt) as i64);
+                            metrics::GET_REF_NUM_BLOCKS
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.blocks as i64);
+                            metrics::GET_REF_GET_BLOCKS
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.get_blocks_sum_ns as i64);
+                            metrics::GET_REF_GET_DELTAS
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.get_deltas_sum_ns as i64);
+                            metrics::GET_REF_CACHED
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.get_ref_cached_sum_ns as i64);
+                            metrics::GET_REF_DISK
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.get_ref_disk_sum_ns as i64);
+                            metrics::GET_REF_DELTA_CACHE_HITS
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.delta_cache_hits as i64);
+                            metrics::GET_REF_DELTA_CACHE_MISSES
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.delta_cache_misses as i64);
+                        }
                     } else {
                         if flat_storage_state.get_debug_metrics_mark() {
                             debug!(target: "chain", "resetting at {head_height} {shard_id}");
