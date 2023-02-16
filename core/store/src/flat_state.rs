@@ -1247,7 +1247,13 @@ impl FlatStorageState {
         let blocks = guard.get_blocks_to_head(new_head)?;
         for block in blocks.into_iter().rev() {
             let mut store_update = StoreUpdate::new(guard.store.storage.clone());
-            let delta = guard.get_delta(&block)?.as_ref().clone();
+            let delta = match guard.get_delta(&block) {
+                Ok(delta) => delta.as_ref().clone(),
+                Err(_) => {
+                    let delta = FlatStateDelta::read_from_store(&guard.store, guard.shard_id, block.clone())?;
+                    delta.unwrap_or_default().as_ref().clone()
+                }
+            };
             for (key, value) in delta.0.iter() {
                 guard.put_value_ref_to_cache(key.clone(), value.clone());
             }
