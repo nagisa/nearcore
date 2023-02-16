@@ -1035,6 +1035,19 @@ impl FlatStorageStateInner {
     fn get_cached_ref(&mut self, key: &[u8]) -> Option<Option<ValueRef>> {
         self.value_ref_cache.get(key).cloned()
     }
+
+    #[cfg(feature = "protocol_feature_flat_state")]
+    fn get_ref(&self, block_hash: &CryptoHash, key: &[u8]) -> Option<Option<ValueRef>> {
+        let delta_key = FlatStateDeltaKey {
+            shard_id: self.shard_id,
+            block_hash: block_hash.clone(),
+            key: key.to_vec(),
+        };
+        let bytes_key = delta_key.encode();
+        let result: Option<Option<ValueRef>> =
+            self.store.get_ser(DBCol::FlatStateDeltas, &bytes_key).unwrap();
+        result
+    }
 }
 
 use rand::{Rng, SeedableRng};
@@ -1174,18 +1187,28 @@ impl FlatStorageState {
         let started = Instant::now();
         for block_hash in blocks_to_head.iter() {
             // If we found a key in delta, we can return a value because it is the most recent key update.
-            let delta = guard.get_delta(block_hash)?;
-            match delta.get(key) {
-                Some(value_ref) => {
+            if let Ok(delta) = guard.get_delta(block_hash) {
+                match delta.get(key) {
+                    Some(value_ref) => {
+                        guard.debug_metrics.delta_cache_hits += 1;
+                        guard.debug_metrics.get_deltas_sum_ns += started.elapsed().as_nanos() as u64;
+                        guard.debug_metrics.reads_sum_ns += get_ref_started.elapsed().as_nanos() as u64;
+                        return Ok(value_ref);
+                    }
+                    None => {
+                        guard.debug_metrics.delta_cache_misses += 1;
+                    }
+                };
+            } else {
+                if let Some(value_ref) = guard.get_ref(block_hash, key) {
                     guard.debug_metrics.delta_cache_hits += 1;
                     guard.debug_metrics.get_deltas_sum_ns += started.elapsed().as_nanos() as u64;
                     guard.debug_metrics.reads_sum_ns += get_ref_started.elapsed().as_nanos() as u64;
                     return Ok(value_ref);
-                }
-                None => {
+                } else {
                     guard.debug_metrics.delta_cache_misses += 1;
                 }
-            };
+            }
         }
         guard.debug_metrics.get_deltas_sum_ns += started.elapsed().as_nanos() as u64;
 
