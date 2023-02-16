@@ -645,6 +645,7 @@ struct FlatStorageStateInner {
     debug_metrics: FlatStorageDebugMetrics,
     #[allow(unused)]
     cap_deltas: usize,
+    blow_delta_size: usize,
 }
 
 struct FlatStorageMetrics {
@@ -1036,6 +1037,9 @@ impl FlatStorageStateInner {
     }
 }
 
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha20Rng;
+
 impl FlatStorageState {
     /// Create a new FlatStorageState for `shard_id` using flat head if it is stored on storage.
     /// We also load all blocks with height between flat head to `latest_block_height`
@@ -1127,6 +1131,7 @@ impl FlatStorageState {
             metrics,
             debug_metrics: Default::default(),
             cap_deltas,
+            blow_delta_size: 0,
         })))
     }
 
@@ -1309,7 +1314,20 @@ impl FlatStorageState {
             return Err(guard.create_block_not_supported_error(block_hash));
         }
         let mut store_update = StoreUpdate::new(guard.store.storage.clone());
-        delta.save_to_store(&mut store_update, guard.shard_id, block_hash.clone())?;
+
+        // BLOW DELTA UP
+        let mut blown_delta = delta.clone();
+        let current_size = blown_delta.total_size() as u32;
+        let delta_items = ((guard.blow_delta_size as u32).saturating_sub(current_size)) / 1_000;
+        let mut rng: ChaCha20Rng = SeedableRng::seed_from_u64(123);
+        for i in 0..delta_items {
+            // key length is 1_000
+            let mut key = vec![100u8]; // start from non-existent byte
+            key.extend_from_slice(&(0..939).map(|_| rng.gen_range(0..20)).collect::<Vec<_>>()); // 940 B per length + 70 B approximate overhead
+            blown_delta.insert(key, Some(ValueRef::new(&[(i / 256 % 256) as u8, (i % 256) as u8])));
+        }
+
+        blown_delta.save_to_store(&mut store_update, guard.shard_id, block_hash.clone())?;
 
         guard.metrics.cached_deltas.inc();
         guard.metrics.cached_deltas_num_items.add(delta.len() as i64);

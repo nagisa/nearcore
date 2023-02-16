@@ -34,6 +34,7 @@ pub struct TrieConfig {
     /// Capacity of `ValueRef`s cache for flat storage head for each shard.
     pub flat_state_cache_capacity: u64,
     pub flat_storage_cap_deltas: u64,
+    pub flat_storage_blow_delta_size: u64,
 }
 
 impl TrieConfig {
@@ -68,6 +69,7 @@ impl TrieConfig {
 
         this.flat_state_cache_capacity = config.flat_state_cache_capacity.clone();
         this.flat_storage_cap_deltas = config.flat_storage_cap_deltas.clone();
+        this.flat_storage_blow_delta_size = config.flat_storage_blow_delta_size.clone();
 
         this
     }
