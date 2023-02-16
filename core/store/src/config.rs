@@ -98,6 +98,7 @@ pub struct StoreConfig {
     pub flat_storage_measure_blocks: usize,
     pub flat_head_skip_blocks: usize,
     pub flat_head_catchup_period: usize,
+    pub flat_storage_cap_deltas: u64,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -245,6 +246,7 @@ impl Default for StoreConfig {
             flat_storage_measure_blocks: 60,
             flat_head_skip_blocks: 0,
             flat_head_catchup_period: 300,
+            flat_storage_cap_deltas: 20,
         }
     }
 }

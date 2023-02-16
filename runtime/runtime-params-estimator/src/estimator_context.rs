@@ -182,12 +182,14 @@ impl<'c> EstimatorContext<'c> {
         store_helper::set_flat_head(&mut store_update, shard_id, &FLAT_STATE_HEAD);
         store_update.commit().expect("failed to set flat head");
         let factory = FlatStateFactory::new(store.clone());
+        let mut trie_config = TrieConfig::default();
+        trie_config.flat_state_cache_capacity = cache_capacity;
         let flat_storage_state = FlatStorageState::new(
             store.clone(),
             shard_id,
             BLOCK_HEIGHT,
             &ChainAccess {},
-            cache_capacity as usize,
+            trie_config,
         );
         factory.add_flat_storage_state_for_shard(shard_id, flat_storage_state);
         factory
