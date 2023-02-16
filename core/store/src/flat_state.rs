@@ -1360,11 +1360,11 @@ impl FlatStorageState {
 
         blown_delta.save_to_store(&mut store_update, guard.shard_id, block_hash.clone())?;
 
-        guard.metrics.cached_deltas.inc();
-        guard.metrics.cached_deltas_num_items.add(delta.len() as i64);
-        guard.metrics.cached_deltas_size.add(delta.total_size() as i64);
         if guard.deltas.len() < guard.cap_deltas {
-            guard.deltas.insert(*block_hash, Arc::new(delta));
+            guard.metrics.cached_deltas.inc();
+            guard.metrics.cached_deltas_num_items.add(blown_delta.len() as i64);
+            guard.metrics.cached_deltas_size.add(blown_delta.total_size() as i64);
+            guard.deltas.insert(*block_hash, Arc::new(blown_delta));
         }
         guard.blocks.insert(*block_hash, block);
         guard.metrics.cached_blocks.inc();
