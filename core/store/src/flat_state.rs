@@ -470,7 +470,9 @@ impl FlatStateDelta {
     #[cfg(feature = "protocol_feature_flat_state")]
     pub fn apply_to_flat_state(self, store_update: &mut StoreUpdate) {
         for (key, value) in self.0.into_iter() {
-            store_helper::set_ref(store_update, key, value).expect(BORSH_ERR);
+            if key[0] != 100 {
+                store_helper::set_ref(store_update, key, value).expect(BORSH_ERR);
+            }
         }
     }
 
