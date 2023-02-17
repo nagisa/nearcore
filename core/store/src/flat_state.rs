@@ -1146,7 +1146,7 @@ impl FlatStorageState {
             metrics,
             debug_metrics: Default::default(),
             cap_deltas,
-            blow_delta_size: 0,
+            blow_delta_size: trie_config.flat_storage_blow_delta_size.clone() as usize,
         })))
     }
 
