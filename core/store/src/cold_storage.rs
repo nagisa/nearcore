@@ -11,7 +11,6 @@ use near_primitives::sharding::ShardChunk;
 use near_primitives::types::BlockHeight;
 use std::collections::HashMap;
 use std::io;
-use std::thread::JoinHandle;
 use strum::IntoEnumIterator;
 
 type StoreKey = Vec<u8>;
@@ -33,8 +32,6 @@ struct BatchTransaction<D: Database + 'static> {
     transaction_size: usize,
     /// Minimum size, after which we write transaction
     threshold_transaction_size: usize,
-    /// Write thread join handle
-    write_join_handle: Option<JoinHandle<io::Result<()>>>,
 }
 
 /// Updates provided cold database from provided hot store with information about block at `height`.
@@ -461,7 +458,6 @@ impl<D: Database + 'static> BatchTransaction<D> {
             transaction: DBTransaction::new(),
             transaction_size: 0,
             threshold_transaction_size: batch_size,
-            write_join_handle: None,
         }
     }
 
@@ -485,51 +481,21 @@ impl<D: Database + 'static> BatchTransaction<D> {
         if self.transaction.ops.is_empty() {
             return Ok(());
         }
-        self.finish_write_thread()?;
 
         let column_label = [<&str>::from(self.transaction.ops[0].col())];
 
         crate::metrics::COLD_STORE_MIGRATION_BATCH_WRITE_COUNT
             .with_label_values(&column_label)
             .inc();
+        let _timer = crate::metrics::COLD_STORE_MIGRATION_BATCH_WRITE_TIME
+            .with_label_values(&column_label)
+            .start_timer();
 
         let transaction = std::mem::take(&mut self.transaction);
-        let cold_db = self.cold_db.clone();
-
-        self.write_join_handle = Some(
-            std::thread::Builder::new()
-                .name(format!(
-                    "cold store initial migration batch write of {} of size {}",
-                    transaction.ops[0].col(),
-                    self.transaction_size
-                ))
-                .spawn(move || -> io::Result<()> {
-                    let _timer = crate::metrics::COLD_STORE_MIGRATION_BATCH_WRITE_TIME
-                        .with_label_values(&column_label)
-                        .start_timer();
-                    cold_db.write(transaction)
-                })
-                .map_err(|_| {
-                    io::Error::new(
-                        io::ErrorKind::Other,
-                        "Error building thread for BatchTransaction write.",
-                    )
-                })?,
-        );
-
+        self.cold_db.write(transaction)?;
         self.transaction_size = 0;
+
         Ok(())
-    }
-
-    fn finish_write_thread(&mut self) -> io::Result<()> {
-        let jh = std::mem::take(&mut self.write_join_handle);
-        jh.map_or(Ok(()), |jh| jh.join().expect("Error joining handle for BatchTransaction write"))
-    }
-}
-
-impl<D: Database + 'static> Drop for BatchTransaction<D> {
-    fn drop(&mut self) {
-        self.finish_write_thread().expect("Error writing BatchTransaction");
     }
 }
 
