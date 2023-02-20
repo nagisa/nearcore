@@ -686,7 +686,12 @@ pub struct FlatStorageDebugMetrics {
     pub delta_cache_hits: u64,
     #[allow(unused)]
     pub delta_cache_misses: u64,
+    #[allow(unused)]
+    pub delta_disk_hits: u64,
+    #[allow(unused)]
+    pub delta_disk_misses: u64,
 }
+
 /// Number of traversed parts during a single step of fetching state.
 #[allow(unused)]
 pub const NUM_PARTS_IN_ONE_STEP: u64 = 20;
@@ -1203,12 +1208,12 @@ impl FlatStorageState {
                 };
             } else {
                 if let Some(value_ref) = guard.get_ref(block_hash, key) {
-                    guard.debug_metrics.delta_cache_hits += 1;
+                    guard.debug_metrics.delta_disk_hits += 1;
                     guard.debug_metrics.get_deltas_sum_ns += started.elapsed().as_nanos() as u64;
                     guard.debug_metrics.reads_sum_ns += get_ref_started.elapsed().as_nanos() as u64;
                     return Ok(value_ref);
                 } else {
-                    guard.debug_metrics.delta_cache_misses += 1;
+                    guard.debug_metrics.delta_disk_misses += 1;
                 }
             }
         }

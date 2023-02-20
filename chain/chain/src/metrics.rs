@@ -153,3 +153,19 @@ pub static GET_REF_DELTA_CACHE_MISSES: Lazy<IntGaugeVec> = Lazy::new(|| {
     )
     .unwrap()
 });
+pub static GET_REF_DELTA_DISK_HITS: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "near_get_ref_delta_disk_hits",
+        "near_get_ref_delta_disk_hits",
+        &["shard_id"],
+    )
+        .unwrap()
+});
+pub static GET_REF_DELTA_DISK_MISSES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    try_create_int_gauge_vec(
+        "near_get_ref_delta_disk_misses",
+        "near_get_ref_delta_disk_misses",
+        &["shard_id"],
+    )
+        .unwrap()
+});

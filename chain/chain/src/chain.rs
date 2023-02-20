@@ -2176,6 +2176,12 @@ impl Chain {
                             metrics::GET_REF_DELTA_CACHE_MISSES
                                 .with_label_values(&[&shard_id.to_string()])
                                 .set(debug_metrics.delta_cache_misses as i64);
+                            metrics::GET_REF_DELTA_DISK_HITS
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.delta_cache_hits as i64);
+                            metrics::GET_REF_DELTA_DISK_MISSES
+                                .with_label_values(&[&shard_id.to_string()])
+                                .set(debug_metrics.delta_cache_misses as i64);
                         }
                     } else {
                         if flat_storage_state.get_debug_metrics_mark() {
