@@ -9,6 +9,8 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::shard_layout::ShardLayout;
 use near_primitives::sharding::ShardChunk;
 use near_primitives::types::BlockHeight;
+use rayon::iter::IntoParallelIterator;
+use rayon::iter::ParallelIterator;
 use std::collections::HashMap;
 use std::io;
 use strum::IntoEnumIterator;
@@ -170,16 +172,67 @@ pub fn copy_all_data_to_cold<D: Database + 'static>(
 ) -> io::Result<bool> {
     for col in DBCol::iter() {
         if col.is_cold() {
-            let mut transaction = BatchTransaction::new(cold_db.clone(), batch_size);
-            for result in hot_store.iter(col) {
-                if !keep_going.load(std::sync::atomic::Ordering::SeqCst) {
-                    tracing::debug!(target: "cold_store", "stopping copy_all_data_to_cold");
-                    return Ok(false);
+            if col != DBCol::State {
+                let mut transaction = BatchTransaction::new(cold_db.clone(), batch_size);
+                for result in hot_store.iter(col) {
+                    if !keep_going.load(std::sync::atomic::Ordering::SeqCst) {
+                        tracing::debug!(target: "cold_store", "stopping copy_all_data_to_cold");
+                        return Ok(false);
+                    }
+                    let (key, value) = result?;
+                    transaction.set(col, key.to_vec(), value.to_vec())?;
                 }
-                let (key, value) = result?;
-                transaction.set(col, key.to_vec(), value.to_vec())?;
+                transaction.write()?;
+            } else {
+                let read_thread_pool =
+                    rayon::ThreadPoolBuilder::new().num_threads(8).build().map_err(|_| {
+                        io::Error::new(
+                            io::ErrorKind::Other,
+                            "failed to create rayon read thread pool",
+                        )
+                    })?;
+
+                let results: Vec<io::Result<bool>> = read_thread_pool.install(|| {
+                    (1..=u8::MAX).into_par_iter().map(|i|-> io::Result<bool> {
+                        let empty_key = [u8::MIN; 40];
+                        let start_key = {
+                            let mut key = empty_key;
+                            key[8] = i - 1;
+                            key
+                        };
+                        let end_key = {
+                            let mut key = empty_key;
+                            key[8] = i;
+                            key
+                        };
+
+                        let mut transaction = BatchTransaction::new(cold_db.clone(), batch_size);
+                        for result in hot_store.iter_range(col, &start_key,
+                                                           if i == u8::MAX {
+                                                               None
+                                                           } else {
+                                                               Some(&end_key)
+                                                           }) {
+                            if !keep_going.load(std::sync::atomic::Ordering::SeqCst) {
+                                tracing::debug!(target: "cold_store", "stopping copy_all_data_to_cold");
+                                return Ok(false);
+                            }
+                            let (key, value) = result?;
+                            transaction.set(col, key.to_vec(), value.to_vec())?;
+                        }
+                        transaction.write()?;
+                        Ok(true)
+                    }).collect()
+                });
+
+                for result in results {
+                    match result {
+                        Err(_) => return result,
+                        Ok(false) => return Ok(false),
+                        Ok(true) => {}
+                    }
+                }
             }
-            transaction.write()?;
         }
     }
     Ok(true)

@@ -169,9 +169,9 @@ impl<D: Database> super::Database for ColdDB<D> {
 
     fn iter_range<'a>(
         &'a self,
-        col: DBCol,
-        start_key: &'a [u8],
-        end_key: &'a [u8],
+        _col: DBCol,
+        _start_key: &'a [u8],
+        _end_key: Option<&'a [u8]>,
     ) -> DBIterator<'a> {
         // Currently we only call iter_range for migration from archival storage to split storage.
         unreachable!("iter_range on cold storage is not supported");

@@ -384,10 +384,14 @@ fn test_initial_copy_to_cold(batch_size: usize) {
         last_hash = block.hash().clone();
     }
 
+    let keep_going = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let keep_going_clone = keep_going.clone();
+
     copy_all_data_to_cold(
         (*store.cold_db().unwrap()).clone(),
         &env.clients[0].runtime_adapter.store(),
         batch_size,
+        keep_going_clone,
     )
     .unwrap();
 
@@ -409,7 +413,9 @@ fn test_initial_copy_to_cold(batch_size: usize) {
         if batch_size == 0 {
             assert_eq!(num_checks, test_get_store_initial_writes(col));
         } else if batch_size == usize::MAX {
-            assert_eq!(1, test_get_store_initial_writes(col));
+            if col != DBCol::State {
+                assert_eq!(1, test_get_store_initial_writes(col));
+            }
         }
     }
 }

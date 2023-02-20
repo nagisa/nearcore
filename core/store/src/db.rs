@@ -145,7 +145,7 @@ pub trait Database: Sync + Send {
         &'a self,
         col: DBCol,
         start_key: &'a [u8],
-        end_key: &'a [u8],
+        end_key: Option<&'a [u8]>,
     ) -> DBIterator<'a>;
 
     /// Iterate over items in given column bypassing reference count decoding if

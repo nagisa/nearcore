@@ -51,12 +51,19 @@ impl Database for TestDB {
         &'a self,
         col: DBCol,
         start_key: &'a [u8],
-        end_key: &'a [u8],
+        end_key: Option<&'a [u8]>,
     ) -> DBIterator<'a> {
-        let iterator = self.db.read().unwrap()[col]
-            .range(start_key.to_vec()..end_key.to_vec())
-            .map(|(k, v)| Ok((k.clone().into_boxed_slice(), v.clone().into_boxed_slice())))
-            .collect::<Vec<io::Result<_>>>();
+        let iterator = if let Some(end_key) = end_key {
+            self.db.read().unwrap()[col]
+                .range(start_key.to_vec()..end_key.to_vec())
+                .map(|(k, v)| Ok((k.clone().into_boxed_slice(), v.clone().into_boxed_slice())))
+                .collect::<Vec<io::Result<_>>>()
+        } else {
+            self.db.read().unwrap()[col]
+                .range(start_key.to_vec()..)
+                .map(|(k, v)| Ok((k.clone().into_boxed_slice(), v.clone().into_boxed_slice())))
+                .collect::<Vec<io::Result<_>>>()
+        };
         refcount::iter_with_rc_logic(col, iterator.into_iter())
     }
 
