@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use near_crypto::{EmptySigner, KeyType, PublicKey, Signature, Signer};
+use near_crypto::{EmptySigner, InMemorySigner, KeyType, PublicKey, SecretKey, Signature, Signer};
 use near_primitives_core::types::ProtocolVersion;
 
 use crate::account::{AccessKey, AccessKeyPermission, Account};
@@ -20,6 +20,7 @@ use crate::transaction::{
 use crate::types::{AccountId, Balance, EpochId, EpochInfoProvider, Gas, Nonce};
 use crate::validator_signer::{InMemoryValidatorSigner, ValidatorSigner};
 use crate::version::PROTOCOL_VERSION;
+use crate::views::{ExecutionStatusView, FinalExecutionOutcomeView, FinalExecutionStatus};
 
 pub fn account_new(amount: Balance, code_hash: CryptoHash) -> Account {
     Account::new(amount, 0, code_hash, std::mem::size_of::<Account>() as u64)
@@ -487,8 +488,6 @@ pub fn create_test_signer(account_name: &str) -> InMemoryValidatorSigner {
         account_name,
     )
 }
-<<<<<<< Updated upstream
-=======
 
 /// Helper function that creates a new signer for a given account, that uses the account name as seed.
 ///
@@ -533,4 +532,3 @@ impl FinalExecutionOutcomeView {
         }
     }
 }
->>>>>>> Stashed changes
