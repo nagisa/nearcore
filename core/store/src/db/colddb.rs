@@ -167,6 +167,16 @@ impl<D: Database> super::Database for ColdDB<D> {
         self.cold.iter_prefix(col, key_prefix)
     }
 
+    fn iter_range<'a>(
+        &'a self,
+        col: DBCol,
+        start_key: &'a [u8],
+        end_key: &'a [u8],
+    ) -> DBIterator<'a> {
+        // Currently we only call iter_range for migration from archival storage to split storage.
+        unreachable!("iter_range on cold storage is not supported");
+    }
+
     /// Unimplemented; always panics.
     fn iter_raw_bytes<'a>(&'a self, _column: DBCol) -> DBIterator<'a> {
         // We’re actually never call iter_raw_bytes on cold store.

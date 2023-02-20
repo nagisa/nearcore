@@ -136,6 +136,18 @@ pub trait Database: Sync + Send {
     /// are returned in lexicographical order sorted by the key.
     fn iter_prefix<'a>(&'a self, col: DBCol, key_prefix: &'a [u8]) -> DBIterator<'a>;
 
+    /// Iterate over items in given column whose keys are in the [`start_key`, `end_key`) range.
+    ///
+    /// This is morally equivalent to [`Self::iter`] with a filter that only allows
+    /// keys that follow `start_key` <= key < `end_key`. The items
+    /// are returned in lexicographical order sorted by the key.
+    fn iter_range<'a>(
+        &'a self,
+        col: DBCol,
+        start_key: &'a [u8],
+        end_key: &'a [u8],
+    ) -> DBIterator<'a>;
+
     /// Iterate over items in given column bypassing reference count decoding if
     /// any.
     ///

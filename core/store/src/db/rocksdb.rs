@@ -218,6 +218,21 @@ impl RocksDB {
         let iter = self.db.iterator_cf_opt(cf_handle, read_options, IteratorMode::Start);
         RocksDBIterator(iter)
     }
+
+    fn iter_raw_bytes_range<'a>(
+        &'a self,
+        col: DBCol,
+        start_key: &'a [u8],
+        end_key: &'a [u8],
+    ) -> RocksDBIterator<'a> {
+        let cf_handle = self.cf_handle(col).unwrap();
+        let mut read_options = rocksdb_read_options();
+        if !prefix.is_empty() {
+            read_options.set_iterate_range(start_key..end_key);
+        }
+        let iter = self.db.iterator_cf_opt(cf_handle, read_options, IteratorMode::Start);
+        RocksDBIterator(iter)
+    }
 }
 
 struct RocksDBIterator<'a>(rocksdb::DBIteratorWithThreadMode<'a, DB>);
@@ -280,6 +295,16 @@ impl Database for RocksDB {
 
     fn iter_prefix<'a>(&'a self, col: DBCol, key_prefix: &'a [u8]) -> DBIterator<'a> {
         let iter = self.iter_raw_bytes_prefix(col, key_prefix);
+        refcount::iter_with_rc_logic(col, iter)
+    }
+
+    fn iter_range<'a>(
+        &'a self,
+        col: DBCol,
+        start_key: &'a [u8],
+        end_key: &'a [u8],
+    ) -> DBIterator<'a> {
+        let iter = self.iter_raw_bytes_range(col, start_key, end_key);
         refcount::iter_with_rc_logic(col, iter)
     }
 

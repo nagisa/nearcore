@@ -47,6 +47,19 @@ impl Database for TestDB {
         refcount::iter_with_rc_logic(col, iterator.into_iter())
     }
 
+    fn iter_range<'a>(
+        &'a self,
+        col: DBCol,
+        start_key: &'a [u8],
+        end_key: &'a [u8],
+    ) -> DBIterator<'a> {
+        let iterator = self.db.read().unwrap()[col]
+            .range(start_key.to_vec()..end_key.to_vec())
+            .map(|(k, v)| Ok((k.clone().into_boxed_slice(), v.clone().into_boxed_slice())))
+            .collect::<Vec<io::Result<_>>>();
+        refcount::iter_with_rc_logic(col, iterator.into_iter())
+    }
+
     fn write(&self, transaction: DBTransaction) -> io::Result<()> {
         let mut db = self.db.write().unwrap();
         for op in transaction.ops {
