@@ -487,3 +487,50 @@ pub fn create_test_signer(account_name: &str) -> InMemoryValidatorSigner {
         account_name,
     )
 }
+<<<<<<< Updated upstream
+=======
+
+/// Helper function that creates a new signer for a given account, that uses the account name as seed.
+///
+/// This also works for predefined implicit accounts, where the signer will use the implicit key.
+///
+/// Should be used only in tests.
+pub fn create_user_test_signer(account_name: &str) -> InMemorySigner {
+    let account_id = account_name.parse().unwrap();
+    if account_id == implicit_test_account() {
+        InMemorySigner::from_secret_key(account_id, implicit_test_account_secret())
+    } else {
+        InMemorySigner::from_secret_key(account_id, integration())
+    }
+}
+
+/// A fixed implicit account for which tests can know the private key.
+pub fn implicit_test_account() -> AccountId {
+    "061b1dd17603213b00e1a1e53ba060ad427cef4887bd34a5e0ef09010af23b0a".parse().unwrap()
+}
+
+/// Private key for the fixed implicit test account.
+pub fn implicit_test_account_secret() -> SecretKey {
+    "ed25519:5roj6k68kvZu3UEJFyXSfjdKGrodgZUfFLZFpzYXWtESNsLWhYrq3JGi4YpqeVKuw1m9R2TEHjfgWT1fjUqB1DNy".parse().unwrap()
+}
+pub fn integration() -> SecretKey {
+    "ed25519:3No9NiZiGCGEfcEUmQQkxkU7RARPwmch47FTJNRan86GmbhhRkryKxoTq6KtjfDCyZuDxxkiTDv3m5JNeHQTyiUT".parse().unwrap()
+}
+
+impl FinalExecutionOutcomeView {
+    #[track_caller]
+    /// Check transaction and all transitive receipts for success status.
+    pub fn assert_success(&self) {
+        assert!(matches!(self.status, FinalExecutionStatus::SuccessValue(_)));
+        for (i, receipt) in self.receipts_outcome.iter().enumerate() {
+            assert!(
+                matches!(
+                    receipt.outcome.status,
+                    ExecutionStatusView::SuccessReceiptId(_) | ExecutionStatusView::SuccessValue(_),
+                ),
+                "receipt #{i} failed: {receipt:?}",
+            );
+        }
+    }
+}
+>>>>>>> Stashed changes

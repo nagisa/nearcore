@@ -21,6 +21,7 @@ pub(crate) enum SubCommand {
     Run,
     /// Initialize necessary configs
     Init(InitConfigArgs),
+    SendMeta,
 }
 
 #[derive(Parser, Debug)]

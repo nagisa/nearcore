@@ -16,3 +16,6 @@ tracing.workspace = true
 
 near-indexer = { path = "../../../chain/indexer" }
 near-o11y = { path = "../../../core/o11y" }
+near-crypto = {path ="../../../core/crypto"}
+near-primitives = { path ="../../../core/primitives"}
+integration-tests = {path = "../../../integration-tests", features= ["protocol_feature_nep366_delegate_action"]}

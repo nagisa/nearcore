@@ -240,6 +240,41 @@ pub trait User {
             vec![Action::Stake(StakeAction { stake, public_key })],
         )
     }
+
+    /// Wrap the given actions in a delegate action and execute them.
+    ///
+    /// The signer signs the delegate action to be sent to the receiver. The
+    /// relayer packs that in a transaction and signs it .
+    #[cfg(feature = "protocol_feature_nep366_delegate_action")]
+    fn meta_tx(
+        &self,
+        signer_id: AccountId,
+        receiver_id: AccountId,
+        relayer_id: AccountId,
+        actions: Vec<Action>,
+    ) -> Result<FinalExecutionOutcomeView, ServerError> {
+        let inner_signer = create_user_test_signer(&signer_id);
+        let user_nonce = 879545;
+        let delegate_action = DelegateAction {
+            sender_id: signer_id.clone(),
+            receiver_id,
+            actions: actions
+                .into_iter()
+                .map(|action| NonDelegateAction::try_from(action).unwrap())
+                .collect(),
+            nonce: user_nonce + 1,
+            max_block_height: 100,
+            public_key: inner_signer.public_key(),
+        };
+        let signature = inner_signer.sign(delegate_action.get_nep461_hash().as_bytes());
+        let signed_delegate_action = SignedDelegateAction { delegate_action, signature };
+
+        self.sign_and_commit_actions(
+            relayer_id,
+            signer_id,
+            vec![Action::Delegate(signed_delegate_action)],
+        )
+    }
 }
 
 /// Same as `User` by provides async API that can be used inside tokio.

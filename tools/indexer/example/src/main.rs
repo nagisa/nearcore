@@ -1,13 +1,15 @@
+use std::sync::Arc;
+
 use actix;
 
 use anyhow::Result;
 use clap::Parser;
+use integration_tests::user::{rpc_user::RpcUser, User};
 use tokio::sync::mpsc;
 use tracing::info;
 
 use configs::{Opts, SubCommand};
 use near_indexer;
-
 mod configs;
 
 async fn listen_blocks(mut stream: mpsc::Receiver<near_indexer::StreamerMessage>) {
@@ -245,17 +247,21 @@ async fn listen_blocks(mut stream: mpsc::Receiver<near_indexer::StreamerMessage>
         // }
         info!(
             target: "indexer_example",
-            "#{} {} Shards: {}, Transactions: {}, Receipts: {}, ExecutionOutcomes: {}",
+            "#{} {} Shards: {}, Transactions: {}, Receipts: {}, ExecutionOutcomes: {}, StreamerMessage: {:?}",
             streamer_message.block.header.height,
             streamer_message.block.header.hash,
             streamer_message.shards.len(),
             streamer_message.shards.iter().map(|shard| if let Some(chunk) = &shard.chunk { chunk.transactions.len() } else { 0usize }).sum::<usize>(),
             streamer_message.shards.iter().map(|shard| if let Some(chunk) = &shard.chunk { chunk.receipts.len() } else { 0usize }).sum::<usize>(),
             streamer_message.shards.iter().map(|shard| shard.receipt_execution_outcomes.len()).sum::<usize>(),
+            streamer_message
         );
     }
 }
 
+pub fn bob_account() -> near_primitives::types::AccountId {
+    "bob.near".parse().unwrap()
+}
 fn main() -> Result<()> {
     // We use it to automatically search the for root certificates to perform HTTPS calls
     // (sending telemetry and downloading genesis)
@@ -286,6 +292,43 @@ fn main() -> Result<()> {
             system.run()?;
         }
         SubCommand::Init(config) => near_indexer::indexer_init_configs(&home_dir, config.into())?,
+        SubCommand::SendMeta => {
+            const DEFAULT_WAIT_PERIOD_SEC: &str = "60";
+            const DEFAULT_RPC_URL: &str = "0.0.0.0:3030";
+            pub const CONFIG_FILENAME: &str = "config.json";
+
+            let rpc_url = DEFAULT_RPC_URL;
+            let home_dir = std::path::Path::new("/Users/firatsertgoz/.near");
+            //let config = Config::from_file(&home_dir.join(CONFIG_FILENAME)).expect("can't load config");
+
+            let key_path =
+                std::path::Path::new("/Users/firatsertgoz/.near/localnet/validator_key.json");
+            // let key_file = near_crypto::KeyFile::from_file(&key_path)
+            // .unwrap_or_else(|e| panic!("Failed to open key file at {:?}: {:#}", &key_path, e));
+            // Support configuring if there is another key.
+            let signer = near_crypto::InMemorySigner::from_file(&key_path).unwrap_or_else(|e| {
+                panic!("Failed to initialize signer from key file at {:?}: {:#}", key_path, e)
+            });
+            let account_id = signer.account_id.clone();
+            let receiver = bob_account();
+
+            let user = RpcUser::new(rpc_url, account_id.clone(), Arc::new(signer.clone()));
+            let public_key =
+                near_crypto::PublicKey::from_seed(near_crypto::KeyType::ED25519, "123");
+            let actions = vec![near_primitives::transaction::Action::AddKey(
+                near_primitives::transaction::AddKeyAction {
+                    public_key: public_key.clone(),
+                    access_key: near_primitives::account::AccessKey::full_access(),
+                },
+            )];
+            let result = user.meta_tx(
+                signer.account_id.clone(),
+                signer.account_id.clone(),
+                signer.account_id.clone(),
+                actions,
+            );
+            println!("this is the result of meta-tx {:?}", result);
+        }
     }
     Ok(())
 }

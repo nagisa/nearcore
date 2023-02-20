@@ -200,6 +200,7 @@ impl User for RpcUser {
         };
         match self.query(query)?.kind {
             near_jsonrpc_primitives::types::query::QueryResponseKind::AccessKey(access_key) => {
+                println!("This is the access key: {:?}", access_key);
                 Ok(access_key)
             }
             _ => Err("Invalid type of response".into()),
