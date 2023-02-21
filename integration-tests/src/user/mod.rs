@@ -247,7 +247,6 @@ pub trait User {
     ///
     /// The signer signs the delegate action to be sent to the receiver. The
     /// relayer packs that in a transaction and signs it .
-    #[cfg(feature = "protocol_feature_nep366_delegate_action")]
     fn meta_tx(
         &self,
         signer_id: AccountId,

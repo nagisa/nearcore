@@ -47,8 +47,8 @@ async fn compose_rosetta_nep141_events(
                     delta: -transfer_event.amount.parse::<i64>()?,
                     cause: "TRANSFER".to_string(),
                     memo: transfer_event.memo.as_ref().map(|s| s.escape_default().to_string()),
-                    symbol: ft_metadata.symbol.clone(),
-                    decimals: ft_metadata.decimals.clone(),
+                    symbol: "near".to_string(),
+                    decimals: 1,
                 };
                 ft_events.push(build_event(base, custom).await?);
 
@@ -59,8 +59,8 @@ async fn compose_rosetta_nep141_events(
                     delta: transfer_event.amount.parse::<i64>()?,
                     cause: "TRANSFER".to_string(),
                     memo: transfer_event.memo.as_ref().map(|s| s.escape_default().to_string()),
-                    symbol: ft_metadata.symbol.clone(),
-                    decimals: ft_metadata.decimals.clone(),
+                    symbol: "near".to_string(),
+                    decimals: 1,
                 };
                 ft_events.push(build_event(base, custom).await?);
             }

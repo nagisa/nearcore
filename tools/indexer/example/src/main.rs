@@ -245,17 +245,19 @@ async fn listen_blocks(mut stream: mpsc::Receiver<near_indexer::StreamerMessage>
         //         },
         //     ],
         // }
-        info!(
-            target: "indexer_example",
-            "#{} {} Shards: {}, Transactions: {}, Receipts: {}, ExecutionOutcomes: {}, StreamerMessage: {:?}",
-            streamer_message.block.header.height,
-            streamer_message.block.header.hash,
-            streamer_message.shards.len(),
-            streamer_message.shards.iter().map(|shard| if let Some(chunk) = &shard.chunk { chunk.transactions.len() } else { 0usize }).sum::<usize>(),
-            streamer_message.shards.iter().map(|shard| if let Some(chunk) = &shard.chunk { chunk.receipts.len() } else { 0usize }).sum::<usize>(),
-            streamer_message.shards.iter().map(|shard| shard.receipt_execution_outcomes.len()).sum::<usize>(),
-            streamer_message
-        );
+        // info!(
+        //     target: "indexer_example",
+        //     "#{} {} Shards: {}, Transactions: {}, Receipts: {}, ExecutionOutcomes: {}, StreamerMessage: {:?}",
+        //     streamer_message.block.header.height,
+        //     streamer_message.block.header.hash,
+        //     streamer_message.shards.len(),
+        //     streamer_message.shards.iter().map(|shard| if let Some(chunk) = &shard.chunk { chunk.transactions.len() } else { 0usize }).sum::<usize>(),
+        //     streamer_message.shards.iter().map(|shard| if let Some(chunk) = &shard.chunk { chunk.receipts.len() } else { 0usize }).sum::<usize>(),
+        //     streamer_message.shards.iter().map(|shard| shard.receipt_execution_outcomes.len()).sum::<usize>(),
+        //     streamer_message
+        // );
+        //let json_output = serde_json::to_string(&streamer_message)?;
+        println!("{}", serde_json::to_string_pretty(&streamer_message).unwrap());
     }
 }
 
@@ -327,7 +329,9 @@ fn main() -> Result<()> {
                 signer.account_id.clone(),
                 actions,
             );
-            println!("this is the result of meta-tx {:?}", result);
+
+            let json_output = serde_json::to_string(&result)?;
+            println!("this is the result of meta-tx {:?}", json_output);
         }
     }
     Ok(())
