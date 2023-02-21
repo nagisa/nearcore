@@ -4,6 +4,7 @@ use crate::trie::TrieRefcountChange;
 use crate::{metrics, DBCol, DBTransaction, Database, Store, TrieChanges};
 
 use borsh::{BorshDeserialize, BorshSerialize};
+use itertools::Itertools;
 use near_primitives::block::{Block, BlockHeader, Tip};
 use near_primitives::hash::CryptoHash;
 use near_primitives::shard_layout::ShardLayout;
@@ -175,7 +176,7 @@ pub fn copy_all_data_to_cold<D: Database + 'static>(
             if col != DBCol::State {
                 let mut transaction = BatchTransaction::new(cold_db.clone(), batch_size);
                 for result in hot_store.iter(col) {
-                    if !keep_going.load(std::sync::atomic::Ordering::SeqCst) {
+                    if !keep_going.load(std::sync::atomic::Ordering::Relaxed) {
                         tracing::debug!(target: "cold_store", "stopping copy_all_data_to_cold");
                         return Ok(false);
                     }
@@ -192,28 +193,34 @@ pub fn copy_all_data_to_cold<D: Database + 'static>(
                         )
                     })?;
 
-                let results: Vec<io::Result<bool>> = read_thread_pool.install(|| {
-                    (1..=u8::MAX).into_par_iter().map(|i|-> io::Result<bool> {
-                        let empty_key = [u8::MIN; 40];
-                        let start_key = {
-                            let mut key = empty_key;
-                            key[8] = i - 1;
-                            key
-                        };
-                        let end_key = {
-                            let mut key = empty_key;
-                            key[8] = i;
-                            key
-                        };
+                let mut keys = vec![0..2, 0..4, 0..1 << 8]
+                    .into_iter()
+                    .multi_cartesian_product()
+                    .map(|params| {
+                        let mut key = [u8::MIN; 40];
+                        key[0..4].copy_from_slice(&u32::to_le_bytes(params[0]));
+                        key[4..8].copy_from_slice(&u32::to_le_bytes(params[1]));
+                        key[8] = params[2] as u8;
+                        key
+                    })
+                    .collect::<Vec<[u8; 40]>>();
+                keys.push(keys[keys.len() - 1].clone());
+                let borders = keys[..keys.len()]
+                    .iter()
+                    .zip(keys[1..].iter())
+                    .map(|(a, b)| (a.clone(), b.clone()))
+                    .collect::<Vec<([u8; 40], [u8; 40])>>();
 
+                let results: Vec<io::Result<bool>> = read_thread_pool.install(|| {
+                    borders.into_par_iter().map(|(start_key, end_key)|-> io::Result<bool> {
                         let mut transaction = BatchTransaction::new(cold_db.clone(), batch_size);
                         for result in hot_store.iter_range(col, &start_key,
-                                                           if i == u8::MAX {
+                                                           if start_key == end_key {
                                                                None
                                                            } else {
                                                                Some(&end_key)
                                                            }) {
-                            if !keep_going.load(std::sync::atomic::Ordering::SeqCst) {
+                            if !keep_going.load(std::sync::atomic::Ordering::Relaxed) {
                                 tracing::debug!(target: "cold_store", "stopping copy_all_data_to_cold");
                                 return Ok(false);
                             }
