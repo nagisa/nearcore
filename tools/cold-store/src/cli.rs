@@ -666,7 +666,7 @@ impl CheckAgainstRpcCmd {
         let mut rpc_store_config = near_config.config.store.clone();
         rpc_store_config.path = Some(path.to_path_buf());
         let rpc_opener = NodeStorage::opener(home_dir, false, &rpc_store_config, None);
-        let rpc_storage = rpc_opener.open_in_mode(near_store::Mode::ReadOnly)?;
+        let rpc_storage = rpc_opener.open()?;
         let rpc_store = rpc_storage.get_hot_store();
 
         tracing::info!(target: "check-rpc", "Checking up to date");
