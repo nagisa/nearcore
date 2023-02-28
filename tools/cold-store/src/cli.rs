@@ -266,7 +266,7 @@ fn copy_all_blocks(storage: &NodeStorage, batch_size: usize, check: bool) {
         for col in DBCol::iter() {
             if col.is_cold() {
                 println!(
-                    "Performed {} {:?} checks",
+                    "Performed {:?} successful/total checks for column {:?}",
                     check_iter(&storage.get_hot_store(), &storage.get_cold_store().unwrap(), col),
                     col
                 );
@@ -280,11 +280,18 @@ fn check_key(
     second_store: &near_store::Store,
     col: DBCol,
     key: &[u8],
-) {
-    let first_res = first_store.get(col, key);
-    let second_res = second_store.get(col, key);
+) -> bool {
+    let first_res = first_store.get(col, key).unwrap();
+    let second_res = second_store.get(col, key).unwrap();
 
-    assert_eq!(first_res.unwrap(), second_res.unwrap(), "Column: {:?},  key: {:?}", col, key);
+    if col == DBCol::Block && first_res != second_res {
+        tracing::info!(
+            "First store Block is: {:?}",
+            first_store.get_ser::<near_primitives::block::Block>(col, key)
+        );
+    }
+
+    first_res == second_res
 }
 
 /// Checks that `first_store`'s column `col` is fully included in `second_store`
@@ -294,13 +301,16 @@ fn check_iter(
     first_store: &near_store::Store,
     second_store: &near_store::Store,
     col: DBCol,
-) -> u64 {
+) -> (u64, u64) {
     let mut num_checks = 0;
+    let mut num_successful_checks = 0;
     for (key, _value) in first_store.iter(col).map(Result::unwrap) {
-        check_key(first_store, second_store, col, &key);
+        if check_key(first_store, second_store, col, &key) {
+            num_successful_checks += 1
+        }
         num_checks += 1;
     }
-    num_checks
+    (num_successful_checks, num_checks)
 }
 
 /// Calls get_ser on Store with provided temperature from provided NodeStorage.
@@ -679,7 +689,7 @@ impl CheckAgainstRpcCmd {
             tracing::info!(target: "check-rpc", "Checking column {:?}", col);
             tracing::info!(
                 target: "check-rpc",
-                "Performed {} checks. OK",
+                "Performed {:?} successful/total checks",
                 check_iter(
                          &rpc_store,
                          &cold_store,
