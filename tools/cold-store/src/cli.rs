@@ -4,6 +4,7 @@ use near_epoch_manager::EpochManagerAdapter;
 use near_primitives::block::Tip;
 use near_primitives::hash::CryptoHash;
 use near_store::cold_storage::{copy_all_data_to_cold, update_cold_db, update_cold_head};
+use near_store::db::DBSlice;
 use near_store::metadata::DbKind;
 use near_store::{DBCol, NodeStorage, Store, Temperature};
 use near_store::{COLD_HEAD_KEY, FINAL_HEAD_KEY, HEAD_KEY, TAIL_KEY};
@@ -236,14 +237,29 @@ fn copy_all_blocks(store: &NodeStorage, batch_size: usize, check: bool) {
     }
 }
 
+fn get_with_retries<'a>(
+    store: &'a near_store::Store,
+    col: DBCol,
+    key: &'a [u8],
+    retries: u8,
+) -> std::io::Result<Option<DBSlice<'a>>> {
+    for _ in 0..retries {
+        match store.get(col, key) {
+            Ok(value) => return Ok(value),
+            Err(_) => std::thread::sleep(std::time::Duration::from_millis(50)),
+        }
+    }
+    store.get(col, key)
+}
+
 fn check_key(
     first_store: &near_store::Store,
     second_store: &near_store::Store,
     col: DBCol,
     key: &[u8],
 ) -> bool {
-    let first_res = first_store.get(col, key).unwrap();
-    let second_res = second_store.get(col, key).unwrap();
+    let first_res = get_with_retries(first_store, col, key, 5).unwrap();
+    let second_res = get_with_retries(second_store, col, key, 5).unwrap();
 
     if col == DBCol::Block && first_res != second_res {
         tracing::info!(
