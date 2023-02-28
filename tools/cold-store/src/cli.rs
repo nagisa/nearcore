@@ -15,6 +15,10 @@ use strum::IntoEnumIterator;
 
 #[derive(clap::Parser)]
 pub struct ColdStoreCommand {
+    /// By default state viewer opens rocks DB in the read only mode, which allows it to run
+    /// multiple instances in parallel and be sure that no unintended changes get written to the DB.
+    #[clap(long, short = 'w')]
+    pub readwrite: bool,
     #[clap(subcommand)]
     subcmd: SubCommand,
 }
@@ -39,13 +43,19 @@ enum SubCommand {
     /// - config.cold_store.path points to an existing database with kind Cold
     /// - store_relative_path points to an existing database with kind Rpc
     PrepareHot(PrepareHotCmd),
+    /// If rpc.head <= cold.head
+    /// checks that every cold column in rpc db is fully present in cold db
+    /// and value for every key is the same.
+    CheckAgainstRpc(CheckAgainstRpcCmd),
 }
 
 impl ColdStoreCommand {
     pub fn run(self, home_dir: &Path) -> anyhow::Result<()> {
+        let mode =
+            if self.readwrite { near_store::Mode::ReadWrite } else { near_store::Mode::ReadOnly };
         let near_config = nearcore::config::load_config(
             &home_dir,
-            near_chain_configs::GenesisValidationMode::Full,
+            near_chain_configs::GenesisValidationMode::UnsafeFast,
         )
         .unwrap_or_else(|e| panic!("Error loading config: {:#}", e));
 
@@ -55,7 +65,8 @@ impl ColdStoreCommand {
             &near_config.config.store,
             near_config.config.cold_store.as_ref(),
         );
-        let storage = opener.open().unwrap_or_else(|e| panic!("Error opening storage: {:#}", e));
+        let storage =
+            opener.open_in_mode(mode).unwrap_or_else(|e| panic!("Error opening storage: {:#}", e));
 
         let hot_runtime = Arc::new(NightshadeRuntime::from_config(
             home_dir,
@@ -76,6 +87,7 @@ impl ColdStoreCommand {
                 Ok(())
             }
             SubCommand::PrepareHot(cmd) => cmd.run(&storage, &home_dir, &near_config),
+            SubCommand::CheckAgainstRpc(cmd) => cmd.run(&storage, &home_dir, &near_config),
         }
     }
 }
@@ -233,7 +245,7 @@ fn check_key(
     let first_res = first_store.get(col, key);
     let second_res = second_store.get(col, key);
 
-    assert_eq!(first_res.unwrap(), second_res.unwrap());
+    assert_eq!(first_res.unwrap(), second_res.unwrap(), "Column: {:?},  key: {:?}", col, key);
 }
 
 /// Checks that `first_store`'s column `col` is fully included in `second_store`
@@ -417,6 +429,80 @@ impl PrepareHotCmd {
                 cold_head.height,
                 rpc_head.height
             );
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(clap::Parser)]
+struct CheckAgainstRpcCmd {
+    /// The relative path to the rpc store that will be used for checking
+    /// The path should be relative to the home_dir e.g. rpc_data
+    #[clap(short, long)]
+    store_relative_path: String,
+}
+
+impl CheckAgainstRpcCmd {
+    pub fn run(
+        &self,
+        storage: &NodeStorage,
+        home_dir: &Path,
+        near_config: &NearConfig,
+    ) -> anyhow::Result<()> {
+        let _span = tracing::info_span!(target: "check-rpc", "run");
+
+        let path = Path::new(&self.store_relative_path);
+        tracing::info!(target: "check-rpc", "Checking that cold store contains rpc db at path {path:#?}.");
+
+        tracing::info!(target: "check-rpc", "Opening cold.");
+        let cold_store = storage.get_cold_store();
+        let cold_store = cold_store.ok_or(anyhow::anyhow!("The cold store is not configured!"))?;
+
+        tracing::info!(target: "check-rpc", "Opening rpc.");
+        // Open the rpc_storage using the near_config with the path swapped.
+        let mut rpc_store_config = near_config.config.store.clone();
+        rpc_store_config.path = Some(path.to_path_buf());
+        let rpc_opener = NodeStorage::opener(home_dir, false, &rpc_store_config, None);
+        let rpc_storage = rpc_opener.open_in_mode(near_store::Mode::ReadOnly)?;
+        let rpc_store = rpc_storage.get_hot_store();
+
+        tracing::info!(target: "check-rpc", "Checking up to date");
+        Self::check_up_to_date(&cold_store, &rpc_store)?;
+
+        for col in DBCol::iter() {
+            if !col.is_cold() {
+                continue;
+            }
+            tracing::info!(target: "check-rpc", "Checking column {:?}", col);
+            tracing::info!(
+                target: "check-rpc",
+                "Performed {} checks. OK",
+                check_iter(
+                         &rpc_store,
+                         &cold_store,
+                         col,
+                )
+            );
+        }
+
+        tracing::info!(target: "check-rpc", "All checks OK!");
+        Ok(())
+    }
+
+    /// Check that the cold store is ahead of rpc store.
+    fn check_up_to_date(cold_store: &Store, rpc_store: &Store) -> anyhow::Result<()> {
+        let rpc_head = rpc_store.get_ser::<Tip>(DBCol::BlockMisc, HEAD_KEY)?;
+        let rpc_head = rpc_head.ok_or(anyhow::anyhow!("The rpc head is missing!"))?;
+        let cold_head = cold_store.get_ser::<Tip>(DBCol::BlockMisc, HEAD_KEY)?;
+        let cold_head = cold_head.ok_or(anyhow::anyhow!("The cold head is missing"))?;
+
+        if cold_head.height < rpc_head.height {
+            return Err(anyhow::anyhow!(
+                "The cold head is behind the rpc head. cold head height: {} rpc head height: {}",
+                cold_head.height,
+                rpc_head.height
+            ));
         }
 
         Ok(())
