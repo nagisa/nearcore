@@ -112,8 +112,8 @@ def is_panic_log_line(line):
 
 
 def cleanup_snapshots():
-    subprocess.call(["rm", "-r", "/home/ubuntu/.neard/hot-data/migration-snapshot"])
-    subprocess.call(["rm", "-r", "/home/ubuntu/.neard/cold-data/migration-snapshot"])
+    subprocess.call(["rm", "-r", "/home/ubuntu/.near/hot-data/migration-snapshot"])
+    subprocess.call(["rm", "-r", "/home/ubuntu/.near/cold-data/migration-snapshot"])
 
 
 def main():
