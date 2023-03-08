@@ -112,8 +112,8 @@ def is_panic_log_line(line):
 
 
 def cleanup_snapshots():
-    subprocess.call(["rm", "-r", "/home/ubuntu/.neard/hot-data/migration-snapshot"], shell=True)
-    subprocess.call(["rm", "-r", "/home/ubuntu/.neard/cold-data/migration-snapshot"], shell=True)
+    subprocess.call(["rm", "-r", "/home/ubuntu/.neard/hot-data/migration-snapshot"])
+    subprocess.call(["rm", "-r", "/home/ubuntu/.neard/cold-data/migration-snapshot"])
 
 
 def main():
@@ -173,6 +173,9 @@ def main():
 
         print(random_height, success, final_log_line)
         cleanup_snapshots()
+
+        # Wait between test runs
+        time.sleep(120)
 
 
 if __name__ == '__main__':
