@@ -100,6 +100,8 @@ def wait_for_log_line(process, line_regex):
     logger.info(f"Waiting got log line to match {line_regex}")
     while True:
         line = process.stderr.readline().decode('utf-8')
+        if len(line) == 0:
+            time.sleep(20)
         logger.debug(line)
         if line_regex.match(line):
             return line
