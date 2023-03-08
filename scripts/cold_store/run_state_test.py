@@ -73,12 +73,12 @@ def get_chain_id(url):
 
 def stop_neard():
     logger.info(f'Stopping neard')
-    subprocess.call(["sudo", "systemctl", "stop" "neard"], shell=True)
+    subprocess.call(["sudo", "-S", "systemctl", "stop" "neard"])
 
 
 def start_neard():
     logger.info(f'Starting neard')
-    subprocess.call(["sudo", "systemctl", "start" "neard"], shell=True)
+    subprocess.call(["sudo", "-S", "systemctl", "start" "neard"])
 
 
 def start_test(max_depth, max_count, height):
