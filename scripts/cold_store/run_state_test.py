@@ -165,9 +165,9 @@ def main():
             logger.info(f"Caught line {final_log_line}")
             success = not is_panic_log_line(final_log_line)
 
-        total_cnt.inc(chain_id=chain_id, node_id=node_id)
+        total_cnt.labels(chain_id=chain_id, node_id=node_id).inc()
         if success:
-            success_cnt.inc(chain_id=chain_id, node_id=node_id)
+            success_cnt.labels(chain_id=chain_id, node_id=node_id).inc()
 
         print(random_height, success, final_log_line)
         cleanup_snapshots()
