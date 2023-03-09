@@ -20,6 +20,9 @@ use nearcore::TrackedConfig;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Check that after flat storage upgrade:
+/// - value read from contract is the same;
+/// - touching trie node cost for read decreases to zero.
 #[test]
 fn test_flat_storage_upgrade() {
     let mut genesis = Genesis::test(vec!["test0".parse().unwrap(), "test1".parse().unwrap()], 1);
@@ -39,6 +42,7 @@ fn test_flat_storage_upgrade() {
         ))];
     let mut env = TestEnv::builder(chain_genesis).runtime_adapters(runtimes).build();
 
+    // Deploy contract to state.
     deploy_test_contract_with_protocol_version(
         &mut env,
         "test0".parse().unwrap(),
@@ -59,6 +63,7 @@ fn test_flat_storage_upgrade() {
         block_hash: CryptoHash::default(),
     };
 
+    // Write key-value pair to state.
     {
         let write_value_action = vec![Action::FunctionCall(FunctionCallAction {
             args: encode(&[1u64, 10u64]),
@@ -136,6 +141,11 @@ fn test_flat_storage_upgrade() {
 
     let touching_trie_node_base_cost: Gas = 16_101_955_926;
 
+    // For the first read, cost should be 3 TTNs because trie path is:
+    // (Branch) -> (Extension) -> (Leaf) -> (Value)
+    // but due to a bug in storage_read we don't charge for Value.
     assert_eq!(touching_trie_node_costs[0], touching_trie_node_base_cost * 3);
+
+    // For the second read, we don't go to Flat storage and don't charge TTN.
     assert_eq!(touching_trie_node_costs[1], 0);
 }
