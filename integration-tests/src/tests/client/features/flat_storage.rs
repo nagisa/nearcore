@@ -7,13 +7,13 @@ use near_crypto::{InMemorySigner, KeyType, Signer};
 use near_primitives::runtime::config_store::RuntimeConfigStore;
 use near_primitives::test_utils::encode;
 use near_primitives::transaction::{
-    Action, ExecutionMetadata, ExecutionStatus, FunctionCallAction, SignedTransaction, Transaction,
+    Action, ExecutionMetadata, ExecutionStatus, FunctionCallAction, Transaction,
 };
 use near_primitives::version::ProtocolFeature;
 use near_primitives::views::FinalExecutionStatus;
 use near_primitives_core::config::ExtCosts;
 use near_primitives_core::hash::CryptoHash;
-use near_primitives_core::types::{BlockHeightDelta, Gas, ProtocolVersion};
+use near_primitives_core::types::Gas;
 use near_store::test_utils::create_test_store;
 use nearcore::config::GenesisExt;
 use nearcore::TrackedConfig;
@@ -136,6 +136,6 @@ fn test_flat_storage_upgrade() {
 
     let touching_trie_node_base_cost: Gas = 16_101_955_926;
 
-    assert_eq!(touching_trie_node_costs[0], touching_trie_node_cost * 3);
+    assert_eq!(touching_trie_node_costs[0], touching_trie_node_base_cost * 3);
     assert_eq!(touching_trie_node_costs[1], 0);
 }
