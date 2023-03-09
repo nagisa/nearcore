@@ -1,6 +1,6 @@
 use crate::tests::client::process_blocks::deploy_test_contract_with_protocol_version;
 use assert_matches::assert_matches;
-use near_chain::{ChainGenesis, Provenance, RuntimeWithEpochManagerAdapter};
+use near_chain::{ChainGenesis, RuntimeWithEpochManagerAdapter};
 use near_chain_configs::Genesis;
 use near_client::test_utils::TestEnv;
 use near_crypto::{InMemorySigner, KeyType, Signer};
