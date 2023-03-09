@@ -1,6 +1,4 @@
-use crate::tests::client::process_blocks::{
-    deploy_test_contract, deploy_test_contract_with_protocol_version, set_block_protocol_version,
-};
+use crate::tests::client::process_blocks::deploy_test_contract_with_protocol_version;
 use assert_matches::assert_matches;
 use near_chain::{ChainGenesis, Provenance, RuntimeWithEpochManagerAdapter};
 use near_chain_configs::Genesis;
