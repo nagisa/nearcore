@@ -105,35 +105,25 @@ def is_error_log_line(line):
     return "Error" in line
 
 
-def get_error_log_line(process):
-    panic_log_line = ""
-    error_log_line = ""
-    while True:
-        line = process.stderr.readline().decode('utf-8')
-        if not line:
-            break
-        if is_panic_log_line(line):
-            panic_log_line = line
-        if is_error_log_line(line):
-            error_log_line = line
-    return panic_log_line if panic_log_line else error_log_line
-
-
 def wait_for_log_line(process, line_regex):
     """
     Waiting for process to output log line into stderr that matches provided regex.
-    If process failed, processes all remaining output to return error message, ignoring provided regex.
+    If process failed, returns error message, ignoring provided regex.
     If process succeeded, still tries to find the right log message.
     Return either that log line without processing the rest of process' stderr,
     or empty line, if correct log wasn't found.
     """
 
     logger.info(f"Waiting got log line to match {line_regex}")
+
+    panic_log_line = ""
+    error_log_line = ""
+
     while True:
         process.poll()
         # If process failed, try to find some error message and return it
-        if process.returncode == 1:
-            return get_error_log_line(process)
+        if process.returncode is not None and process.returncode != 0:
+            return panic_log_line if panic_log_line else error_log_line
 
         # Get next log line
         line = process.stderr.readline().decode('utf-8')
@@ -152,6 +142,11 @@ def wait_for_log_line(process, line_regex):
         # If we have been waiting for this line, return it.
         if line_regex.match(line):
             return line
+        # Save suspicious log lines in case of process failure
+        if is_panic_log_line(line):
+            panic_log_line = line
+        if is_error_log_line(line):
+            error_log_line = line
 
 
 
@@ -209,14 +204,13 @@ def main():
         logger.info(f"Caught line {final_log_line}")
 
         test_process.wait()
-        success = test_process.returncode
 
         total_cnt.labels(chain_id=chain_id, node_id=node_id).inc()
-        if success == 0:
+        if test_process.returncode == 0:
             success_cnt.labels(chain_id=chain_id, node_id=node_id).inc()
 
-        print(random_height, success, final_log_line)
-        logger.info(random_height, success, final_log_line)
+        print(random_height, test_process.returncode, final_log_line)
+        logger.info(random_height, test_process.returncode, final_log_line)
 
         cleanup_snapshots()
 
