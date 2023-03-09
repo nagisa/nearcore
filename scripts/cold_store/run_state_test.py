@@ -17,6 +17,7 @@ import configured_logger
 
 logger = configured_logger.new_logger("stderr", stderr=True)
 
+
 def json_rpc(method, params, url):
     try:
         j = {
@@ -96,19 +97,62 @@ def start_test(max_depth, max_count, height):
     return subprocess.Popen(args, env={"RUST_LOG": "debug"}, stderr=subprocess.PIPE)
 
 
-def wait_for_log_line(process, line_regex):
-    logger.info(f"Waiting got log line to match {line_regex}")
+def is_panic_log_line(line):
+    return "thread \'main\' panicked" in line
+
+
+def is_error_log_line(line):
+    return "Error" in line
+
+
+def get_error_log_line(process):
+    panic_log_line = ""
+    error_log_line = ""
     while True:
         line = process.stderr.readline().decode('utf-8')
+        if not line:
+            break
+        if is_panic_log_line(line):
+            panic_log_line = line
+        if is_error_log_line(line):
+            error_log_line = line
+    return panic_log_line if panic_log_line else error_log_line
+
+
+def wait_for_log_line(process, line_regex):
+    """
+    Waiting for process to output log line into stderr that matches provided regex.
+    If process failed, processes all remaining output to return error message, ignoring provided regex.
+    If process succeeded, still tries to find the right log message.
+    Return either that log line without processing the rest of process' stderr,
+    or empty line, if correct log wasn't found.
+    """
+
+    logger.info(f"Waiting got log line to match {line_regex}")
+    while True:
+        process.poll()
+        # If process failed, try to find some error message and return it
+        if process.returncode == 1:
+            return get_error_log_line(process)
+
+        # Get next log line
+        line = process.stderr.readline().decode('utf-8')
         if len(line) == 0:
+            # If process ended, then empty line means the end of output.
+            # We should return empty line rather than endlessly waiting for correct log line.
+            if process.returncode == 0:
+                return line
+            # Otherwise process probably temporarily not printing anything.
+            # Better wait a bit.
             time.sleep(20)
+            continue
+
+        # Printing non-empty log line.
         logger.debug(line)
+        # If we have been waiting for this line, return it.
         if line_regex.match(line):
             return line
 
-
-def is_panic_log_line(line):
-    return "thread \'main\' panicked" in line
 
 
 def cleanup_snapshots():
@@ -155,23 +199,25 @@ def main():
         stop_neard()
         test_process = start_test(args.max_depth, args.max_count, random_height)
 
-        inter_log_line = wait_for_log_line(test_process, re.compile(".*check_trie.*|.*thread \'main\' panicked.*"))
+        inter_log_line = wait_for_log_line(test_process, re.compile(".*check_trie.*"))
+        print(inter_log_line)
         logger.info(f"Caught line {inter_log_line}")
 
         start_neard()
-        if is_panic_log_line(inter_log_line):
-            final_log_line = inter_log_line
-            success = False
-        else:
-            final_log_line = wait_for_log_line(test_process, re.compile(".*Dropped a RocksDB instance\. num_instances=0.*|.*thread \'main\' panicked.*"))
-            logger.info(f"Caught line {final_log_line}")
-            success = not is_panic_log_line(final_log_line)
+
+        final_log_line = wait_for_log_line(test_process, re.compile(".*Dropped a RocksDB instance. num_instances=0.*"))
+        logger.info(f"Caught line {final_log_line}")
+
+        test_process.wait()
+        success = test_process.returncode
 
         total_cnt.labels(chain_id=chain_id, node_id=node_id).inc()
-        if success:
+        if success == 0:
             success_cnt.labels(chain_id=chain_id, node_id=node_id).inc()
 
         print(random_height, success, final_log_line)
+        logger.info(random_height, success, final_log_line)
+
         cleanup_snapshots()
 
         # Wait between test runs
