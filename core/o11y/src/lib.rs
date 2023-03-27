@@ -60,14 +60,17 @@ type LogLayer<Inner> = Layered<
     Inner,
 >;
 
+/*
 type SimpleLogLayer<Inner, W> = Layered<
     Filtered<
-        fmt::Layer<Inner, fmt::format::DefaultFields, fmt::format::Format, W>,
+        fmt::Layer<Inner, fmt::format::JsonFields, fmt::format::Json, W>,
         EnvFilter,
         Inner,
     >,
     Inner,
 >;
+
+ */
 
 type TracingLayer<Inner> = Layered<
     Filtered<OpenTelemetryLayer<Inner, Tracer>, reload::Layer<LevelFilter, Inner>, Inner>,
@@ -195,6 +198,7 @@ fn is_terminal() -> bool {
     atty::is(atty::Stream::Stderr)
 }
 
+/*
 fn add_simple_log_layer<S, W>(
     filter: EnvFilter,
     writer: W,
@@ -205,10 +209,11 @@ where
     S: tracing::Subscriber + for<'span> LookupSpan<'span> + Send + Sync,
     W: for<'writer> fmt::MakeWriter<'writer> + 'static,
 {
-    let layer = fmt::layer().with_ansi(ansi).with_writer(writer).with_filter(filter);
+    let layer = fmt::layer().json().with_ansi(ansi).with_writer(writer).with_filter(filter);
 
     subscriber.with(layer)
 }
+ */
 
 fn get_fmt_span(with_span_events: bool) -> fmt::format::FmtSpan {
     if with_span_events {
@@ -348,7 +353,10 @@ pub fn default_subscriber(
     };
 
     let subscriber = tracing_subscriber::registry();
-    let subscriber = add_simple_log_layer(env_filter, make_writer, color_output, subscriber);
+    // let subscriber = add_simple_log_layer(env_filter, make_writer, color_output, subscriber);
+    let layer = fmt::layer().json().with_ansi(color_output).with_writer(make_writer).with_filter(env_filter);
+    let subscriber = subscriber.with(layer);
+
 
     #[allow(unused_mut)]
     let mut io_trace_guard = None;
