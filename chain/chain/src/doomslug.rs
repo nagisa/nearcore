@@ -440,14 +440,15 @@ impl Doomslug {
 
             let tip_height = self.tip.height;
 
-            debug!(target: "doomslug", "Processing timer",
-                cur_time,
+            debug!(target: "doomslug",
+                ?cur_time,
                 endorsement_pending = self.endorsement_pending,
-                last_endorsement_sent = self.timer.last_endorsement_sent,
-                endorsement_delay = self.timer.endorsement_delay,
+                last_endorsement_sent = ?self.timer.last_endorsement_sent,
+                endorsement_delay = ?self.timer.endorsement_delay,
                 tip_height,
                 largest_target_height = self.largest_target_height,
                 has_signer = self.signer.is_some(),
+                "Processing timer",
             );
             if self.endorsement_pending
                 && cur_time >= self.timer.last_endorsement_sent + self.timer.endorsement_delay
