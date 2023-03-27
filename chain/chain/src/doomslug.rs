@@ -9,7 +9,7 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::static_clock::StaticClock;
 use near_primitives::types::{AccountId, ApprovalStake, Balance, BlockHeight, BlockHeightDelta};
 use near_primitives::validator_signer::ValidatorSigner;
-use tracing::info;
+use tracing::{debug, info};
 
 /// Have that many iterations in the timer instead of `loop` to prevent potential bugs from blocking
 /// the node
@@ -440,6 +440,15 @@ impl Doomslug {
 
             let tip_height = self.tip.height;
 
+            debug!(target: "doomslug", "Processing timer",
+                cur_time,
+                endorsement_pending = self.endorsement_pending,
+                last_endorsement_sent = self.timer.last_endorsement_sent,
+                endorsement_delay = self.timer.endorsement_delay,
+                tip_height,
+                largest_target_height = self.largest_target_height,
+                has_signer = self.signer.is_some(),
+            );
             if self.endorsement_pending
                 && cur_time >= self.timer.last_endorsement_sent + self.timer.endorsement_delay
             {
@@ -448,6 +457,8 @@ impl Doomslug {
 
                     if let Some(approval) = self.create_approval(tip_height + 1) {
                         ret.push(approval);
+                    } else {
+                        debug!(target: "doomslug", "Failed to create approval for height {}", tip_height + 1)
                     }
                     self.update_history(ApprovalHistoryEntry {
                         parent_height: tip_height,
