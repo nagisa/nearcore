@@ -119,7 +119,6 @@ async fn state_sync_dump(
     _node_key: PublicKey,
 ) {
     tracing::info!(target: "state_sync_dump", shard_id, "Running StateSyncDump loop");
-    let mut interval = actix_rt::time::interval(std::time::Duration::from_secs(10));
 
     if config.state_sync_restart_dump_for_shards.contains(&shard_id) {
         tracing::debug!(target: "state_sync_dump", shard_id, "Dropped existing progress");
@@ -127,6 +126,7 @@ async fn state_sync_dump(
     }
 
     loop {
+        let mut interval = actix_rt::time::interval(std::time::Duration::from_secs(10));
         // Avoid a busy-loop when there is nothing to do.
         interval.tick().await;
 
