@@ -126,9 +126,8 @@ async fn state_sync_dump(
     }
 
     loop {
-        let mut interval = actix_rt::time::interval(std::time::Duration::from_secs(10));
         // Avoid a busy-loop when there is nothing to do.
-        interval.tick().await;
+        thread::sleep(Duration::from_secs(10));
 
         let progress = chain.store().get_state_sync_dump_progress(shard_id);
         tracing::debug!(target: "state_sync_dump", shard_id, ?progress, "Running StateSyncDump loop iteration");
