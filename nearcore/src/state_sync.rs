@@ -127,7 +127,7 @@ async fn state_sync_dump(
 
     loop {
         // Avoid a busy-loop when there is nothing to do.
-        thread::sleep(Duration::from_secs(10));
+        std::thread::sleep(std::time::Duration::from_secs(10));
 
         let progress = chain.store().get_state_sync_dump_progress(shard_id);
         tracing::debug!(target: "state_sync_dump", shard_id, ?progress, "Running StateSyncDump loop iteration");
