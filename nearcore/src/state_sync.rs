@@ -287,7 +287,7 @@ fn update_progress(
 ) {
     // Record that a part was obtained and dumped.
     metrics::STATE_SYNC_DUMP_SIZE_TOTAL
-        .with_label_values(&[&shard_id.to_string()])
+        .with_label_values(&[&epoch_height.to_string(), &shard_id.to_string()])
         .inc_by(part_len as u64);
     let next_progress = StateSyncDumpProgress::InProgress {
         epoch_id: epoch_id.clone(),
