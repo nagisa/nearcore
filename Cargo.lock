@@ -1115,6 +1115,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "clap 3.1.18",
+ "near-chain",
  "near-chain-configs",
  "near-epoch-manager",
  "near-primitives",

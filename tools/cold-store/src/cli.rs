@@ -1,7 +1,7 @@
-use crate::cli::SubCommand::CheckStateRoot;
 use anyhow;
 use anyhow::Context;
 use clap;
+use near_chain::types::RuntimeAdapter;
 use near_epoch_manager::EpochManagerAdapter;
 use near_primitives::block::Tip;
 use near_primitives::hash::CryptoHash;
@@ -116,7 +116,7 @@ impl ColdStoreCommand {
         );
 
         match self.subcmd {
-            CheckStateRoot(_) => {
+            SubCommand::CheckStateRoot(_) | SubCommand::CheckAgainstRpc(_) => {
                 let (hot_snapshot, cold_snapshot) = opener
                     .create_snapshots(near_store::Mode::ReadOnly)
                     .expect("Failed to create snapshots");
@@ -266,10 +266,11 @@ fn copy_all_blocks(storage: &NodeStorage, batch_size: usize, check: bool) {
     if check {
         for col in DBCol::iter() {
             if col.is_cold() {
+                let result =
+                    check_iter(&storage.get_hot_store(), &storage.get_cold_store().unwrap(), col);
                 println!(
-                    "Performed {:?} successful/total checks for column {:?}",
-                    check_iter(&storage.get_hot_store(), &storage.get_cold_store().unwrap(), col),
-                    col
+                    "Performed {}/{} successful/total checks for column {:?}",
+                    result.0, result.1, col
                 );
             }
         }
@@ -312,21 +313,27 @@ fn check_key(
 
 /// Checks that `first_store`'s column `col` is fully included in `second_store`
 /// with same values for every key.
-/// Return number of checks performed == number of keys in column `col` of the `first_store`.
+/// Returns
+///     number of successful checks performed
+///     number of checks performed == number of keys in column `col` of the `first_store`
+///     keys for which checks failed
 fn check_iter(
     first_store: &near_store::Store,
     second_store: &near_store::Store,
     col: DBCol,
-) -> (u64, u64) {
+) -> (u64, u64, Vec<Box<[u8]>>) {
     let mut num_checks = 0;
     let mut num_successful_checks = 0;
+    let mut failed_keys = vec![];
     for (key, _value) in first_store.iter(col).map(Result::unwrap) {
         if check_key(first_store, second_store, col, &key) {
             num_successful_checks += 1
+        } else {
+            failed_keys.push(key)
         }
         num_checks += 1;
     }
-    (num_successful_checks, num_checks)
+    (num_successful_checks, num_checks, failed_keys)
 }
 
 /// Calls get_ser on Store with provided temperature from provided NodeStorage.
@@ -698,23 +705,25 @@ impl CheckAgainstRpcCmd {
         tracing::info!(target: "check-rpc", "Checking up to date");
         Self::check_up_to_date(&cold_store, &rpc_store)?;
 
+        Self::clear_rpc_forks(home_dir, rpc_store.clone(), &near_config)?;
+
+        let mut failed_keys = std::collections::HashMap::new();
         for col in DBCol::iter() {
             if !col.is_cold() {
                 continue;
             }
+            let result = check_iter(&rpc_store, &cold_store, col);
             tracing::info!(target: "check-rpc", "Checking column {:?}", col);
             tracing::info!(
                 target: "check-rpc",
-                "Performed {:?} successful/total checks",
-                check_iter(
-                         &rpc_store,
-                         &cold_store,
-                         col,
-                )
+                "Performed {}/{} successful/total checks",
+                result.0, result.1,
             );
+            failed_keys.insert(col, result.2);
         }
+        tracing::info!(target: "check-rpc", "Failed keys: {:?}", failed_keys);
 
-        tracing::info!(target: "check-rpc", "All checks OK!");
+        tracing::info!(target: "check-rpc", "All checks finished!");
         Ok(())
     }
 
@@ -733,6 +742,33 @@ impl CheckAgainstRpcCmd {
             ));
         }
 
+        Ok(())
+    }
+
+    fn clear_rpc_forks(
+        home_dir: &Path,
+        rpc_store: Store,
+        config: &NearConfig,
+    ) -> anyhow::Result<()> {
+        let rpc_head = rpc_store.get_ser::<Tip>(DBCol::BlockMisc, HEAD_KEY)?;
+        let rpc_head = rpc_head.ok_or(anyhow::anyhow!("The rpc head is missing!"))?.height;
+
+        let runtime = NightshadeRuntime::from_config(&home_dir, rpc_store, &config);
+        let chain_genesis = near_chain::ChainGenesis::new(&config.genesis);
+        let mut chain = near_chain::Chain::new(
+            runtime.clone(),
+            &chain_genesis,
+            near_chain::DoomslugThresholdMode::TwoThirds,
+            near_chain::types::ChainConfig {
+                save_trie_changes: true,
+                background_migration_threads: 1,
+            },
+        )?;
+
+        tracing::info!(target: "check-rpc", "Start rpc fork cleanup");
+        let mut gc_num_blocks = rpc_head;
+        chain.clear_forks_data(runtime.get_tries(), rpc_head, &mut gc_num_blocks)?;
+        tracing::info!(target: "check-rpc", "Rpc fork cleanup ended");
         Ok(())
     }
 }
