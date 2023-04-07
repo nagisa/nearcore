@@ -705,8 +705,8 @@ impl CheckAgainstRpcCmd {
             if !col.is_cold() {
                 continue;
             }
-            let result = check_iter(&rpc_store, &cold_store, col);
             tracing::info!(target: "check-rpc", "Checking column {:?}", col);
+            let result = check_iter(&rpc_store, &cold_store, col);
             tracing::info!(
                 target: "check-rpc",
                 "Performed {}/{} successful/total checks",
@@ -763,7 +763,7 @@ impl CheckAgainstRpcCmd {
 
         tracing::info!(target: "check-rpc", "Start rpc fork cleanup");
         let mut gc_num_blocks = rpc_head;
-        for height in (rpc_tail..=rpc_head).rev() {
+        for height in rpc_tail..=rpc_head {
             chain.clear_forks_data(runtime.get_tries(), height, &mut gc_num_blocks)?;
         }
         tracing::info!(target: "check-rpc", "Rpc fork cleanup ended");
