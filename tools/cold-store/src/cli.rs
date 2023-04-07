@@ -763,7 +763,7 @@ impl CheckAgainstRpcCmd {
 
         tracing::info!(target: "check-rpc", "Start rpc fork cleanup");
         let mut gc_num_blocks = rpc_head;
-        for height in rpc_head..=rpc_tail {
+        for height in (rpc_tail..=rpc_head).rev() {
             chain.clear_forks_data(runtime.get_tries(), height, &mut gc_num_blocks)?;
         }
         tracing::info!(target: "check-rpc", "Rpc fork cleanup ended");
