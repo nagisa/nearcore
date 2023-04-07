@@ -301,13 +301,6 @@ fn check_key(
     let first_res = get_with_retries(first_store, col, key, 5).unwrap();
     let second_res = get_with_retries(second_store, col, key, 5).unwrap();
 
-    if col == DBCol::Block && first_res != second_res {
-        tracing::info!(
-            "First store Block is: {:?}",
-            first_store.get_ser::<near_primitives::block::Block>(col, key)
-        );
-    }
-
     first_res == second_res
 }
 
@@ -753,6 +746,9 @@ impl CheckAgainstRpcCmd {
         let rpc_head = rpc_store.get_ser::<Tip>(DBCol::BlockMisc, HEAD_KEY)?;
         let rpc_head = rpc_head.ok_or(anyhow::anyhow!("The rpc head is missing!"))?.height;
 
+        let rpc_tail = rpc_store.get_ser::<u64>(DBCol::BlockMisc, TAIL_KEY)?;
+        let rpc_tail = rpc_tail.ok_or(anyhow::anyhow!("The rpc tail is missing!"))?;
+
         let runtime = NightshadeRuntime::from_config(&home_dir, rpc_store, &config);
         let chain_genesis = near_chain::ChainGenesis::new(&config.genesis);
         let mut chain = near_chain::Chain::new(
@@ -767,7 +763,9 @@ impl CheckAgainstRpcCmd {
 
         tracing::info!(target: "check-rpc", "Start rpc fork cleanup");
         let mut gc_num_blocks = rpc_head;
-        chain.clear_forks_data(runtime.get_tries(), rpc_head, &mut gc_num_blocks)?;
+        for height in rpc_head..=rpc_tail {
+            chain.clear_forks_data(runtime.get_tries(), height, &mut gc_num_blocks)?;
+        }
         tracing::info!(target: "check-rpc", "Rpc fork cleanup ended");
         Ok(())
     }
