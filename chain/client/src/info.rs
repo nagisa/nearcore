@@ -1,8 +1,8 @@
 use crate::config_updater::ConfigUpdater;
-use crate::{metrics, rocksdb_metrics, SyncStatus};
+use crate::{metrics, SyncStatus};
 use actix::Addr;
 use itertools::Itertools;
-use near_chain_configs::{ClientConfig, LogSummaryStyle};
+use near_chain_configs::{ClientConfig, LogSummaryStyle, SyncConfig};
 use near_network::types::NetworkInfo;
 use near_primitives::block::Tip;
 use near_primitives::network::PeerId;
@@ -21,7 +21,6 @@ use near_primitives::views::{
     CatchupStatusView, ChunkProcessingStatus, CurrentEpochValidatorInfo, EpochValidatorInfo,
     ValidatorKickoutView,
 };
-use near_store::db::StoreStatistics;
 use near_telemetry::{telemetry, TelemetryActor};
 use std::cmp::min;
 use std::fmt::Write;
@@ -235,11 +234,6 @@ impl InfoHelper {
                 .map(get_validator_epoch_stats)
                 .unwrap_or_default()
         };
-        let statistics = if client.config.enable_statistics_export {
-            client.chain.store().get_store_statistics()
-        } else {
-            None
-        };
 
         InfoHelper::record_tracked_shards(&head, &client);
         InfoHelper::record_block_producers(&head, &client);
@@ -258,7 +252,6 @@ impl InfoHelper {
                 .get_estimated_protocol_upgrade_block_height(head.last_block_hash)
                 .unwrap_or(None)
                 .unwrap_or(0),
-            statistics,
             &client.config,
             config_updater,
         );
@@ -275,7 +268,6 @@ impl InfoHelper {
         validator_info: Option<ValidatorInfoHelper>,
         validator_epoch_stats: Vec<ValidatorProductionStats>,
         protocol_upgrade_block_height: BlockHeight,
-        statistics: Option<StoreStatistics>,
         client_config: &ClientConfig,
         config_updater: &Option<ConfigUpdater>,
     ) {
@@ -288,7 +280,8 @@ impl InfoHelper {
 
         let s = |num| if num == 1 { "" } else { "s" };
 
-        let sync_status_log = Some(display_sync_status(sync_status, head));
+        let sync_status_log =
+            Some(display_sync_status(sync_status, head, &client_config.state_sync_config_sync));
 
         let catchup_status_log = display_catchup_status(catchup_status);
 
@@ -336,9 +329,6 @@ impl InfoHelper {
         );
         if catchup_status_log != "" {
             info!(target: "stats", "Catchups\n{}", catchup_status_log);
-        }
-        if let Some(statistics) = statistics {
-            rocksdb_metrics::export_stats_as_metrics(statistics);
         }
         if let Some(config_updater) = &config_updater {
             config_updater.report_status();
@@ -499,7 +489,11 @@ pub fn display_catchup_status(catchup_status: Vec<CatchupStatusView>) -> String 
         .join("\n")
 }
 
-pub fn display_sync_status(sync_status: &SyncStatus, head: &Tip) -> String {
+pub fn display_sync_status(
+    sync_status: &SyncStatus,
+    head: &Tip,
+    state_sync_config: &SyncConfig,
+) -> String {
     metrics::SYNC_STATUS.set(sync_status.repr() as i64);
     match sync_status {
         SyncStatus::AwaitingPeers => format!("#{:>8} Waiting for peers", head.height),
@@ -544,14 +538,17 @@ pub fn display_sync_status(sync_status: &SyncStatus, head: &Tip) -> String {
             for (shard_id, shard_status) in shard_statuses {
                 write!(res, "[{}: {}]", shard_id, shard_status.status.to_string(),).unwrap();
             }
-            // TODO #8719
-            tracing::warn!(target: "stats",
-                "The node is syncing its State. The current implementation of this mechanism is known to be unreliable. It may never complete, or fail randomly and corrupt the DB.\n\
-                 Suggestions:\n\
-                 * Download a recent data snapshot and restart the node.\n\
-                 * Disable state sync in the config. Add `\"state_sync_enabled\": false` to `config.json`.\n\
-                 \n\
-                 A better implementation of State Sync is work in progress.");
+            if matches!(state_sync_config, SyncConfig::Peers) {
+                // TODO #8719
+                tracing::warn!(
+                    target: "stats",
+                    "The node is syncing its State. The current implementation of this mechanism is known to be unreliable. It may never complete, or fail randomly and corrupt the DB.\n\
+                     Suggestions:\n\
+                     * Download a recent data snapshot and restart the node.\n\
+                     * Disable state sync in the config. Add `\"state_sync_enabled\": false` to `config.json`.\n\
+                     \n\
+                     A better implementation of State Sync is work in progress.");
+            }
             res
         }
         SyncStatus::StateSyncDone => "State sync done".to_string(),
