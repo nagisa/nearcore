@@ -61,7 +61,9 @@ impl Trie {
             iterator
                 .seek_nibble_slice(NibbleSlice::from_encoded(&path_end_encoded[..]).0, false)?;
             if let Some(item) = iterator.next() {
-                item?;
+                if let Err(err) = item {
+                    tracing::debug!(target: "state-part", ?err, "Post-iteration");
+                }
             }
         }
 
