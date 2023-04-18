@@ -23,7 +23,7 @@ use std::time::Instant;
 pub(crate) enum ApplyAction {
     Apply,
     Validate,
-    Analyze,
+    Print,
 }
 
 impl Default for ApplyAction {
@@ -312,15 +312,15 @@ fn apply_state_parts(
                 ));
                 tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Validated a state part");
             }
-            ApplyAction::Analyze => {
-                analyze_state_part(&state_root, PartId::new(part_id, num_parts), &part)
+            ApplyAction::Print => {
+                print_state_part(&state_root, PartId::new(part_id, num_parts), &part)
             }
         }
     }
     tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Applied all requested state parts");
 }
 
-fn analyze_state_part(state_root: &StateRoot, _part_id: PartId, data: &[u8]) {
+fn print_state_part(state_root: &StateRoot, _part_id: PartId, data: &[u8]) {
     let trie_nodes: PartialState = BorshDeserialize::try_from_slice(data).unwrap();
     for value in &trie_nodes.0 {
         let hash = hash(&value);
