@@ -32,7 +32,8 @@ impl Trie {
         with_recording.visit_nodes_for_state_part(part_id)?;
         let recorded = with_recording.recorded_storage().unwrap();
 
-        let trie_nodes = recorded.nodes;
+        let mut trie_nodes = recorded.nodes;
+        trie_nodes.0.sort_unstable();
         Ok(trie_nodes)
     }
 

@@ -55,6 +55,7 @@ impl StateRecord {
     /// Most `unwrap()` here are because the implementation of columns and data are internal and
     /// can't be influenced by external calls.
     pub fn from_raw_key_value(key: Vec<u8>, value: Vec<u8>) -> Option<StateRecord> {
+        tracing::debug!(target: "state_record", key_0 = key[0], "from_raw_key_value");
         match key[0] {
             col::ACCOUNT => Some(StateRecord::Account {
                 account_id: parse_account_id_from_account_key(&key).unwrap(),
@@ -92,7 +93,7 @@ impl StateRecord {
                 Some(StateRecord::DelayedReceipt(Box::new(receipt)))
             }
             col::DELAYED_RECEIPT_INDICES => None,
-            _ => unreachable!(),
+            _ => None,
         }
     }
 }

@@ -2,14 +2,15 @@ use crate::epoch_info::iterate_and_filter;
 use borsh::BorshDeserialize;
 use near_chain::{Chain, ChainGenesis, ChainStoreAccess, DoomslugThresholdMode};
 use near_client::sync::state::StateSync;
+use near_primitives::challenge::PartialState;
 use near_primitives::epoch_manager::epoch_info::EpochInfo;
 use near_primitives::state_part::PartId;
 use near_primitives::state_record::StateRecord;
 use near_primitives::syncing::get_num_state_parts;
 use near_primitives::types::{EpochId, StateRoot};
-use near_primitives_core::hash::CryptoHash;
+use near_primitives_core::hash::{hash, CryptoHash};
 use near_primitives_core::types::{BlockHeight, EpochHeight, ShardId};
-use near_store::{PartialStorage, Store, Trie};
+use near_store::{PartialStorage, RawTrieNodeWithSize, Store, Trie, TrieNodeWithSize};
 use nearcore::{NearConfig, NightshadeRuntime};
 use s3::serde_types::ListBucketResult;
 use std::fs::DirEntry;
@@ -18,13 +19,26 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Instant;
 
+#[derive(clap::ArgEnum, Debug, Clone)]
+pub(crate) enum ApplyAction {
+    Apply,
+    Validate,
+    Analyze,
+}
+
+impl Default for ApplyAction {
+    fn default() -> Self {
+        ApplyAction::Apply
+    }
+}
+
 #[derive(clap::Subcommand, Debug, Clone)]
 pub(crate) enum StatePartsSubCommand {
     /// Apply all or a single state part of a shard.
     Apply {
-        /// If true, validate the state part but don't write it to the DB.
-        #[clap(long)]
-        dry_run: bool,
+        /// Apply, validate or analyze.
+        #[clap(arg_enum, long)]
+        action: ApplyAction,
         /// If provided, this value will be used instead of looking it up in the headers.
         /// Use if those headers or blocks are not available.
         #[clap(long)]
@@ -79,12 +93,12 @@ impl StatePartsSubCommand {
         .unwrap();
         let chain_id = &near_config.genesis.config.chain_id;
         match self {
-            StatePartsSubCommand::Apply { dry_run, state_root, part_id, epoch_selection } => {
+            StatePartsSubCommand::Apply { action, state_root, part_id, epoch_selection } => {
                 apply_state_parts(
+                    action,
                     epoch_selection,
                     shard_id,
                     part_id,
-                    dry_run,
                     state_root,
                     &mut chain,
                     chain_id,
@@ -219,10 +233,10 @@ fn get_any_block_hash_of_epoch(epoch_info: &EpochInfo, chain: &Chain) -> CryptoH
 }
 
 fn apply_state_parts(
+    action: ApplyAction,
     epoch_selection: EpochSelection,
     shard_id: ShardId,
     part_id: Option<u64>,
-    dry_run: bool,
     maybe_state_root: Option<StateRoot>,
     chain: &mut Chain,
     chain_id: &str,
@@ -268,36 +282,67 @@ fn apply_state_parts(
         assert!(part_id < num_parts, "part_id: {}, num_parts: {}", part_id, num_parts);
         let part = part_storage.read(part_id, num_parts);
 
-        if dry_run {
-            assert!(chain.runtime_adapter.validate_state_part(
-                &state_root,
-                PartId::new(part_id, num_parts),
-                &part
-            ));
-            tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Validated a state part");
-        } else {
-            chain
-                .set_state_part(
-                    shard_id,
-                    sync_hash.unwrap(),
-                    PartId::new(part_id, num_parts),
-                    &part,
-                )
-                .unwrap();
-            chain
-                .runtime_adapter
-                .apply_state_part(
-                    shard_id,
+        match action {
+            ApplyAction::Apply => {
+                chain
+                    .set_state_part(
+                        shard_id,
+                        sync_hash.unwrap(),
+                        PartId::new(part_id, num_parts),
+                        &part,
+                    )
+                    .unwrap();
+                chain
+                    .runtime_adapter
+                    .apply_state_part(
+                        shard_id,
+                        &state_root,
+                        PartId::new(part_id, num_parts),
+                        &part,
+                        epoch_id.as_ref().unwrap(),
+                    )
+                    .unwrap();
+                tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Applied a state part");
+            }
+            ApplyAction::Validate => {
+                assert!(chain.runtime_adapter.validate_state_part(
                     &state_root,
                     PartId::new(part_id, num_parts),
-                    &part,
-                    epoch_id.as_ref().unwrap(),
-                )
-                .unwrap();
-            tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Applied a state part");
+                    &part
+                ));
+                tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Validated a state part");
+            }
+            ApplyAction::Analyze => {
+                analyze_state_part(&state_root, PartId::new(part_id, num_parts), &part)
+            }
         }
     }
     tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Applied all requested state parts");
+}
+
+fn analyze_state_part(state_root: &StateRoot, _part_id: PartId, data: &[u8]) {
+    let trie_nodes: PartialState = BorshDeserialize::try_from_slice(data).unwrap();
+    for value in &trie_nodes.0 {
+        let hash = hash(&value);
+        if let Ok(raw_node_with_size) = RawTrieNodeWithSize::decode(&value) {
+            let memory_usage = raw_node_with_size.memory_usage;
+            let node_with_size = TrieNodeWithSize::from_raw(raw_node_with_size);
+            tracing::debug!(target: "state-parts", serialized_size = value.len(), ?hash, memory_usage, node_size = node_with_size.node.memory_usage_direct_no_memory(), "Node");
+        } else {
+            tracing::debug!(target: "state-parts", serialized_size = value.len(), ?hash, "Value");
+        }
+    }
+    let trie = Trie::from_recorded_storage(PartialStorage { nodes: trie_nodes }, *state_root);
+
+    for item in trie.iter().unwrap() {
+        if let Ok((key, value)) = item {
+            if let Some(sr) = StateRecord::from_raw_key_value(key.clone(), value) {
+                tracing::debug!(target: "state-parts", ?key, %sr);
+            }
+        }
+    }
+
+    trie.print_recursive(&mut std::io::stdout().lock(), &state_root, u32::max_value());
 }
 
 fn dump_state_parts(
@@ -350,7 +395,7 @@ fn dump_state_parts(
             part_id,
             part_length = state_part.len(),
             elapsed_sec,
-            ?first_state_record,
+            first_state_record = ?first_state_record.map(|sr| format!("{}", sr)),
             "Wrote a state part");
     }
     tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Wrote all requested state parts");
@@ -364,6 +409,7 @@ fn get_first_state_record(state_root: &StateRoot, data: &[u8]) -> Option<StateRe
     for item in trie.iter().unwrap() {
         if let Ok((key, value)) = item {
             if let Some(sr) = StateRecord::from_raw_key_value(key, value) {
+                // tracing::debug!(target: "state-parts", hash = item.hash(), ?key);
                 return Some(sr);
             }
         }
