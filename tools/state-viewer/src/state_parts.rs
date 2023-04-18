@@ -8,9 +8,9 @@ use near_primitives::state_part::PartId;
 use near_primitives::state_record::StateRecord;
 use near_primitives::syncing::get_num_state_parts;
 use near_primitives::types::{EpochId, StateRoot};
-use near_primitives_core::hash::{hash, CryptoHash};
+use near_primitives_core::hash::CryptoHash;
 use near_primitives_core::types::{BlockHeight, EpochHeight, ShardId};
-use near_store::{PartialStorage, RawTrieNodeWithSize, Store, Trie, TrieNodeWithSize};
+use near_store::{PartialStorage, Store, Trie};
 use nearcore::{NearConfig, NightshadeRuntime};
 use s3::serde_types::ListBucketResult;
 use std::fs::DirEntry;
@@ -322,27 +322,8 @@ fn apply_state_parts(
 
 fn analyze_state_part(state_root: &StateRoot, _part_id: PartId, data: &[u8]) {
     let trie_nodes: PartialState = BorshDeserialize::try_from_slice(data).unwrap();
-    for value in &trie_nodes.0 {
-        let hash = hash(&value);
-        if let Ok(raw_node_with_size) = RawTrieNodeWithSize::decode(&value) {
-            let memory_usage = raw_node_with_size.memory_usage;
-            let node_with_size = TrieNodeWithSize::from_raw(raw_node_with_size);
-            tracing::debug!(target: "state-parts", serialized_size = value.len(), ?hash, memory_usage, node_size = node_with_size.node.memory_usage_direct_no_memory(), "Node");
-        } else {
-            tracing::debug!(target: "state-parts", serialized_size = value.len(), ?hash, "Value");
-        }
-    }
     let trie = Trie::from_recorded_storage(PartialStorage { nodes: trie_nodes }, *state_root);
-
-    for item in trie.iter().unwrap() {
-        if let Ok((key, value)) = item {
-            if let Some(sr) = StateRecord::from_raw_key_value(key.clone(), value) {
-                tracing::debug!(target: "state-parts", ?key, %sr);
-            }
-        }
-    }
-
-    trie.print_recursive(&mut std::io::stdout().lock(), &state_root, u32::max_value());
+    trie.print_recursive(&mut std::io::stdout().lock(), &state_root, u32::MAX);
 }
 
 fn dump_state_parts(
@@ -409,7 +390,6 @@ fn get_first_state_record(state_root: &StateRoot, data: &[u8]) -> Option<StateRe
     for item in trie.iter().unwrap() {
         if let Ok((key, value)) = item {
             if let Some(sr) = StateRecord::from_raw_key_value(key, value) {
-                // tracing::debug!(target: "state-parts", hash = item.hash(), ?key);
                 return Some(sr);
             }
         }

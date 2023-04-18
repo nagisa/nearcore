@@ -51,10 +51,10 @@ pub struct PartialStorage {
 }
 
 #[derive(Clone, Hash, Debug, Copy)]
-pub struct StorageHandle(usize);
+pub(crate) struct StorageHandle(usize);
 
 #[derive(Clone, Hash, Debug, Copy)]
-pub struct StorageValueHandle(usize);
+pub(crate) struct StorageValueHandle(usize);
 
 pub struct TrieCosts {
     pub byte_of_key: u64,
@@ -71,7 +71,7 @@ pub enum KeyLookupMode {
 const TRIE_COSTS: TrieCosts = TrieCosts { byte_of_key: 2, byte_of_value: 1, node_cost: 50 };
 
 #[derive(Clone, Hash)]
-pub enum NodeHandle {
+enum NodeHandle {
     InMemory(StorageHandle),
     Hash(CryptoHash),
 }
@@ -95,7 +95,7 @@ impl std::fmt::Debug for NodeHandle {
 }
 
 #[derive(Clone, Hash)]
-pub enum ValueHandle {
+enum ValueHandle {
     InMemory(StorageValueHandle),
     HashAndSize(ValueRef),
 }
@@ -187,7 +187,7 @@ mod children {
 }
 
 #[derive(Clone, Hash)]
-pub enum TrieNode {
+enum TrieNode {
     /// Null trie node. Could be an empty root or an empty branch entry.
     Empty,
     /// Key and value of the leaf node.
@@ -200,12 +200,12 @@ pub enum TrieNode {
 
 #[derive(Clone, Debug)]
 pub struct TrieNodeWithSize {
-    pub node: TrieNode,
+    node: TrieNode,
     memory_usage: u64,
 }
 
 impl TrieNodeWithSize {
-    pub fn from_raw(rc_node: RawTrieNodeWithSize) -> TrieNodeWithSize {
+    fn from_raw(rc_node: RawTrieNodeWithSize) -> TrieNodeWithSize {
         TrieNodeWithSize::new(TrieNode::new(rc_node.node), rc_node.memory_usage)
     }
 
@@ -317,7 +317,7 @@ impl TrieNode {
         Self::memory_usage_for_value_length(value_length)
     }
 
-    pub fn memory_usage_direct_no_memory(&self) -> u64 {
+    fn memory_usage_direct_no_memory(&self) -> u64 {
         self.memory_usage_direct_internal(None)
     }
 
@@ -397,7 +397,7 @@ pub enum RawTrieNode {
 #[derive(Debug, Eq, PartialEq)]
 pub struct RawTrieNodeWithSize {
     pub node: RawTrieNode,
-    pub memory_usage: u64,
+    memory_usage: u64,
 }
 
 const LEAF_NODE: u8 = 0;
@@ -790,46 +790,25 @@ impl Trie {
         }
 
         match self.retrieve_raw_node(hash) {
-            Ok(Some((bytes, raw_node))) => {
-                let trie_node = self.retrieve_node(hash).unwrap().1;
-                let serialized_node_size = bytes.len();
-                let node_size = trie_node.node.memory_usage_direct_no_memory();
+            Ok(Some((_, raw_node))) => {
                 match raw_node.node {
                     RawTrieNode::Leaf(key, value) => {
                         let (slice, _) = NibbleSlice::from_encoded(key.as_slice());
                         prefix.extend(slice.iter());
-
-                        let (chunks, remainder) = stdx::as_chunks::<2, _>(prefix);
-                        assert!(remainder.is_empty());
-                        let state_record_key = chunks
-                            .into_iter()
-                            .map(|chunk| (chunk[0] * 16) + chunk[1])
-                            .collect::<Vec<u8>>();
-                        let state_record =
-                            StateRecord::from_raw_key_value(state_record_key, bytes.to_vec());
                         writeln!(
                             f,
-                            "{spaces}Leaf {slice:?} {value:?} prefix:{} hash:{} mem_usage:{} serialized_node_size:{} node_size:{} state_record:{:?}",
-                            self.nibbles_to_string(prefix),
-                            hash,
-                            raw_node.memory_usage,
-                            serialized_node_size,
-                            node_size,
-                            state_record.map(|sr| format!("{}", sr))
+                            "{spaces}Leaf {slice:?} {value:?} prefix:{}",
+                            self.nibbles_to_string(prefix)
                         )?;
                         prefix.truncate(prefix.len() - slice.len());
                     }
                     RawTrieNode::Branch(children, optional_value) => {
                         writeln!(
                             f,
-                            "{}Branch Value:{:?} prefix:{} hash:{} mem_usage:{} serialized_node_size:{} node_size:{}",
+                            "{}Branch Value:{:?} prefix:{}",
                             spaces,
                             optional_value,
-                            self.nibbles_to_string(prefix),
-                            hash,
-                            raw_node.memory_usage,
-                            serialized_node_size,
-                            node_size,
+                            self.nibbles_to_string(prefix)
                         )?;
                         for (idx, child) in children.iter() {
                             writeln!(f, "{spaces} {idx:01x}->")?;
@@ -844,15 +823,11 @@ impl Trie {
                         let (slice, _) = NibbleSlice::from_encoded(key.as_slice());
                         writeln!(
                             f,
-                            "{}Extension {:?} child_hash:{} prefix:{} hash:{} mem_usage:{} serialized_node_size:{} node_size:{}",
+                            "{}Extension {:?} child_hash:{} prefix:{}",
                             spaces,
                             slice,
                             child,
-                            self.nibbles_to_string(prefix),
-                            hash,
-                            raw_node.memory_usage,
-                            serialized_node_size,
-                            node_size,
+                            self.nibbles_to_string(prefix)
                         )?;
                         spaces.push_str("  ");
                         prefix.extend(slice.iter());
@@ -863,10 +838,10 @@ impl Trie {
                 };
             }
             Ok(None) => {
-                writeln!(f, "{spaces}EmptyNode hash:{}", hash)?;
+                writeln!(f, "{spaces}EmptyNode")?;
             }
             Err(err) => {
-                writeln!(f, "{spaces}error {} hash:{}", err, hash)?;
+                writeln!(f, "error {}", err)?;
             }
         };
 
