@@ -6,6 +6,7 @@ use clap;
 use near_epoch_manager::EpochManagerAdapter;
 use near_primitives::block::Tip;
 use near_primitives::hash::CryptoHash;
+use near_primitives::shard_layout::ShardUId;
 use near_store::cold_storage::{copy_all_data_to_cold, update_cold_db, update_cold_head};
 use near_store::metadata::DbKind;
 use near_store::{DBCol, NodeStorage, Store, StoreOpener};
@@ -443,8 +444,8 @@ impl PrepareHotCmd {
 /// The StateRootSelector is a subcommand that allows the user to select the state root either by block height or by the state root hash.
 #[derive(clap::Subcommand)]
 enum StateRootSelector {
-    Height { height: near_primitives::types::BlockHeight },
-    Hash { hash: CryptoHash },
+    Height { height: near_primitives::types::BlockHeight, shard_version: u32 },
+    Hash { hash: CryptoHash, shard_id: u32, shard_version: u32 },
 }
 
 impl StateRootSelector {
@@ -452,10 +453,10 @@ impl StateRootSelector {
         &self,
         storage: &NodeStorage,
         cold_store: &Store,
-    ) -> anyhow::Result<Vec<CryptoHash>> {
+    ) -> anyhow::Result<Vec<(CryptoHash, ShardUId)>> {
         match self {
             // If height is provided, calculate previous state roots for this block's chunks.
-            StateRootSelector::Height { height } => {
+            StateRootSelector::Height { height, shard_version } => {
                 let hash_key = {
                     let height_key = height.to_le_bytes();
                     storage
@@ -473,7 +474,7 @@ impl StateRootSelector {
                     .ok_or(anyhow::anyhow!("Failed to find Block: {:?}", hash_key))?;
                 let mut hashes = vec![];
                 for chunk in block.chunks().iter() {
-                    hashes.push(
+                    hashes.push((
                         cold_store
                             .get_ser::<near_primitives::sharding::ShardChunk>(
                                 DBCol::Chunks,
@@ -485,12 +486,15 @@ impl StateRootSelector {
                             ))?
                             .take_header()
                             .prev_state_root(),
-                    );
+                        ShardUId { version: *shard_version, shard_id: chunk.shard_id() as u32 },
+                    ));
                 }
                 Ok(hashes)
             }
             // If state root is provided, then just use it.
-            StateRootSelector::Hash { hash } => Ok(vec![*hash]),
+            StateRootSelector::Hash { hash, shard_id, shard_version } => {
+                Ok(vec![(*hash, ShardUId { version: *shard_version, shard_id: *shard_id })])
+            }
         }
     }
 }
@@ -566,10 +570,11 @@ impl CheckStateRootCmd {
             storage.get_cold_store().ok_or(anyhow::anyhow!("Cold storage is not configured"))?;
 
         let hashes = self.state_root_selector.get_hashes(storage, &cold_store)?;
-        for hash in hashes.iter() {
+        for (hash, shard_uid) in hashes.iter() {
             Self::check_trie(
                 &cold_store,
                 &hash,
+                &shard_uid,
                 &mut PruneState::new(),
                 &PruneCondition { max_depth: self.max_depth, max_count: self.max_count },
             )?;
@@ -582,6 +587,7 @@ impl CheckStateRootCmd {
     fn check_trie(
         store: &Store,
         hash: &CryptoHash,
+        shard_uid: &ShardUId,
         prune_state: &mut PruneState,
         prune_condition: &PruneCondition,
     ) -> anyhow::Result<()> {
@@ -591,7 +597,7 @@ impl CheckStateRootCmd {
             return Ok(());
         }
 
-        let bytes = Self::read_state(store, hash.as_ref())
+        let bytes = Self::read_state(store, hash.as_ref(), shard_uid)
             .with_context(|| format!("Failed to read raw bytes for hash {:?}", hash))?
             .with_context(|| format!("Failed to find raw bytes for hash {:?}", hash))?;
         let node = near_store::RawTrieNodeWithSize::try_from_slice(&bytes)?;
@@ -607,7 +613,7 @@ impl CheckStateRootCmd {
                     // Record in prune state that we are visiting a child node
                     prune_state.down();
                     // Visit a child node
-                    Self::check_trie(store, child, prune_state, prune_condition)?;
+                    Self::check_trie(store, child, shard_uid, prune_state, prune_condition)?;
                     // Record in prune state that we are returning from a child node
                     prune_state.up();
                 }
@@ -616,7 +622,7 @@ impl CheckStateRootCmd {
                 // Record in prune state that we are visiting a child node
                 prune_state.down();
                 // Visit a child node
-                Self::check_trie(store, &child, prune_state, prune_condition)?;
+                Self::check_trie(store, &child, shard_uid, prune_state, prune_condition)?;
                 // Record in prune state that we are returning from a child node
                 prune_state.up();
             }
@@ -627,9 +633,9 @@ impl CheckStateRootCmd {
     fn read_state<'a>(
         store: &'a Store,
         trie_key: &'a [u8],
+        shard_uid: &ShardUId,
     ) -> std::io::Result<Option<near_store::db::DBSlice<'a>>> {
-        // As cold db strips shard_uid at the beginning of State key, we can add any 8 u8s as prefix.
-        let cold_state_key = [&[1; 8], trie_key.as_ref()].concat();
+        let cold_state_key = [shard_uid.to_bytes().as_slice(), trie_key.as_ref()].concat();
         store.get(DBCol::State, &cold_state_key)
     }
 }
