@@ -438,13 +438,15 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64)>) {
         let mut has = 0;
         let m = (l + r) / 2;
         for (_, (y, _)) in &stuff {
-            has += y;
+            if *y >= m {
+                has += 1;
+            }
         }
         tracing::debug!(target: "state-parts", name, m, l, r, has, NEED, "print_stuff");
         if has > NEED {
-            r = m;
-        } else {
             l = m;
+        } else {
+            r = m;
         }
     }
     tracing::debug!(target: "state-parts", name, l, r, "print_stuff");
