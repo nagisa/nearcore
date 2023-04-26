@@ -448,14 +448,16 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>
     }
     tracing::debug!(target: "state-parts", name, l, r, "print_stuff");
 
+    let mut total_len = 0;
     let mut top = vec![];
     for (x, (y, z, m)) in &stuff {
+        total_len += z;
         if y >= &l {
             top.push((y, z, x, m));
         }
     }
     top.sort_by_key(|(y, z, _, _)| (-(*(*y) as i64), *z));
-    tracing::debug!(target: "state-parts", name, top_len = top.len(), "print_stuff");
+    tracing::debug!(target: "state-parts", name, total_len, top_len = top.len(), "print_stuff");
     for (y, z, x, m) in top {
         tracing::info!(target: "state-parts", cnt = y, hash = ?x, size = z, keys = ?sort_prefixes(&m), name);
     }
