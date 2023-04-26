@@ -29,6 +29,13 @@ pub(crate) enum LoadAction {
     Validate,
 }
 
+#[derive(clap::ArgEnum, Clone, Debug, Default)]
+pub(crate) enum DumpAction {
+    #[default]
+    Dump,
+    Walk,
+}
+
 #[derive(clap::Subcommand, Debug, Clone)]
 pub(crate) enum StatePartsSubCommand {
     /// Load all or a single state part of a shard and perform an action over those parts.
@@ -50,6 +57,9 @@ pub(crate) enum StatePartsSubCommand {
     },
     /// Dump all or a single state part of a shard.
     Dump {
+        /// Obtain part or walk the state trie.
+        #[clap(arg_enum, long)]
+        action: DumpAction,
         /// Dump part ids starting from this part.
         #[clap(long)]
         part_from: Option<u64>,
@@ -79,8 +89,11 @@ impl StatePartsSubCommand {
         near_config: NearConfig,
         store: Store,
     ) {
+        tracing::error!("120");
         let runtime = NightshadeRuntime::from_config(home_dir, store.clone(), &near_config);
+        tracing::error!("121");
         let chain_genesis = ChainGenesis::new(&near_config.genesis);
+        tracing::error!("122");
         let mut chain = Chain::new_for_view_client(
             runtime,
             &chain_genesis,
@@ -88,6 +101,7 @@ impl StatePartsSubCommand {
             false,
         )
         .unwrap();
+        tracing::error!("122.1");
         let chain_id = &near_config.genesis.config.chain_id;
         match self {
             StatePartsSubCommand::Load { action, state_root, part_id, epoch_selection } => {
@@ -103,8 +117,10 @@ impl StatePartsSubCommand {
                     Location::new(root_dir, (s3_bucket, s3_region)),
                 );
             }
-            StatePartsSubCommand::Dump { part_from, part_to, epoch_selection } => {
+            StatePartsSubCommand::Dump { action, part_from, part_to, epoch_selection } => {
+                tracing::error!("122.2");
                 dump_state_parts(
+                    action,
                     epoch_selection,
                     shard_id,
                     part_from,
@@ -324,6 +340,7 @@ fn print_state_part(state_root: &StateRoot, _part_id: PartId, data: &[u8]) {
 }
 
 fn dump_state_parts(
+    action: DumpAction,
     epoch_selection: EpochSelection,
     shard_id: ShardId,
     part_from: Option<u64>,
@@ -333,6 +350,7 @@ fn dump_state_parts(
     store: Store,
     location: Location,
 ) {
+    tracing::error!("123");
     let epoch_id = epoch_selection.to_epoch_id(store, chain);
     let epoch = chain.runtime_adapter.get_epoch_info(&epoch_id).unwrap();
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
@@ -340,10 +358,12 @@ fn dump_state_parts(
     let sync_block = chain.get_block_header(&sync_hash).unwrap();
     let sync_prev_hash = sync_block.prev_hash();
 
+    tracing::error!("124");
     let state_header = chain.compute_state_response_header(shard_id, sync_hash).unwrap();
     let state_root = state_header.chunk_prev_state_root();
     let num_parts = get_num_state_parts(state_header.state_root_node().memory_usage);
     let part_ids = get_part_ids(part_from, part_to, num_parts);
+    tracing::error!("125");
 
     tracing::info!(
         target: "state-parts",
@@ -356,32 +376,49 @@ fn dump_state_parts(
         ?state_root,
         "Dumping state as seen at the beginning of the specified epoch.",
     );
+    tracing::error!("126");
 
     let part_storage = get_state_part_writer(location, chain_id, epoch.epoch_height(), shard_id);
 
+    tracing::error!("127");
     let timer = Instant::now();
     for part_id in part_ids {
+        tracing::error!("128");
         let timer = Instant::now();
         assert!(part_id < num_parts, "part_id: {}, num_parts: {}", part_id, num_parts);
-        let state_part = chain
-            .runtime_adapter
-            .obtain_state_part(
-                shard_id,
-                &sync_prev_hash,
-                &state_root,
-                PartId::new(part_id, num_parts),
-            )
-            .unwrap();
-        part_storage.write(&state_part, part_id, num_parts);
-        let elapsed_sec = timer.elapsed().as_secs_f64();
-        let first_state_record = get_first_state_record(&state_root, &state_part);
-        tracing::info!(
-            target: "state-parts",
-            part_id,
-            part_length = state_part.len(),
-            elapsed_sec,
-            first_state_record = ?first_state_record.map(|sr| format!("{}", sr)),
-            "Wrote a state part");
+
+        match action {
+            DumpAction::Dump => {
+                tracing::error!("129");
+                let state_part = chain
+                    .runtime_adapter
+                    .obtain_state_part(
+                        shard_id,
+                        &sync_prev_hash,
+                        &state_root,
+                        PartId::new(part_id, num_parts),
+                    )
+                    .unwrap();
+                part_storage.write(&state_part, part_id, num_parts);
+                let elapsed_sec = timer.elapsed().as_secs_f64();
+                let first_state_record = get_first_state_record(&state_root, &state_part);
+                tracing::info!(target: "state-parts", part_id, part_length = state_part.len(), elapsed_sec, first_state_record = ?first_state_record.map(|sr| format!("{}", sr)), "Wrote a state part");
+            }
+            DumpAction::Walk => {
+                tracing::error!("130");
+                tracing::warn!(target: "state-parts", "Part id is ignored, walking the whole tree");
+
+                let trie = chain
+                    .runtime_adapter
+                    .get_view_trie_for_shard(shard_id, sync_prev_hash, state_root)
+                    .unwrap();
+                let hash = CryptoHash::from(state_root);
+                let trie_stats = trie.stats_recursive(&hash);
+                tracing::warn!(target: "state-parts", ?trie_stats);
+
+                break;
+            }
+        }
     }
     tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Wrote all requested state parts");
 }

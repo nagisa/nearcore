@@ -508,6 +508,58 @@ impl Trie {
         Ok(())
     }
 
+    pub fn stats_recursive(&self, hash: &CryptoHash) -> TrieStats {
+        let mut trie_stats = TrieStats::default();
+        let mut prefix: Vec<u8> = Vec::new();
+        match self.retrieve_raw_node_or_value(hash).unwrap() {
+            NodeOrValue::Node(_) => {
+                self.stats_recursive_internal(hash, &mut prefix, &mut trie_stats);
+            }
+            NodeOrValue::Value(value_bytes) => {
+                trie_stats.add_value(&prefix, value_bytes.len() as u32);
+            }
+        };
+        trie_stats
+    }
+
+    fn stats_recursive_internal(
+        &self,
+        hash: &CryptoHash,
+        prefix: &mut Vec<u8>,
+        trie_stats: &mut TrieStats,
+    ) {
+        let (bytes, raw_node) = self.retrieve_raw_node(hash).unwrap().unwrap();
+        trie_stats.add_node(prefix, bytes.len());
+
+        let children = match raw_node.node {
+            RawTrieNode::Leaf(key, value) => {
+                let (slice, _) = NibbleSlice::from_encoded(key.as_slice());
+                prefix.extend(slice.iter());
+                trie_stats.add_value(prefix, value.length);
+                prefix.truncate(prefix.len() - slice.len());
+                return;
+            }
+            RawTrieNode::BranchNoValue(children) => children,
+            RawTrieNode::BranchWithValue(value, children) => {
+                trie_stats.add_value(prefix, value.length);
+                children
+            }
+            RawTrieNode::Extension(key, child) => {
+                let (slice, _) = NibbleSlice::from_encoded(key.as_slice());
+                prefix.extend(slice.iter());
+                self.stats_recursive_internal(&child, prefix, trie_stats);
+                prefix.truncate(prefix.len() - slice.len());
+                return;
+            }
+        };
+
+        for (idx, child) in children.iter() {
+            prefix.push(idx);
+            self.stats_recursive_internal(child, prefix, trie_stats);
+            prefix.pop();
+        }
+    }
+
     // Prints the trie nodes starting from hash, up to max_depth depth.
     // The node hash can be any node in the trie.
     pub fn print_recursive(&self, f: &mut dyn std::io::Write, hash: &CryptoHash, max_depth: u32) {
@@ -877,6 +929,42 @@ impl Trie {
 impl TrieAccess for Trie {
     fn get(&self, key: &TrieKey) -> Result<Option<Vec<u8>>, StorageError> {
         Trie::get(self, &key.to_vec())
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct TrieStats {
+    nodes_per_key_nibbles_prefix: HashMap<Vec<u8>, (u64, u64)>,
+    values_per_key_nibbles_prefix: HashMap<Vec<u8>, (u64, u64)>,
+    cnt: u64,
+}
+
+impl TrieStats {
+    pub fn add_node(&mut self, key_nibbles: &[u8], node_len: usize) {
+        let b = Self::prefix(key_nibbles);
+        let (count, total) = self.nodes_per_key_nibbles_prefix.entry(b).or_insert((0, 0));
+        *count += 1;
+        *total += node_len as u64;
+        self.add();
+    }
+
+    pub fn add_value(&mut self, key_nibbles: &[u8], value_len: u32) {
+        let b = Self::prefix(key_nibbles);
+        let (count, total) = self.values_per_key_nibbles_prefix.entry(b).or_insert((0, 0));
+        *count += 1;
+        *total += value_len as u64;
+        self.add();
+    }
+
+    fn prefix(key_nibbles: &[u8]) -> Vec<u8> {
+        key_nibbles.iter().take(4).cloned().collect()
+    }
+
+    fn add(&mut self) {
+        self.cnt += 1;
+        if !(self.cnt % 10000) == 0 {
+            tracing::info!(target: "trie-stats", trie_stats = ?self);
+        }
     }
 }
 
