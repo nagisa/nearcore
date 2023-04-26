@@ -458,11 +458,28 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>
     }
 }
 
-fn sort_prefixes(m: &HashMap<Vec<u8>, u64>) -> Vec<(NibbleSlice, u64)> {
+fn sort_prefixes(m: &HashMap<Vec<u8>, u64>) -> Vec<(String, NibbleSlice, u64)> {
     let mut res = vec![];
     for key in m.keys().sorted() {
+        let column = if key.is_empty() {
+            "__EMPTY__".to_owned()
+        } else {
+            match key[0] {
+                0 => "Account".to_owned(),
+                1 => "ContractCode".to_owned(),
+                2 => "AccessKey".to_owned(),
+                3 => "ReceivedData".to_owned(),
+                4 => "PostponedReceiptId".to_owned(),
+                5 => "PendingDataCount".to_owned(),
+                6 => "PostponedReceipt".to_owned(),
+                7 => "DelayedReceiptIndices".to_owned(),
+                8 => "DelayedReceipt".to_owned(),
+                9 => "ContractData".to_owned(),
+                _ => format!("Other: {}", key[0]),
+            }
+        };
         let nibbles = NibbleSlice::new(key);
-        res.push((nibbles, *m.get(key).unwrap()))
+        res.push((column, nibbles, *m.get(key).unwrap()))
     }
     res
 }
