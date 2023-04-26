@@ -946,14 +946,6 @@ pub struct TrieStats {
     pub cnt: u64,
 }
 
-fn prefixes(b: &[u8]) -> Vec<Vec<u8>> {
-    let mut res = vec![];
-    for l in 0..=b.len() {
-        res.push(b[0..l].to_vec())
-    }
-    res
-}
-
 impl TrieStats {
     pub fn add_node(&mut self, key_nibbles: &[u8], node_len: usize, hash: &CryptoHash) {
         let b = Self::prefix(key_nibbles);
@@ -973,7 +965,7 @@ impl TrieStats {
 
     pub fn add_value(&mut self, key_nibbles: &[u8], value_len: u32, hash: &CryptoHash) {
         let b = Self::prefix(key_nibbles);
-        for bb in prefixes(&b.clone()) {
+        for bb in Self::prefixes(&b.clone()) {
             let (count, total, _, _) =
                 self.per_key_nibbles_prefix.entry(bb).or_insert((0, 0, 0, 0));
             *count += 1;
@@ -989,6 +981,14 @@ impl TrieStats {
 
     fn prefix(key_nibbles: &[u8]) -> Vec<u8> {
         key_nibbles.iter().take(8).cloned().collect()
+    }
+
+    fn prefixes(b: &[u8]) -> Vec<Vec<u8>> {
+        let mut res = vec![];
+        for l in 0..=b.len() {
+            res.push(b[0..l].to_vec())
+        }
+        res
     }
 
     fn add(&mut self) {
