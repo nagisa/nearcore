@@ -13,7 +13,7 @@ use near_primitives::syncing::get_num_state_parts;
 use near_primitives::types::{EpochId, StateRoot};
 use near_primitives_core::hash::CryptoHash;
 use near_primitives_core::types::{BlockHeight, EpochHeight, ShardId};
-use near_store::{PartialStorage, Store, Trie, TrieStats};
+use near_store::{NibbleSlice, PartialStorage, Store, Trie, TrieStats};
 use nearcore::{NearConfig, NightshadeRuntime};
 use s3::serde_types::ListBucketResult;
 use std::collections::HashMap;
@@ -407,7 +407,8 @@ fn dump_state_parts(
                 for key in per_key_nibbles_prefix.keys().sorted() {
                     let (cnt_value, size_value, cnt_node, size_node) =
                         per_key_nibbles_prefix.get(key).unwrap();
-                    tracing::info!(target: "state-parts", key = ?Trie::nibbles_to_string(key), cnt_value, size_value, cnt_node, size_node);
+                    let nibbles = NibbleSlice::new(key);
+                    tracing::info!(target: "state-parts", key = ?nibbles, cnt_value, size_value, cnt_node, size_node);
                 }
                 tracing::info!(target: "state-parts", ?cnt, "trie stats :: values:");
                 print_values(values);
@@ -457,10 +458,11 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>
     }
 }
 
-fn sort_prefixes(m: &HashMap<Vec<u8>, u64>) -> Vec<(String, u64)> {
+fn sort_prefixes(m: &HashMap<Vec<u8>, u64>) -> Vec<(NibbleSlice, u64)> {
     let mut res = vec![];
     for key in m.keys().sorted() {
-        res.push((Trie::nibbles_to_string(key), *m.get(key).unwrap()))
+        let nibbles = NibbleSlice::new(key);
+        res.push((nibbles, *m.get(key).unwrap()))
     }
     res
 }
