@@ -34,8 +34,8 @@ pub use crate::trie::update::{TrieUpdate, TrieUpdateIterator, TrieUpdateValuePtr
 pub use crate::trie::{
     estimator, split_state, ApplyStatePartResult, KeyForStateChanges, KeyLookupMode, NibbleSlice,
     PartialStorage, PrefetchApi, PrefetchError, RawTrieNode, RawTrieNodeWithSize, ShardTries, Trie,
-    TrieAccess, TrieCache, TrieCachingStorage, TrieChanges, TrieConfig, TrieDBStorage, TrieStorage,
-    WrappedTrieChanges,
+    TrieAccess, TrieCache, TrieCachingStorage, TrieChanges, TrieConfig, TrieDBStorage, TrieStats,
+    TrieStorage, WrappedTrieChanges,
 };
 
 pub mod cold_storage;

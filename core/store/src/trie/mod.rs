@@ -516,7 +516,7 @@ impl Trie {
                 self.stats_recursive_internal(hash, &mut prefix, &mut trie_stats);
             }
             NodeOrValue::Value(value_bytes) => {
-                trie_stats.add_value(&prefix, value_bytes.len() as u32);
+                trie_stats.add_value(&prefix, value_bytes.len() as u32, hash);
             }
         };
         trie_stats
@@ -529,19 +529,19 @@ impl Trie {
         trie_stats: &mut TrieStats,
     ) {
         let (bytes, raw_node) = self.retrieve_raw_node(hash).unwrap().unwrap();
-        trie_stats.add_node(prefix, bytes.len());
+        trie_stats.add_node(prefix, bytes.len(), hash);
 
         let children = match raw_node.node {
             RawTrieNode::Leaf(key, value) => {
                 let (slice, _) = NibbleSlice::from_encoded(key.as_slice());
                 prefix.extend(slice.iter());
-                trie_stats.add_value(prefix, value.length);
+                trie_stats.add_value(prefix, value.length, &value.hash);
                 prefix.truncate(prefix.len() - slice.len());
                 return;
             }
             RawTrieNode::BranchNoValue(children) => children,
             RawTrieNode::BranchWithValue(value, children) => {
-                trie_stats.add_value(prefix, value.length);
+                trie_stats.add_value(prefix, value.length, &value.hash);
                 children
             }
             RawTrieNode::Extension(key, child) => {
@@ -935,23 +935,55 @@ impl TrieAccess for Trie {
 #[derive(Debug, Default)]
 pub struct TrieStats {
     pub per_key_nibbles_prefix: HashMap<Vec<u8>, (u64, u64, u64, u64)>,
-    cnt: u64,
+    pub nodes: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>, u64>)>,
+    pub values: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>, u64>)>,
+    pub cnt: u64,
+}
+
+fn prefixes(b: &[u8]) -> Vec<Vec<u8>> {
+    let mut res = vec![];
+    for l in 0..=b.len() {
+        res.push(b[0..l].to_vec())
+    }
+    res
 }
 
 impl TrieStats {
-    pub fn add_node(&mut self, key_nibbles: &[u8], node_len: usize) {
+    pub fn add_node(&mut self, key_nibbles: &[u8], node_len: usize, hash: &CryptoHash) {
         let b = Self::prefix(key_nibbles);
-        let (_, _, count, total) = self.per_key_nibbles_prefix.entry(b).or_insert((0, 0, 0, 0));
-        *count += 1;
-        *total += node_len as u64;
+        for bb in prefixes(&b.clone()) {
+            let (_, _, count, total) =
+                self.per_key_nibbles_prefix.entry(bb).or_insert((0, 0, 0, 0));
+            *count += 1;
+            *total += node_len as u64;
+        }
+
+        let (c1, c2, c3) = self.nodes.entry(*hash).or_insert(Default::default());
+        *c1 += 1;
+        *c2 = node_len as u64;
+        for bb in prefixes(&b) {
+            *c3.entry(bb).or_insert(0) += 1;
+        }
+
         self.add();
     }
 
-    pub fn add_value(&mut self, key_nibbles: &[u8], value_len: u32) {
+    pub fn add_value(&mut self, key_nibbles: &[u8], value_len: u32, hash: &CryptoHash) {
         let b = Self::prefix(key_nibbles);
-        let (count, total, _, _) = self.per_key_nibbles_prefix.entry(b).or_insert((0, 0, 0, 0));
-        *count += 1;
-        *total += value_len as u64;
+        for bb in prefixes(&b.clone()) {
+            let (count, total, _, _) =
+                self.per_key_nibbles_prefix.entry(bb).or_insert((0, 0, 0, 0));
+            *count += 1;
+            *total += value_len as u64;
+        }
+
+        let (c1, c2, c3) = self.values.entry(*hash).or_insert(Default::default());
+        *c1 += 1;
+        *c2 = value_len as u64;
+        for bb in prefixes(&b) {
+            *c3.entry(bb).or_insert(0) += 1;
+        }
+
         self.add();
     }
 
