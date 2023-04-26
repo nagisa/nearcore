@@ -469,13 +469,13 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64)>) {
 }
 
 fn key_nibbles_type(key: &[u8]) -> String {
-    let column = if key.len() < 2 {
+    let column = if key.len() < 1 {
         "__EMPTY__".to_owned()
     } else {
         if key[0] != 0 {
-            format!("Other: {}'{}", key[0], key[1])
+            format!("Other: {}", key[0])
         } else {
-            match key[1] {
+            match key[0] {
                 0 => "Account".to_owned(),
                 1 => "ContractCode".to_owned(),
                 2 => "AccessKey".to_owned(),
@@ -486,7 +486,7 @@ fn key_nibbles_type(key: &[u8]) -> String {
                 7 => "DelayedReceiptIndices".to_owned(),
                 8 => "DelayedReceipt".to_owned(),
                 9 => "ContractData".to_owned(),
-                _ => format!("Other: {}'{}", key[0], key[1]),
+                _ => format!("Other: {}", key[0]),
             }
         }
     };
