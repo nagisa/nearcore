@@ -473,7 +473,7 @@ fn key_nibbles_type(key: &[u8]) -> String {
         "__EMPTY__".to_owned()
     } else {
         if key[0] != 0 {
-            format!("Other: {key[0]}'{key[1]}")
+            format!("Other: {}'{}", key[0], key[1])
         } else {
             match key[1] {
                 0 => "Account".to_owned(),
@@ -486,7 +486,7 @@ fn key_nibbles_type(key: &[u8]) -> String {
                 7 => "DelayedReceiptIndices".to_owned(),
                 8 => "DelayedReceipt".to_owned(),
                 9 => "ContractData".to_owned(),
-                _ => format!("Other: {key[0]}'{key[1]}"),
+                _ => format!("Other: {}'{}", key[0], key[1]),
             }
         }
     };
