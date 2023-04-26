@@ -408,7 +408,8 @@ fn dump_state_parts(
                     let (cnt_value, size_value, cnt_node, size_node) =
                         per_key_nibbles_prefix.get(key).unwrap();
                     let nibbles = NibbleSlice::new(key);
-                    tracing::info!(target: "state-parts", key = ?nibbles, cnt_value, size_value, cnt_node, size_node);
+                    let key_str = Trie::nibbles_to_string(key);
+                    tracing::info!(target: "state-parts", key_type = key_nibbles_type(key), key = ?nibbles, key_str, cnt_value, size_value, cnt_node, size_node);
                 }
                 tracing::info!(target: "state-parts", ?cnt, values_len = values.len(), "trie stats :: values:");
                 print_values(values);
@@ -421,22 +422,22 @@ fn dump_state_parts(
     tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Wrote all requested state parts");
 }
 
-fn print_values(values: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>, u64>)>) {
+fn print_values(values: HashMap<CryptoHash, (u64, u64)>) {
     print_stuff("value", values);
 }
 
-fn print_nodes(nodes: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>, u64>)>) {
+fn print_nodes(nodes: HashMap<CryptoHash, (u64, u64)>) {
     print_stuff("node", nodes);
 }
 
-fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>, u64>)>) {
+fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64)>) {
     const NEED: u64 = 1000;
     let mut l = 0u64;
     let mut r = 10000000000u64;
     while r - l > 1 {
         let mut has = 0;
         let m = (l + r) / 2;
-        for (_, (y, _, _)) in &stuff {
+        for (_, (y, _)) in &stuff {
             has += y;
         }
         tracing::debug!(target: "state-parts", name, m, l, r, has, NEED, "print_stuff");
@@ -452,50 +453,44 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>
     let mut total_unique = 0;
     let mut total_hits = 0;
     let mut top = vec![];
-    for (x, (y, z, m)) in &stuff {
+    for (x, (y, z)) in &stuff {
         total_len += z;
         total_unique += 1;
         total_hits += y;
         if y >= &l {
-            top.push((y, z, x, m));
+            top.push((y, z, x));
         }
     }
-    top.sort_by_key(|(y, z, _, _)| (-(*(*y) as i64), *z));
+    top.sort_by_key(|(y, z, _)| (-(*(*y) as i64), *z));
     tracing::debug!(target: "state-parts", name, total_len, total_unique, total_hits, top_len = top.len(), "print_stuff");
-    for (y, z, x, m) in top {
-        tracing::info!(target: "state-parts", cnt = y, hash = ?x, size = z, keys = ?sort_prefixes(&m), name);
+    for (y, z, x) in top {
+        tracing::info!(target: "state-parts", cnt = y, hash = ?x, size = z, name);
     }
 }
 
-fn sort_prefixes(m: &HashMap<Vec<u8>, u64>) -> Vec<(String, NibbleSlice, String, u64)> {
-    let mut res = vec![];
-    for key in m.keys().sorted() {
-        let column = if key.len() < 2 {
-            "__EMPTY__".to_owned()
+fn key_nibbles_type(key: &[u8]) -> String {
+    let column = if key.len() < 2 {
+        "__EMPTY__".to_owned()
+    } else {
+        if key[0] != 0 {
+            format!("Other: {}'{}", key[0], key[1])
         } else {
-            if key[0] != 0 {
-                format!("Other: {}'{}", key[0], key[1])
-            } else {
-                match key[1] {
-                    0 => "Account".to_owned(),
-                    1 => "ContractCode".to_owned(),
-                    2 => "AccessKey".to_owned(),
-                    3 => "ReceivedData".to_owned(),
-                    4 => "PostponedReceiptId".to_owned(),
-                    5 => "PendingDataCount".to_owned(),
-                    6 => "PostponedReceipt".to_owned(),
-                    7 => "DelayedReceiptIndices".to_owned(),
-                    8 => "DelayedReceipt".to_owned(),
-                    9 => "ContractData".to_owned(),
-                    _ => format!("Other: {}'{}", key[0], key[1]),
-                }
+            match key[1] {
+                0 => "Account".to_owned(),
+                1 => "ContractCode".to_owned(),
+                2 => "AccessKey".to_owned(),
+                3 => "ReceivedData".to_owned(),
+                4 => "PostponedReceiptId".to_owned(),
+                5 => "PendingDataCount".to_owned(),
+                6 => "PostponedReceipt".to_owned(),
+                7 => "DelayedReceiptIndices".to_owned(),
+                8 => "DelayedReceipt".to_owned(),
+                9 => "ContractData".to_owned(),
+                _ => format!("Other: {}'{}", key[0], key[1]),
             }
-        };
-        let nibbles = NibbleSlice::new(key);
-        let key_str = Trie::nibbles_to_string(key);
-        res.push((column, nibbles, key_str, *m.get(key).unwrap()))
-    }
-    res
+        }
+    };
+    column
 }
 
 /// Returns the first `StateRecord` encountered while iterating over a sub-trie in the state part.

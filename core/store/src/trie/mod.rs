@@ -935,8 +935,8 @@ impl TrieAccess for Trie {
 #[derive(Debug, Default)]
 pub struct TrieStats {
     pub per_key_nibbles_prefix: HashMap<Vec<u8>, (u64, u64, u64, u64)>,
-    pub nodes: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>, u64>)>,
-    pub values: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>, u64>)>,
+    pub nodes: HashMap<CryptoHash, (u64, u64)>,
+    pub values: HashMap<CryptoHash, (u64, u64)>,
     pub cnt: u64,
 }
 
@@ -958,12 +958,9 @@ impl TrieStats {
             *total += node_len as u64;
         }
 
-        let (c1, c2, c3) = self.nodes.entry(*hash).or_insert(Default::default());
+        let (c1, c2) = self.nodes.entry(*hash).or_insert(Default::default());
         *c1 += 1;
         *c2 = node_len as u64;
-        for bb in prefixes(&b) {
-            *c3.entry(bb).or_insert(0) += 1;
-        }
 
         self.add();
     }
@@ -977,12 +974,9 @@ impl TrieStats {
             *total += value_len as u64;
         }
 
-        let (c1, c2, c3) = self.values.entry(*hash).or_insert(Default::default());
+        let (c1, c2) = self.values.entry(*hash).or_insert(Default::default());
         *c1 += 1;
         *c2 = value_len as u64;
-        for bb in prefixes(&b) {
-            *c3.entry(bb).or_insert(0) += 1;
-        }
 
         self.add();
     }
