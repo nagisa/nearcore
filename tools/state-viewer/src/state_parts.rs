@@ -442,9 +442,9 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64)>) {
         }
         tracing::debug!(target: "state-parts", name, m, l, r, has, NEED, "print_stuff");
         if has > NEED {
-            l = m;
-        } else {
             r = m;
+        } else {
+            l = m;
         }
     }
     tracing::debug!(target: "state-parts", name, l, r, "print_stuff");
