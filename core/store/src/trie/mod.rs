@@ -617,7 +617,7 @@ impl Trie {
     }
 
     // Converts the list of Nibbles to a readable string.
-    fn nibbles_to_string(prefix: &[u8]) -> String {
+    pub fn nibbles_to_string(prefix: &[u8]) -> String {
         let (chunks, remainder) = stdx::as_chunks::<2, _>(prefix);
         let mut result = chunks
             .into_iter()
@@ -934,15 +934,14 @@ impl TrieAccess for Trie {
 
 #[derive(Debug, Default)]
 pub struct TrieStats {
-    nodes_per_key_nibbles_prefix: HashMap<Vec<u8>, (u64, u64)>,
-    values_per_key_nibbles_prefix: HashMap<Vec<u8>, (u64, u64)>,
+    pub per_key_nibbles_prefix: HashMap<Vec<u8>, (u64, u64, u64, u64)>,
     cnt: u64,
 }
 
 impl TrieStats {
     pub fn add_node(&mut self, key_nibbles: &[u8], node_len: usize) {
         let b = Self::prefix(key_nibbles);
-        let (count, total) = self.nodes_per_key_nibbles_prefix.entry(b).or_insert((0, 0));
+        let (_, _, count, total) = self.per_key_nibbles_prefix.entry(b).or_insert((0, 0, 0, 0));
         *count += 1;
         *total += node_len as u64;
         self.add();
@@ -950,7 +949,7 @@ impl TrieStats {
 
     pub fn add_value(&mut self, key_nibbles: &[u8], value_len: u32) {
         let b = Self::prefix(key_nibbles);
-        let (count, total) = self.values_per_key_nibbles_prefix.entry(b).or_insert((0, 0));
+        let (count, total, _, _) = self.per_key_nibbles_prefix.entry(b).or_insert((0, 0, 0, 0));
         *count += 1;
         *total += value_len as u64;
         self.add();
@@ -963,7 +962,7 @@ impl TrieStats {
     fn add(&mut self) {
         self.cnt += 1;
         if !(self.cnt % 10000) == 0 {
-            tracing::info!(target: "trie-stats", trie_stats = ?self);
+            tracing::info!(target: "trie-stats", per_key_nibbles_prefix = ?self.per_key_nibbles_prefix, cnt = self.cnt);
         }
     }
 }

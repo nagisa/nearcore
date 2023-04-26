@@ -102,7 +102,6 @@ impl StateViewerSubCommand {
             cold_config,
         );
 
-        tracing::error!("117");
         let storage = store_opener.open_in_mode(mode).unwrap();
         let store = match temperature {
             Temperature::Hot => storage.get_hot_store(),
@@ -110,7 +109,6 @@ impl StateViewerSubCommand {
             Temperature::Cold => storage.get_split_store().unwrap(),
         };
 
-        tracing::error!("118");
         match self {
             StateViewerSubCommand::Apply(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::ApplyChunk(cmd) => cmd.run(home_dir, near_config, store),
@@ -515,7 +513,6 @@ pub struct StatePartsCmd {
 
 impl StatePartsCmd {
     pub fn run(self, home_dir: &Path, near_config: NearConfig, store: Store) {
-        tracing::error!("119");
         self.command.run(
             self.shard_id,
             self.root_dir,
