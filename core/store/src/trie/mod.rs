@@ -949,7 +949,7 @@ pub struct TrieStats {
 impl TrieStats {
     pub fn add_node(&mut self, key_nibbles: &[u8], node_len: usize, hash: &CryptoHash) {
         let b = Self::prefix(key_nibbles);
-        for bb in prefixes(&b.clone()) {
+        for bb in Self::prefixes(&b.clone()) {
             let (_, _, count, total) =
                 self.per_key_nibbles_prefix.entry(bb).or_insert((0, 0, 0, 0));
             *count += 1;
