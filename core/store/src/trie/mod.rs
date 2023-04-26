@@ -988,7 +988,7 @@ impl TrieStats {
     }
 
     fn prefix(key_nibbles: &[u8]) -> Vec<u8> {
-        key_nibbles.iter().take(4).cloned().collect()
+        key_nibbles.iter().take(8).cloned().collect()
     }
 
     fn add(&mut self) {
