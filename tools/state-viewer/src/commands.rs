@@ -271,7 +271,7 @@ pub(crate) fn dump_account_storage(
         let item = trie.get(&key.to_vec());
         let value = item.unwrap();
         if let Some(value) = value {
-            let record = StateRecord::from_raw_key_value(key.to_vec(), value).unwrap();
+            let record = StateRecord::from_raw_key_value(key.to_vec(), value).unwrap().unwrap();
             match record {
                 StateRecord::Data { account_id: _, data_key: _, value } => {
                     fs::write(output, value).unwrap();
@@ -651,7 +651,7 @@ pub(crate) fn state(home_dir: &Path, near_config: NearConfig, store: Store) {
             .unwrap();
         for item in trie.iter().unwrap() {
             let (key, value) = item.unwrap();
-            if let Some(state_record) = StateRecord::from_raw_key_value(key, value) {
+            if let Ok(Some(state_record)) = StateRecord::from_raw_key_value(key, value) {
                 println!("{}", state_record);
             }
         }

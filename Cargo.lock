@@ -3726,6 +3726,7 @@ dependencies = [
 name = "near-primitives"
 version = "0.0.0"
 dependencies = [
+ "anyhow",
  "arbitrary",
  "assert_matches",
  "bencher",

@@ -13,6 +13,7 @@ This crate provides the base set of primitives used by other nearcore crates
 """
 
 [dependencies]
+anyhow.workspace = true
 arbitrary.workspace = true
 borsh.workspace = true
 bytesize.workspace = true

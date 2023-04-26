@@ -612,7 +612,13 @@ impl Trie {
             };
             let state_record = StateRecord::from_raw_key_value(key.clone(), value);
 
-            writeln!(f, "{} {state_record:?}", key_string).expect("write failed");
+            writeln!(
+                f,
+                "{} {:?}",
+                key_string,
+                state_record.map(|sr| sr.map(|sr| format!("{}", sr)))
+            )
+            .expect("write failed");
         }
     }
 
@@ -663,7 +669,7 @@ impl Trie {
                     f,
                     "{spaces}Leaf {slice:?} {value:?} prefix:{} hash:{hash} mem_usage:{mem_usage} state_record:{:?}",
                     Self::nibbles_to_string(prefix),
-                    state_record.map(|sr|format!("{}", sr)),
+                    state_record.map(|sr|sr.map(|sr|format!("{}", sr))),
                 )?;
                 prefix.truncate(prefix.len() - slice.len());
                 return Ok(());
