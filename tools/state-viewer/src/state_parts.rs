@@ -449,21 +449,25 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64, HashMap<Vec<u8>
     tracing::debug!(target: "state-parts", name, l, r, "print_stuff");
 
     let mut total_len = 0;
+    let mut total_unique = 0;
+    let mut total_hits = 0;
     let mut top = vec![];
     for (x, (y, z, m)) in &stuff {
         total_len += z;
+        total_unique += 1;
+        total_hits += y;
         if y >= &l {
             top.push((y, z, x, m));
         }
     }
     top.sort_by_key(|(y, z, _, _)| (-(*(*y) as i64), *z));
-    tracing::debug!(target: "state-parts", name, total_len, top_len = top.len(), "print_stuff");
+    tracing::debug!(target: "state-parts", name, total_len, total_unique, total_hits, top_len = top.len(), "print_stuff");
     for (y, z, x, m) in top {
         tracing::info!(target: "state-parts", cnt = y, hash = ?x, size = z, keys = ?sort_prefixes(&m), name);
     }
 }
 
-fn sort_prefixes(m: &HashMap<Vec<u8>, u64>) -> Vec<(String, NibbleSlice, u64)> {
+fn sort_prefixes(m: &HashMap<Vec<u8>, u64>) -> Vec<(String, NibbleSlice, String, u64)> {
     let mut res = vec![];
     for key in m.keys().sorted() {
         let column = if key.len() < 2 {
@@ -488,7 +492,8 @@ fn sort_prefixes(m: &HashMap<Vec<u8>, u64>) -> Vec<(String, NibbleSlice, u64)> {
             }
         };
         let nibbles = NibbleSlice::new(key);
-        res.push((column, nibbles, *m.get(key).unwrap()))
+        let key_str = Trie::nibbles_to_string(key);
+        res.push((column, nibbles, key_str, *m.get(key).unwrap()))
     }
     res
 }

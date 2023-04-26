@@ -994,7 +994,12 @@ impl TrieStats {
     fn add(&mut self) {
         self.cnt += 1;
         if (self.cnt % 100000) == 0 {
-            tracing::debug!(target: "trie-stats", per_key_nibbles_prefix = ?self.per_key_nibbles_prefix, cnt = self.cnt);
+            tracing::debug!(
+                target: "trie-stats",
+                per_key_nibbles_prefix = ?self.per_key_nibbles_prefix,
+                nodes_len = self.nodes.len(),
+                values_len = self.values.len(),
+                cnt = self.cnt);
         }
     }
 }
