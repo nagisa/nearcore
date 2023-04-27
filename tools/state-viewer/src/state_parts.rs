@@ -403,7 +403,7 @@ fn dump_state_parts(
                     .unwrap();
                 let TrieStats { per_key_nibbles_prefix, nodes, values, cnt } =
                     trie.stats_recursive(&state_root);
-                tracing::info!(target: "state-parts", ?cnt, "trie stats :: per_key_nibbles_prefix:");
+                tracing::info!(target: "state-parts", ?cnt, "trie stats -- per_key_nibbles_prefix");
                 for key in per_key_nibbles_prefix.keys().sorted() {
                     let (cnt_value, size_value, cnt_node, size_node) =
                         per_key_nibbles_prefix.get(key).unwrap();
@@ -411,9 +411,9 @@ fn dump_state_parts(
                     let key_str = Trie::nibbles_to_string(key);
                     tracing::info!(target: "state-parts", key_type = key_nibbles_type(key), key = ?nibbles, key_str, cnt_value, size_value, cnt_node, size_node);
                 }
-                tracing::info!(target: "state-parts", ?cnt, values_len = values.len(), "trie stats :: values:");
+                tracing::info!(target: "state-parts", ?cnt, values_len = values.len(), "trie stats -- values");
                 print_values(values);
-                tracing::info!(target: "state-parts", ?cnt, nodes_les = nodes.len(), "trie stats :: nodes:");
+                tracing::info!(target: "state-parts", ?cnt, nodes_les = nodes.len(), "trie stats -- nodes");
                 print_nodes(nodes);
                 break;
             }
@@ -422,22 +422,74 @@ fn dump_state_parts(
     tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Wrote all requested state parts");
 }
 
-fn print_values(values: HashMap<CryptoHash, (u64, u64)>) {
-    print_stuff("value", values);
+fn print_values(values: HashMap<CryptoHash, (u64, u64, Option<String>)>) {
+    print_stuff("value", &values);
+    print_heavy_stuff("value", &values);
 }
 
-fn print_nodes(nodes: HashMap<CryptoHash, (u64, u64)>) {
-    print_stuff("node", nodes);
+fn print_nodes(nodes: HashMap<CryptoHash, (u64, u64, Option<String>)>) {
+    print_stuff("node", &nodes);
+    print_heavy_stuff("node", &nodes);
 }
 
-fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64)>) {
-    const NEED: u64 = 1000;
+fn print_heavy_stuff(name: &str, stuff: &HashMap<CryptoHash, (u64, u64, Option<String>)>) {
+    const NEED: u64 = 200;
     let mut l = 0u64;
-    let mut r = 10000000000u64;
+    let mut r = 1e18 as u64;
     while r - l > 1 {
         let mut has = 0;
         let m = (l + r) / 2;
-        for (_, (y, _)) in &stuff {
+        for (_, (y, z, _)) in stuff {
+            if *y * *z >= m {
+                has += 1;
+            }
+        }
+        tracing::debug!(target: "state-parts", name, m, l, r, has, NEED, "print_heavy_stuff");
+        if has > NEED {
+            l = m;
+        } else {
+            r = m;
+        }
+    }
+    tracing::debug!(target: "state-parts", name, l, r, "print_heavy_stuff");
+
+    let mut total_len = 0;
+    let mut total_unique = 0;
+    let mut total_hits = 0;
+    let mut top = vec![];
+    for (x, (y, z, m)) in stuff {
+        total_len += z;
+        total_unique += 1;
+        total_hits += y;
+        if y * z >= l {
+            top.push((y, z, x, m));
+        }
+    }
+    top.sort_by_key(|(y, z, _, _)| (-((**y as i64) * (**z as i64))));
+    tracing::debug!(target: "state-parts", name, total_len, total_unique, total_hits, top_len = top.len(), "print_heavy_stuff");
+    for (y, z, x, m) in top {
+        let t = if let Some(b) = m {
+            let c = b.as_bytes();
+            if c.len() > 0 {
+                let d = vec![c[0] / 16, c[0] % 16];
+                Some(key_nibbles_type(&d))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        tracing::info!(target: "state-parts", cnt = y, hash = ?x, size = z, path = ?m, path_key_type = ?t, name);
+    }
+}
+fn print_stuff(name: &str, stuff: &HashMap<CryptoHash, (u64, u64, Option<String>)>) {
+    const NEED: u64 = 200;
+    let mut l = 0u64;
+    let mut r = 1e18 as u64;
+    while r - l > 1 {
+        let mut has = 0;
+        let m = (l + r) / 2;
+        for (_, (y, _, _)) in stuff {
             if *y >= m {
                 has += 1;
             }
@@ -455,18 +507,29 @@ fn print_stuff(name: &str, stuff: HashMap<CryptoHash, (u64, u64)>) {
     let mut total_unique = 0;
     let mut total_hits = 0;
     let mut top = vec![];
-    for (x, (y, z)) in &stuff {
+    for (x, (y, z, m)) in stuff {
         total_len += z;
         total_unique += 1;
         total_hits += y;
         if y >= &l {
-            top.push((y, z, x));
+            top.push((y, z, x, m));
         }
     }
-    top.sort_by_key(|(y, z, _)| (-(*(*y) as i64), *z));
+    top.sort_by_key(|(y, z, _, _)| ((-(**y as i64), *z)));
     tracing::debug!(target: "state-parts", name, total_len, total_unique, total_hits, top_len = top.len(), "print_stuff");
-    for (y, z, x) in top {
-        tracing::info!(target: "state-parts", cnt = y, hash = ?x, size = z, name);
+    for (y, z, x, m) in top {
+        let t = if let Some(b) = m {
+            let c = b.as_bytes();
+            if c.len() > 0 {
+                let d = vec![c[0] / 16, c[0] % 16];
+                Some(key_nibbles_type(&d))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        tracing::info!(target: "state-parts", cnt = y, hash = ?x, size = z, path = ?m, path_key_type = ?t, name);
     }
 }
 
