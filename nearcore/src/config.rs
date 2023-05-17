@@ -29,7 +29,6 @@ use near_primitives::version::PROTOCOL_VERSION;
 use near_rosetta_rpc::RosettaRpcConfig;
 use near_telemetry::TelemetryConfig;
 use num_rational::Rational32;
-use std::fs;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -446,17 +445,7 @@ impl Config {
             &mut serde_json::Deserializer::from_str(&json_str_without_comments),
             |field| {
                 let field = field.to_string();
-                // TODO(mina86): Remove this deprecation notice some time by the
-                // end of 2022.
-                if field == "network.external_address" {
-                    warn!(
-                        target: "neard",
-                        "{}: {field} is deprecated; please remove it from the config file",
-                        path.display(),
-                    );
-                } else {
-                    unrecognised_fields.push(field);
-                }
+                unrecognised_fields.push(field);
             },
         )
         .map_err(|_| ValidationError::ConfigFileError {
@@ -464,13 +453,7 @@ impl Config {
         })?;
 
         if !unrecognised_fields.is_empty() {
-            let s = if unrecognised_fields.len() > 1 { "s" } else { "" };
-            let fields = unrecognised_fields.join(", ");
-            warn!(
-                target: "neard",
-                "{}: encountered unrecognised field{s}: {fields}",
-                path.display(),
-            );
+            warn!(target: "neard", ?unrecognised_fields, ?path, "Encountered unrecognised fields");
         }
 
         Ok(config)
@@ -711,7 +694,7 @@ impl NearConfig {
     /// Test tool to save configs back to the folder.
     /// Useful for dynamic creating testnet configs and then saving them in different folders.
     pub fn save_to_dir(&self, dir: &Path) {
-        fs::create_dir_all(dir).expect("Failed to create directory");
+        std::fs::create_dir_all(dir).expect("Failed to create directory");
 
         self.config.write_to_file(&dir.join(CONFIG_FILENAME)).expect("Error writing config");
 
@@ -923,7 +906,8 @@ pub fn init_configs(
     boot_nodes: Option<&str>,
     max_gas_burnt_view: Option<Gas>,
 ) -> anyhow::Result<()> {
-    fs::create_dir_all(dir).with_context(|| anyhow!("Failed to create directory {:?}", dir))?;
+    std::fs::create_dir_all(dir)
+        .with_context(|| anyhow!("Failed to create directory {:?}", dir))?;
 
     assert_ne!(chain_id, Some("".to_string()));
     let chain_id = match chain_id {
@@ -1289,7 +1273,7 @@ pub fn init_testnet_configs(
     );
     for i in 0..(num_validator_seats + num_non_validator_seats) as usize {
         let node_dir = dir.join(format!("{}{}", prefix, i));
-        fs::create_dir_all(node_dir.clone()).expect("Failed to create directory");
+        std::fs::create_dir_all(node_dir.clone()).expect("Failed to create directory");
 
         validator_signers[i]
             .write_to_file(&node_dir.join(&configs[i].validator_key_file))
