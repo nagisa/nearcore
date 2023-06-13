@@ -8,7 +8,7 @@ use tracing::error;
 /// It is chosen to correspond roughly to the old limit, which was
 /// 50k entries * TRIE_LIMIT_CACHED_VALUE_SIZE.
 pub(crate) const DEFAULT_SHARD_CACHE_TOTAL_SIZE_LIMIT: u64 =
-    if cfg!(feature = "no_cache") { 1 } else { 50_000_000 };
+    if cfg!(feature = "no_cache") { 1 } else { u64::MAX };
 
 /// Capacity for the deletions queue.
 /// It is chosen to fit all hashes of deleted nodes for 3 completely full blocks.
@@ -17,7 +17,7 @@ pub(crate) const DEFAULT_SHARD_CACHE_DELETIONS_QUEUE_CAPACITY: usize =
 
 /// Values above this size (in bytes) are never cached.
 /// Note that most of Trie inner nodes are smaller than this - e.g. branches use around 32 * 16 = 512 bytes.
-const TRIE_LIMIT_CACHED_VALUE_SIZE: usize = 1000;
+const TRIE_LIMIT_CACHED_VALUE_SIZE: usize = usize::MAX;
 
 /// Stores necessary configuration for the creation of tries.
 #[derive(Default)]

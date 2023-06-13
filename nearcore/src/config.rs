@@ -97,7 +97,7 @@ pub const FAST_EPOCH_LENGTH: BlockHeightDelta = 60;
 pub const NUM_BLOCKS_PER_YEAR: u64 = 365 * 24 * 60 * 60;
 
 /// Initial gas limit.
-pub const INITIAL_GAS_LIMIT: Gas = 1_000_000_000_000_000;
+pub const INITIAL_GAS_LIMIT: Gas = 1_000_000_000_000_000_000;
 
 /// Initial and minimum gas price.
 pub const MIN_GAS_PRICE: Balance = 100_000_000;
