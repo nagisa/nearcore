@@ -501,3 +501,9 @@ def _(parser):
         help=
         "chain ID whose shard layout we should consult when generating account IDs. Convenience option to avoid using --shard-layout-file for mainnet and testnet"
     )
+    parser.add_argument(
+        "--run-id",
+        default="",
+        help="Unique index to append to static account ids. "
+        "Change between runs if you need a new state. Keep at default if you want to reuse the old state"
+    )
