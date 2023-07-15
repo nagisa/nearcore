@@ -28,14 +28,13 @@ use actix_rt::ArbiterHandle;
 use chrono::{DateTime, Duration, Utc};
 use futures::{future, FutureExt};
 use near_async::messaging::CanSendAsync;
-use near_chain::chain::ApplyStatePartsRequest;
+use near_chain::chain::{ApplyStatePartsRequest, StateSplitRequest};
 use near_chain::near_chain_primitives;
-use near_chain::resharding::StateSplitRequest;
 use near_chain::Chain;
 use near_chain_configs::{ExternalStorageConfig, ExternalStorageLocation, SyncConfig};
-use near_client_primitives::types::format_shard_sync_phase_per_shard;
 use near_client_primitives::types::{
     format_shard_sync_phase, DownloadStatus, ShardSyncDownload, ShardSyncStatus,
+    StateSplitApplyingStatus,
 };
 use near_epoch_manager::EpochManagerAdapter;
 use near_network::types::AccountOrPeerIdOrHash;
@@ -167,7 +166,6 @@ impl StateSync {
         timeout: TimeDuration,
         chain_id: &str,
         sync_config: &SyncConfig,
-        catchup: bool,
     ) -> Self {
         let inner = match sync_config {
             SyncConfig::Peers => StateSyncInner::Peers {
@@ -177,7 +175,6 @@ impl StateSync {
             SyncConfig::ExternalStorage(ExternalStorageConfig {
                 location,
                 num_concurrent_requests,
-                num_concurrent_requests_during_catchup,
             }) => {
                 let external = match location {
                     ExternalStorageLocation::S3 { bucket, region } => {
@@ -190,20 +187,12 @@ impl StateSync {
                     ExternalStorageLocation::Filesystem { root_dir } => {
                         ExternalConnection::Filesystem { root_dir: root_dir.clone() }
                     }
-                    ExternalStorageLocation::GCS { bucket } => ExternalConnection::GCS {
-                        gcs_client: Arc::new(cloud_storage::Client::default()),
-                        reqwest_client: Arc::new(reqwest::Client::default()),
-                        bucket: bucket.clone(),
-                    },
                 };
-                let num_permits = if catchup {
-                    *num_concurrent_requests_during_catchup
-                } else {
-                    *num_concurrent_requests
-                } as usize;
                 StateSyncInner::PartsFromExternal {
                     chain_id: chain_id.to_string(),
-                    semaphore: Arc::new(tokio::sync::Semaphore::new(num_permits)),
+                    semaphore: Arc::new(tokio::sync::Semaphore::new(
+                        *num_concurrent_requests as usize,
+                    )),
                     external,
                 }
             }
@@ -298,6 +287,9 @@ impl StateSync {
 
             let old_status = shard_sync_download.status.clone();
             let mut shard_sync_done = false;
+            metrics::STATE_SYNC_STAGE
+                .with_label_values(&[&shard_id.to_string()])
+                .set(shard_sync_download.status.repr() as i64);
             match &shard_sync_download.status {
                 ShardSyncStatus::StateDownloadHeader => {
                     (download_timeout, run_shard_state_download) = self
@@ -310,8 +302,12 @@ impl StateSync {
                         )?;
                 }
                 ShardSyncStatus::StateDownloadParts => {
-                    let res =
-                        self.sync_shards_download_parts_status(shard_id, shard_sync_download, now);
+                    let res = self.sync_shards_download_parts_status(
+                        shard_id,
+                        shard_sync_download,
+                        sync_hash,
+                        now,
+                    );
                     download_timeout = res.0;
                     run_shard_state_download = res.1;
                     update_sync_status |= res.2;
@@ -336,8 +332,13 @@ impl StateSync {
                     )?;
                 }
                 ShardSyncStatus::StateDownloadComplete => {
-                    shard_sync_done = self
-                        .sync_shards_download_complete_status(split_states, shard_sync_download);
+                    shard_sync_done = self.sync_shards_download_complete_status(
+                        split_states,
+                        shard_id,
+                        shard_sync_download,
+                        sync_hash,
+                        chain,
+                    )?;
                 }
                 ShardSyncStatus::StateSplitScheduling => {
                     debug_assert!(split_states);
@@ -350,7 +351,7 @@ impl StateSync {
                         me,
                     )?;
                 }
-                ShardSyncStatus::StateSplitApplying => {
+                ShardSyncStatus::StateSplitApplying(_status) => {
                     debug_assert!(split_states);
                     shard_sync_done = self.sync_shards_state_split_applying_status(
                         shard_id,
@@ -363,14 +364,6 @@ impl StateSync {
                     shard_sync_done = true;
                 }
             }
-            let stage = if shard_sync_done {
-                // Update the state sync stage metric, because maybe we'll not
-                // enter this function again.
-                ShardSyncStatus::StateSyncDone.repr()
-            } else {
-                shard_sync_download.status.repr()
-            };
-            metrics::STATE_SYNC_STAGE.with_label_values(&[&shard_id.to_string()]).set(stage as i64);
             all_done &= shard_sync_done;
 
             if download_timeout {
@@ -404,13 +397,6 @@ impl StateSync {
             }
             update_sync_status |= shard_sync_download.status != old_status;
         }
-        if update_sync_status {
-            // Print debug messages only if something changed.
-            // Otherwise it spams the debug logs.
-            tracing::debug!(
-                target: "sync",
-                progress_per_shard = ?format_shard_sync_phase_per_shard(new_shard_sync, false));
-        }
 
         Ok((update_sync_status, all_done))
     }
@@ -428,7 +414,7 @@ impl StateSync {
             let part_id = msg.part_id.idx;
             if msg.sync_hash != sync_hash {
                 debug!(target: "sync",
-                    "Received message for other sync hash: shard_id {}, part_id {} expected sync_hash {} recieved sync_hash {}.",
+                    "Recieved message for other sync hash: shard_id {}, part_id {} expected sync_hash {} recieved sync_hash {}.",
                     &shard_id,
                     &part_id,
                     &sync_hash,
@@ -955,6 +941,7 @@ impl StateSync {
         &mut self,
         shard_id: ShardId,
         shard_sync_download: &mut ShardSyncDownload,
+        sync_hash: CryptoHash,
         now: DateTime<Utc>,
     ) -> (bool, bool, bool) {
         // Step 2 - download all the parts (each part is usually around 1MB).
@@ -994,6 +981,7 @@ impl StateSync {
                 num_parts_done += 1;
             }
         }
+        tracing::trace!(target: "sync", %shard_id, %sync_hash, num_parts_done, parts_done);
         metrics::STATE_SYNC_PARTS_DONE
             .with_label_values(&[&shard_id.to_string()])
             .set(num_parts_done);
@@ -1060,7 +1048,8 @@ impl StateSync {
     ) -> Result<(), near_chain::Error> {
         // Keep waiting until our shard is on the list of results
         // (these are set via callback from ClientActor - both for sync and catchup).
-        if let Some(result) = self.state_parts_apply_results.remove(&shard_id) {
+        let result = self.state_parts_apply_results.remove(&shard_id);
+        if let Some(result) = result {
             match chain.set_state_finalize(shard_id, sync_hash, result) {
                 Ok(()) => {
                     *shard_sync_download = ShardSyncDownload {
@@ -1089,21 +1078,30 @@ impl StateSync {
     fn sync_shards_download_complete_status(
         &mut self,
         split_states: bool,
+        shard_id: ShardId,
         shard_sync_download: &mut ShardSyncDownload,
-    ) -> bool {
+        sync_hash: CryptoHash,
+        chain: &mut Chain,
+    ) -> Result<bool, near_chain::Error> {
+        let shard_state_header = chain.get_state_header(shard_id, sync_hash)?;
+        let state_num_parts =
+            get_num_state_parts(shard_state_header.state_root_node().memory_usage);
+        chain.clear_downloaded_parts(shard_id, sync_hash, state_num_parts)?;
+
+        let mut shard_sync_done = false;
         // If the shard layout is changing in this epoch - we have to apply it right now.
         if split_states {
             *shard_sync_download = ShardSyncDownload {
                 downloads: vec![],
                 status: ShardSyncStatus::StateSplitScheduling,
-            };
-            false
+            }
         } else {
             // If there is no layout change - we're done.
             *shard_sync_download =
                 ShardSyncDownload { downloads: vec![], status: ShardSyncStatus::StateSyncDone };
-            true
+            shard_sync_done = true;
         }
+        Ok(shard_sync_done)
     }
 
     fn sync_shards_state_split_scheduling_status(
@@ -1115,14 +1113,18 @@ impl StateSync {
         state_split_scheduler: &dyn Fn(StateSplitRequest),
         me: &Option<AccountId>,
     ) -> Result<(), near_chain::Error> {
+        let status = Arc::new(StateSplitApplyingStatus::default());
         chain.build_state_for_split_shards_preprocessing(
             &sync_hash,
             shard_id,
             state_split_scheduler,
+            status.clone(),
         )?;
         tracing::debug!(target: "sync", %shard_id, %sync_hash, ?me, "State sync split scheduled");
-        *shard_sync_download =
-            ShardSyncDownload { downloads: vec![], status: ShardSyncStatus::StateSplitApplying };
+        *shard_sync_download = ShardSyncDownload {
+            downloads: vec![],
+            status: ShardSyncStatus::StateSplitApplying(status),
+        };
         Ok(())
     }
 
@@ -1412,7 +1414,6 @@ mod test {
             TimeDuration::from_secs(1),
             "chain_id",
             &SyncConfig::Peers,
-            false,
         );
         let mut new_shard_sync = HashMap::new();
 
