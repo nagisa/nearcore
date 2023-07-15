@@ -981,7 +981,7 @@ impl StateSync {
                 num_parts_done += 1;
             }
         }
-        tracing::debug!(target: "sync", %shard_id, %sync_hash, num_parts_done, parts_done);
+        tracing::trace!(target: "sync", %shard_id, %sync_hash, num_parts_done, parts_done);
         metrics::STATE_SYNC_PARTS_DONE
             .with_label_values(&[&shard_id.to_string()])
             .set(num_parts_done);

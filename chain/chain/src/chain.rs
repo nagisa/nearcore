@@ -2327,6 +2327,13 @@ impl Chain {
         );
         self.blocks_delay_tracker.finish_block_processing(&block_hash, new_head.clone());
 
+        if let Some(tip) = &new_head {
+            if tip.height > 131779225 {
+                tracing::error!(height = ?tip.height);
+                panic!("too close");
+            }
+        }
+
         timer.observe_duration();
         let _timer = CryptoHashTimer::new_with_start(*block.hash(), block_start_processing_time);
 

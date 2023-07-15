@@ -442,7 +442,7 @@ pub(crate) static STATE_SYNC_PARTS_TOTAL: Lazy<IntGaugeVec> = Lazy::new(|| {
 
 pub(crate) static STATE_SYNC_DISCARD_PARTS: Lazy<IntCounterVec> = Lazy::new(|| {
     try_create_int_counter_vec(
-        "near_state_sync_discard_parts_total",
+        "near_state_sync_discard_parts_count",
         "Number of times all downloaded parts were discarded to try again",
         &["shard_id"],
     )
