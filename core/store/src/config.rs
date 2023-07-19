@@ -166,7 +166,6 @@ impl StoreConfig {
     /// Returns cache size for given column.
     pub const fn col_cache_size(&self, col: crate::DBCol) -> bytesize::ByteSize {
         match col {
-            crate::DBCol::State => self.col_state_cache_size,
             crate::DBCol::FlatState => self.col_state_cache_size,
             _ => bytesize::ByteSize::mib(32),
         }
