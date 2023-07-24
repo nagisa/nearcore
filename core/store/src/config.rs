@@ -167,6 +167,7 @@ impl StoreConfig {
     pub const fn col_cache_size(&self, col: crate::DBCol) -> bytesize::ByteSize {
         match col {
             crate::DBCol::FlatState => self.col_state_cache_size,
+            crate::DBCol::State => bytesize::ByteSize::mib(0),
             _ => bytesize::ByteSize::mib(32),
         }
     }
