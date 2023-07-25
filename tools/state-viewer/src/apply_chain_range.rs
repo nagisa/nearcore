@@ -7,6 +7,7 @@ use near_epoch_manager::{EpochManagerAdapter, EpochManagerHandle};
 use near_primitives::borsh::maybestd::sync::Arc;
 use near_primitives::hash::CryptoHash;
 use near_primitives::receipt::DelayedReceiptIndices;
+use near_primitives::receipt::Receipt;
 use near_primitives::transaction::{Action, ExecutionOutcomeWithId, ExecutionOutcomeWithProof};
 use near_primitives::trie_key::TrieKey;
 use near_primitives::types::chunk_extra::ChunkExtra;
@@ -290,7 +291,15 @@ fn apply_block_from_range(
         runtime_adapter.get_tries().new_trie_update(shard_uid, *chunk_extra.state_root());
     let delayed_indices =
         near_store::get::<DelayedReceiptIndices>(&state_update, &TrieKey::DelayedReceiptIndices);
+    let delayed_indices = delayed_indices.unwrap_or(None).unwrap_or(DelayedReceiptIndices::default());
+    for index in delayed_indices.first_index..delayed_indices.next_available_index {
+        println!("{:?}",near_store::get::<Receipt>(&state_update, &TrieKey::DelayedReceipt {index}));
+    }
+    if delayed_indices.next_available_index > delayed_indices.first_index {
+        panic!("Found delayed indices");
+    }
 
+    /*
     match existing_chunk_extra {
         Some(existing_chunk_extra) => {
             if verbose_output {
@@ -308,10 +317,12 @@ fn apply_block_from_range(
             }
         }
     };
+     */
+
     maybe_add_to_csv(
         csv_file_mutex,
         &format!(
-            "{},{},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{}",
             height,
             block_hash,
             block_author,
@@ -321,7 +332,6 @@ fn apply_block_from_range(
             apply_result.total_gas_burnt,
             chunk_present,
             apply_result.processed_delayed_receipts.len(),
-            delayed_indices.unwrap_or(None).map_or(0, |d| d.next_available_index - d.first_index),
             apply_result.trie_changes.state_changes().len(),
         ),
     );
