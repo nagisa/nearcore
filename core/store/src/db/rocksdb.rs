@@ -466,10 +466,15 @@ fn rocksdb_read_options() -> ReadOptions {
     read_options
 }
 
-fn rocksdb_block_based_options(
-    block_size: bytesize::ByteSize,
-    cache_size: bytesize::ByteSize,
-) -> BlockBasedOptions {
+pub const fn col_cache_size(col: crate::DBCol) -> bytesize::ByteSize {
+    match col {
+        crate::DBCol::State => bytesize::ByteSize::mib(0),
+        crate::DBCol::FlatState => bytesize::ByteSize::mib(512),
+        _ => bytesize::ByteSize::mib(32),
+    }
+}
+
+fn rocksdb_block_based_options_default(block_size: bytesize::ByteSize, cache_size: bytesize::ByteSize) -> BlockBasedOptions {
     let mut block_opts = BlockBasedOptions::default();
     block_opts.set_block_size(block_size.as_u64().try_into().unwrap());
     // We create block_cache for each of 47 columns, so the total cache size is 32 * 47 = 1504mb
@@ -480,14 +485,32 @@ fn rocksdb_block_based_options(
     block_opts
 }
 
+fn rocksdb_block_based_options_no_block_cache(block_size: bytesize::ByteSize) -> BlockBasedOptions {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_size(block_size.as_u64().try_into().unwrap());
+    block_opts.set_cache_index_and_filter_blocks(false);
+    block_opts.set_bloom_filter(10.0, true);
+    block_opts
+}
+
+fn rocksdb_block_based_options(
+    block_size: bytesize::ByteSize,
+    db_col: DBCol
+) -> BlockBasedOptions {
+    let cache_size = col_cache_size(db_col);
+    match db_col {
+        DBCol::State => rocksdb_block_based_options_no_block_cache(block_size),
+        _ => rocksdb_block_based_options_default(block_size, cache_size),
+    }
+}
+
 fn rocksdb_column_options(col: DBCol, store_config: &StoreConfig, temp: Temperature) -> Options {
     let mut opts = Options::default();
     set_compression_options(&mut opts);
     opts.set_level_compaction_dynamic_level_bytes(true);
-    let cache_size = store_config.col_cache_size(col);
     opts.set_block_based_table_factory(&rocksdb_block_based_options(
         store_config.block_size,
-        cache_size,
+        col
     ));
 
     // Note that this function changes a lot of rustdb parameters including:

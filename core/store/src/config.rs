@@ -162,15 +162,6 @@ impl StoreConfig {
     pub fn test_config() -> Self {
         Self { max_open_files: 512, ..Self::default() }
     }
-
-    /// Returns cache size for given column.
-    pub const fn col_cache_size(&self, col: crate::DBCol) -> bytesize::ByteSize {
-        match col {
-            crate::DBCol::State => self.col_state_cache_size,
-            crate::DBCol::FlatState => self.col_state_cache_size,
-            _ => bytesize::ByteSize::mib(32),
-        }
-    }
 }
 
 impl Default for StoreConfig {
@@ -195,11 +186,11 @@ impl Default for StoreConfig {
             // that increase to 25 GiB (we've used this big value to estimate
             // performance improvement headroom) having `max_open_files` at 10k
             // improved performance of state viewer by 60%.
-            col_state_cache_size: bytesize::ByteSize::mib(512),
+            col_state_cache_size: bytesize::ByteSize::mib(0),
 
             // This value was taken from the Openethereum default parameter and
             // we use it since then.
-            block_size: bytesize::ByteSize::kib(16),
+            block_size: bytesize::ByteSize::kib(4),
 
             trie_cache: TrieCacheConfig {
                 default_max_bytes: DEFAULT_SHARD_CACHE_TOTAL_SIZE_LIMIT,
