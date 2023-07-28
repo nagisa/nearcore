@@ -30,13 +30,6 @@ pub struct StoreConfig {
     /// Linux.
     pub max_open_files: u32,
 
-    /// Cache size for DBCol::State column.
-    /// Default value: 512MiB.
-    /// Increasing DBCol::State cache size helps making storage more efficient. On the other hand we
-    /// don't want to increase hugely requirements for running a node so currently we use a small
-    /// default value for it.
-    pub col_state_cache_size: bytesize::ByteSize,
-
     /// Block size used internally in RocksDB.
     /// Default value: 16KiB.
     /// We're still experimenting with this parameter and it seems decreasing its value can improve
@@ -179,15 +172,7 @@ impl Default for StoreConfig {
             // max_open_files led to performance improvement of ~11%.
             max_open_files: 10_000,
 
-            // We used to have the same cache size for all columns, 32 MiB.
-            // When some RocksDB inefficiencies were found [`DBCol::State`]
-            // cache size was increased up to 512 MiB.  This was done on 13th of
-            // Nov 2021 and we consider increasing the value.  Tests have shown
-            // that increase to 25 GiB (we've used this big value to estimate
-            // performance improvement headroom) having `max_open_files` at 10k
-            // improved performance of state viewer by 60%.
-            col_state_cache_size: bytesize::ByteSize::mib(0),
-
+            // TODO(jbajic): Update comment
             // This value was taken from the Openethereum default parameter and
             // we use it since then.
             block_size: bytesize::ByteSize::kib(4),

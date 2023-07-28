@@ -488,7 +488,7 @@ fn rocksdb_block_based_options_default(block_size: bytesize::ByteSize, cache_siz
 fn rocksdb_block_based_options_no_block_cache(block_size: bytesize::ByteSize) -> BlockBasedOptions {
     let mut block_opts = BlockBasedOptions::default();
     block_opts.set_block_size(block_size.as_u64().try_into().unwrap());
-    block_opts.set_cache_index_and_filter_blocks(false);
+    block_opts.disable_cache();
     block_opts.set_bloom_filter(10.0, true);
     block_opts
 }
