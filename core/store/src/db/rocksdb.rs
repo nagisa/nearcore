@@ -468,7 +468,7 @@ fn rocksdb_read_options() -> ReadOptions {
 
 pub const fn col_cache_size(col: crate::DBCol) -> bytesize::ByteSize {
     match col {
-        crate::DBCol::State => bytesize::ByteSize::mib(0),
+        crate::DBCol::State => bytesize::ByteSize::mib(32),
         crate::DBCol::FlatState => bytesize::ByteSize::mib(512),
         _ => bytesize::ByteSize::mib(32),
     }
@@ -478,6 +478,7 @@ fn rocksdb_block_based_options_default(block_size: bytesize::ByteSize, cache_siz
     let mut block_opts = BlockBasedOptions::default();
     block_opts.set_block_size(block_size.as_u64().try_into().unwrap());
     // We create block_cache for each of 47 columns, so the total cache size is 32 * 47 = 1504mb
+    // with the exception of State and FlatState since they benefit greatly from block cache
     block_opts.set_block_cache(&Cache::new_lru_cache(cache_size.as_u64().try_into().unwrap()));
     block_opts.set_pin_l0_filter_and_index_blocks_in_cache(true);
     block_opts.set_cache_index_and_filter_blocks(true);
@@ -485,10 +486,11 @@ fn rocksdb_block_based_options_default(block_size: bytesize::ByteSize, cache_siz
     block_opts
 }
 
-fn rocksdb_block_based_options_no_block_cache(block_size: bytesize::ByteSize) -> BlockBasedOptions {
+fn rocksdb_block_based_options_disable_index_cache(block_size: bytesize::ByteSize, cache_size: bytesize::ByteSize) -> BlockBasedOptions {
     let mut block_opts = BlockBasedOptions::default();
     block_opts.set_block_size(block_size.as_u64().try_into().unwrap());
-    block_opts.disable_cache();
+    block_opts.set_block_cache(&Cache::new_lru_cache(cache_size.as_u64().try_into().unwrap()));
+    block_opts.set_pin_l0_filter_and_index_blocks_in_cache(false);
     block_opts.set_bloom_filter(10.0, true);
     block_opts
 }
@@ -499,7 +501,7 @@ fn rocksdb_block_based_options(
 ) -> BlockBasedOptions {
     let cache_size = col_cache_size(db_col);
     match db_col {
-        DBCol::State => rocksdb_block_based_options_no_block_cache(block_size),
+        DBCol::State => rocksdb_block_based_options_disable_index_cache(block_size, cache_size),
         _ => rocksdb_block_based_options_default(block_size, cache_size),
     }
 }
