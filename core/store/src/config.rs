@@ -199,7 +199,7 @@ impl Default for StoreConfig {
 
             // This value was taken from the Openethereum default parameter and
             // we use it since then.
-            block_size: bytesize::ByteSize::kib(16),
+            block_size: bytesize::ByteSize::kib(4),
 
             trie_cache: TrieCacheConfig {
                 default_max_bytes: DEFAULT_SHARD_CACHE_TOTAL_SIZE_LIMIT,
