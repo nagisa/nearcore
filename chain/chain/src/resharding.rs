@@ -145,7 +145,7 @@ impl Chain {
 
         let shard_uid = ShardUId::from_shard_id_and_layout(shard_id, &shard_layout);
         let prev_hash = *block_header.prev_hash();
-        // let prev_block_header = self.get_block_header(&prev_hash)?;
+        let prev_block_header = self.get_block_header(&prev_hash)?;
         let state_root = *self.get_chunk_extra(&prev_hash, &shard_uid)?.state_root();
 
         if let Some(flat_storage_manager) = self.runtime_adapter.get_flat_storage_manager() {
@@ -155,9 +155,9 @@ impl Chain {
             {
                 let store = self.runtime_adapter.store().clone();
                 let block_info: BlockInfo = BlockInfo {
-                    hash: *block_header.hash(),
-                    prev_hash: *block_header.prev_hash(),
-                    height: block_header.height(),
+                    hash: *prev_block_header.hash(),
+                    prev_hash: *prev_block_header.prev_hash(),
+                    height: prev_block_header.height(),
                 };
                 set_flat_storage_state(store, &flat_storage_manager, shard_uid, block_info)?;
             }
