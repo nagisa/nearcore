@@ -4967,6 +4967,7 @@ impl<'a> ChainUpdate<'a> {
         let _span = tracing::debug_span!(target: "chain", "apply_chunk_postprocessing").entered();
         for result in apply_results {
             self.process_apply_chunk_result(
+                block,
                 result,
                 *block.hash(),
                 block.header().height(),
@@ -5018,6 +5019,7 @@ impl<'a> ChainUpdate<'a> {
     /// for state changes, store the state changes for splitting states
     fn process_split_state(
         &mut self,
+        block: &Block,
         block_hash: &CryptoHash,
         prev_block_hash: &CryptoHash,
         shard_uid: &ShardUId,
@@ -5032,8 +5034,6 @@ impl<'a> ChainUpdate<'a> {
                 // generated per shard using the old shard layout and stored in the database.
                 // For these proofs to work, we must store the outcome root per shard
                 // using the old shard layout instead of the new shard layout
-                let block = self.chain_store_update.get_block(block_hash)?;
-                let header = self.chain_store_update.get_block_header(block_hash)?;
                 let chunk_extra = self.chain_store_update.get_chunk_extra(block_hash, shard_uid)?;
                 let next_epoch_shard_layout = {
                     let epoch_id =
@@ -5086,7 +5086,7 @@ impl<'a> ChainUpdate<'a> {
                     self.save_flat_state_changes(
                         *block_hash,
                         *prev_block_hash,
-                        header.height(),
+                        block.header().height(),
                         result.shard_uid,
                         &result.trie_changes,
                     )?;
@@ -5174,6 +5174,7 @@ impl<'a> ChainUpdate<'a> {
     /// Processed results of applying chunk
     fn process_apply_chunk_result(
         &mut self,
+        block: &Block,
         result: ApplyChunkResult,
         block_hash: CryptoHash,
         height: BlockHeight,
@@ -5225,6 +5226,7 @@ impl<'a> ChainUpdate<'a> {
                 );
                 if let Some(apply_results_or_state_changes) = apply_split_result_or_state_changes {
                     self.process_split_state(
+                        block,
                         &block_hash,
                         &prev_block_hash,
                         &shard_uid,
@@ -5255,6 +5257,7 @@ impl<'a> ChainUpdate<'a> {
 
                 if let Some(apply_results_or_state_changes) = apply_split_result_or_state_changes {
                     self.process_split_state(
+                        block,
                         &block_hash,
                         &prev_block_hash,
                         &shard_uid,
@@ -5266,6 +5269,7 @@ impl<'a> ChainUpdate<'a> {
                 self.chain_store_update
                     .remove_state_changes_for_split_states(block_hash, shard_uid.shard_id());
                 self.process_split_state(
+                    block,
                     &block_hash,
                     &prev_block_hash,
                     &shard_uid,
