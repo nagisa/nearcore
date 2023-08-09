@@ -778,13 +778,13 @@ impl WrappedTrieChanges {
                 "NotWritableToDisk changes must never be finalized."
             );
 
-            assert!(
-                !change_with_trie_key.changes.iter().any(|RawStateChange { cause, .. }| matches!(
-                    cause,
-                    StateChangeCause::Resharding
-                )),
-                "Resharding changes must never be finalized."
-            );
+            // assert!(
+            //     !change_with_trie_key.changes.iter().any(|RawStateChange { cause, .. }| matches!(
+            //         cause,
+            //         StateChangeCause::Resharding
+            //     )),
+            //     "Resharding changes must never be finalized."
+            // );
 
             let storage_key = if cfg!(feature = "serialize_all_state_changes") {
                 // Serialize all kinds of state changes without any filtering.

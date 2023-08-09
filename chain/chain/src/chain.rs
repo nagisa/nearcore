@@ -72,8 +72,8 @@ use near_primitives::views::{
     LightClientBlockView, SignedTransactionView,
 };
 use near_store::flat::{
-    store_helper, FlatStateChanges, FlatStateDelta, FlatStateDeltaMetadata, FlatStorageError,
-    FlatStorageReadyStatus, FlatStorageStatus,
+    store_helper, FlatStateChanges, FlatStateDelta, FlatStateDeltaMetadata, FlatStorageReadyStatus,
+    FlatStorageStatus,
 };
 use near_store::{get_genesis_state_roots, StorageError};
 use near_store::{DBCol, ShardTries, WrappedTrieChanges};
@@ -2256,60 +2256,60 @@ impl Chain {
         Ok(new_head)
     }
 
-    /// Update flat storage for given processed or caught up block, which includes:
-    /// - merge deltas from current flat storage head to new one;
-    /// - update flat storage head to the hash of final block visible from given one;
-    /// - remove info about unreachable blocks from memory.
-    fn update_flat_storage_for_block(
-        &mut self,
-        block: &Block,
-        shard_uid: ShardUId,
-    ) -> Result<(), Error> {
-        if let Some(flat_storage) = self
-            .runtime_adapter
-            .get_flat_storage_manager()
-            .and_then(|manager| manager.get_flat_storage_for_shard(shard_uid))
-        {
-            let mut new_flat_head = *block.header().last_final_block();
-            if new_flat_head == CryptoHash::default() {
-                new_flat_head = *self.genesis.hash();
-            }
-            // Try to update flat head.
-            flat_storage.update_flat_head(&new_flat_head, false).unwrap_or_else(|err| {
-                match &err {
-                    FlatStorageError::BlockNotSupported(_) => {
-                        // It's possible that new head is not a child of current flat head, e.g. when we have a
-                        // fork:
-                        //
-                        //      (flat head)        /-------> 6
-                        // 1 ->      2     -> 3 -> 4
-                        //                         \---> 5
-                        //
-                        // where during postprocessing (5) we call `update_flat_head(3)` and then for (6) we can
-                        // call `update_flat_head(2)` because (2) will be last visible final block from it.
-                        // In such case, just log an error.
-                        debug!(
-                            target: "chain",
-                            ?new_flat_head,
-                            ?err,
-                            ?shard_uid,
-                            block_hash = ?block.header().hash(),
-                            "Cannot update flat head");
-                    }
-                    _ => {
-                        // All other errors are unexpected, so we panic.
-                        panic!("Cannot update flat head of shard {shard_uid:?} to {new_flat_head:?}: {err:?}");
-                    }
-                }
-            });
-        } else {
-            // TODO (#8250): come up with correct assertion. Currently it doesn't work because runtime may be
-            // implemented by KeyValueRuntime which doesn't support flat storage, and flat storage background
-            // creation may happen.
-            // debug_assert!(false, "Flat storage state for shard {shard_id} does not exist and its creation was not initiated");
-        }
-        Ok(())
-    }
+    // /// Update flat storage for given processed or caught up block, which includes:
+    // /// - merge deltas from current flat storage head to new one;
+    // /// - update flat storage head to the hash of final block visible from given one;
+    // /// - remove info about unreachable blocks from memory.
+    // fn update_flat_storage_for_block(
+    //     &mut self,
+    //     block: &Block,
+    //     shard_uid: ShardUId,
+    // ) -> Result<(), Error> {
+    //     if let Some(flat_storage) = self
+    //         .runtime_adapter
+    //         .get_flat_storage_manager()
+    //         .and_then(|manager| manager.get_flat_storage_for_shard(shard_uid))
+    //     {
+    //         let mut new_flat_head = *block.header().last_final_block();
+    //         if new_flat_head == CryptoHash::default() {
+    //             new_flat_head = *self.genesis.hash();
+    //         }
+    //         // Try to update flat head.
+    //         flat_storage.update_flat_head(&new_flat_head, false).unwrap_or_else(|err| {
+    //             match &err {
+    //                 FlatStorageError::BlockNotSupported(_) => {
+    //                     // It's possible that new head is not a child of current flat head, e.g. when we have a
+    //                     // fork:
+    //                     //
+    //                     //      (flat head)        /-------> 6
+    //                     // 1 ->      2     -> 3 -> 4
+    //                     //                         \---> 5
+    //                     //
+    //                     // where during postprocessing (5) we call `update_flat_head(3)` and then for (6) we can
+    //                     // call `update_flat_head(2)` because (2) will be last visible final block from it.
+    //                     // In such case, just log an error.
+    //                     debug!(
+    //                         target: "chain",
+    //                         ?new_flat_head,
+    //                         ?err,
+    //                         ?shard_uid,
+    //                         block_hash = ?block.header().hash(),
+    //                         "Cannot update flat head");
+    //                 }
+    //                 _ => {
+    //                     // All other errors are unexpected, so we panic.
+    //                     panic!("Cannot update flat head of shard {shard_uid:?} to {new_flat_head:?}: {err:?}");
+    //                 }
+    //             }
+    //         });
+    //     } else {
+    //         // TODO (#8250): come up with correct assertion. Currently it doesn't work because runtime may be
+    //         // implemented by KeyValueRuntime which doesn't support flat storage, and flat storage background
+    //         // creation may happen.
+    //         // debug_assert!(false, "Flat storage state for shard {shard_id} does not exist and its creation was not initiated");
+    //     }
+    //     Ok(())
+    // }
 
     /// Run postprocessing on this block, which stores the block on chain.
     /// Check that if accepting the block unlocks any orphans in the orphan pool and start
@@ -2394,7 +2394,9 @@ impl Chain {
 
             if need_flat_storage_update {
                 let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, epoch_id)?;
-                self.update_flat_storage_for_block(&block, shard_uid)?;
+                if let Some(manager) = self.runtime_adapter.get_flat_storage_manager() {
+                    manager.update_flat_storage_for_shard(shard_uid, &block)?;
+                }
             }
         }
 
@@ -3558,7 +3560,9 @@ impl Chain {
                 true,
             ) {
                 let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, epoch_id)?;
-                self.update_flat_storage_for_block(&block, shard_uid)?;
+                if let Some(manager) = self.runtime_adapter.get_flat_storage_manager() {
+                    manager.update_flat_storage_for_shard(shard_uid, &block)?;
+                }
             }
         }
 
@@ -5028,6 +5032,8 @@ impl<'a> ChainUpdate<'a> {
                 // generated per shard using the old shard layout and stored in the database.
                 // For these proofs to work, we must store the outcome root per shard
                 // using the old shard layout instead of the new shard layout
+                let block = self.chain_store_update.get_block(block_hash)?;
+                let header = self.chain_store_update.get_block_header(block_hash)?;
                 let chunk_extra = self.chain_store_update.get_chunk_extra(block_hash, shard_uid)?;
                 let next_epoch_shard_layout = {
                     let epoch_id =
@@ -5077,6 +5083,18 @@ impl<'a> ChainUpdate<'a> {
                     sum_gas_used += gas_burnt;
                     sum_balance_burnt += balance_burnt;
 
+                    self.save_flat_state_changes(
+                        *block_hash,
+                        *prev_block_hash,
+                        header.height(),
+                        result.shard_uid,
+                        &result.trie_changes,
+                    )?;
+
+                    if let Some(manager) = self.runtime_adapter.get_flat_storage_manager() {
+                        manager.update_flat_storage_for_shard(result.shard_uid, &block)?;
+                    }
+
                     self.chain_store_update.save_chunk_extra(
                         block_hash,
                         &result.shard_uid,
@@ -5098,6 +5116,8 @@ impl<'a> ChainUpdate<'a> {
         Ok(())
     }
 
+    // CHECK THIS FOR UPDATING FLAT STORAGE
+    // This adds a new block
     fn save_flat_state_changes(
         &mut self,
         block_hash: CryptoHash,

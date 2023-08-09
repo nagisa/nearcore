@@ -1,6 +1,7 @@
 use crate::flat::{
     store_helper, BlockInfo, FlatStorageReadyStatus, FlatStorageStatus, POISONED_LOCK_ERR,
 };
+use near_primitives::block::Block;
 use near_primitives::errors::StorageError;
 use near_primitives::hash::CryptoHash;
 use near_primitives::shard_layout::ShardUId;
@@ -9,10 +10,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tracing::debug;
 
-use crate::{Store, StoreUpdate};
+use crate::{get_genesis_hash, Store, StoreUpdate};
 
 use super::chunk_view::FlatStorageChunkView;
-use super::FlatStorage;
+use super::{FlatStorage, FlatStorageError};
 
 /// `FlatStorageManager` provides a way to construct new flat state to pass to new tries.
 /// It is owned by NightshadeRuntime, and thus can be owned by multiple threads, so the implementation
@@ -90,6 +91,60 @@ impl FlatStorageManager {
         // assert is fine now because this function is only called at construction time, but we
         // will need to be more careful when we want to implement flat storage for resharding
         assert!(original_value.is_none());
+        Ok(())
+    }
+
+    /// Update flat storage for given processed or caught up block, which includes:
+    /// - merge deltas from current flat storage head to new one;
+    /// - update flat storage head to the hash of final block visible from given one;
+    /// - remove info about unreachable blocks from memory.
+    pub fn update_flat_storage_for_shard(
+        &self,
+        shard_uid: ShardUId,
+        block: &Block,
+    ) -> Result<(), StorageError> {
+        if let Some(flat_storage) = self.get_flat_storage_for_shard(shard_uid) {
+            let mut new_flat_head = *block.header().last_final_block();
+            if new_flat_head == CryptoHash::default() {
+                let genesis_hash = get_genesis_hash(&self.0.store)
+                    .map_err(|e| FlatStorageError::StorageInternalError(e.to_string()))?
+                    .expect("Genesis hash must exist. Consider initialization.");
+                new_flat_head = genesis_hash;
+            }
+            // Try to update flat head.
+            flat_storage.update_flat_head(&new_flat_head, false).unwrap_or_else(|err| {
+                match &err {
+                    FlatStorageError::BlockNotSupported(_) => {
+                        // It's possible that new head is not a child of current flat head, e.g. when we have a
+                        // fork:
+                        //
+                        //      (flat head)        /-------> 6
+                        // 1 ->      2     -> 3 -> 4
+                        //                         \---> 5
+                        //
+                        // where during postprocessing (5) we call `update_flat_head(3)` and then for (6) we can
+                        // call `update_flat_head(2)` because (2) will be last visible final block from it.
+                        // In such case, just log an error.
+                        debug!(
+                            target: "chain",
+                            ?new_flat_head,
+                            ?err,
+                            ?shard_uid,
+                            block_hash = ?block.header().hash(),
+                            "Cannot update flat head");
+                    }
+                    _ => {
+                        // All other errors are unexpected, so we panic.
+                        panic!("Cannot update flat head of shard {shard_uid:?} to {new_flat_head:?}: {err:?}");
+                    }
+                }
+            });
+        } else {
+            // TODO (#8250): come up with correct assertion. Currently it doesn't work because runtime may be
+            // implemented by KeyValueRuntime which doesn't support flat storage, and flat storage background
+            // creation may happen.
+            // debug_assert!(false, "Flat storage state for shard {shard_id} does not exist and its creation was not initiated");
+        }
         Ok(())
     }
 

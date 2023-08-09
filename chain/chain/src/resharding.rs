@@ -58,7 +58,7 @@ pub struct StateSplitResponse {
     pub new_state_roots: Result<HashMap<ShardUId, StateRoot>, Error>,
 }
 
-// Return iterate over flat storage to get key, value. Used later in the get_trie_update_batch function.
+// Return iterator over flat storage to get key, value. Used later in the get_trie_update_batch function.
 #[allow(dead_code)]
 fn get_flat_storage_iter<'a>(
     store: &'a Store,
@@ -108,6 +108,7 @@ fn apply_delayed_receipts<'a>(
 
 // function to set up flat storage status to Ready after a resharding event
 // TODO(shreyan) : Consolidate this with setting up flat storage during state sync logic
+// TODO(shreyan) : SHIFT THIS TO POST PROCESS, Can set intermediate status to "Resharding"
 fn set_flat_storage_state(
     store: Store,
     flat_storage_manager: &FlatStorageManager,
@@ -128,6 +129,8 @@ fn set_flat_storage_state(
 }
 
 impl Chain {
+    // sync_hash is the hash of the last block of the previous epoch. Resharding starts as of the first block
+    // of the current epoch.
     pub fn build_state_for_split_shards_preprocessing(
         &self,
         sync_hash: &CryptoHash,
@@ -142,6 +145,7 @@ impl Chain {
 
         let shard_uid = ShardUId::from_shard_id_and_layout(shard_id, &shard_layout);
         let prev_hash = *block_header.prev_hash();
+        let prev_block_header = self.get_block_header(&prev_hash)?;
         let state_root = *self.get_chunk_extra(&prev_hash, &shard_uid)?.state_root();
 
         if let Some(flat_storage_manager) = self.runtime_adapter.get_flat_storage_manager() {
@@ -150,7 +154,7 @@ impl Chain {
                 .expect("child shard uids must exist")
             {
                 let store = self.runtime_adapter.store().clone();
-                let block_info = BlockInfo {
+                let block_info: BlockInfo = BlockInfo {
                     hash: *block_header.hash(),
                     prev_hash: *block_header.prev_hash(),
                     height: block_header.height(),
@@ -338,7 +342,7 @@ mod tests {
                 })
                 .collect();
             let (store_update, split_state_roots) = tries
-                .add_values_to_split_states(
+                .add_values_to_split_states_and_commit(
                     &split_state_roots,
                     trie_items.into_iter().map(|(key, value)| (key, Some(value))).collect(),
                     account_id_to_shard_id,
