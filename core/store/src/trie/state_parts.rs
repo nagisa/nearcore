@@ -204,7 +204,7 @@ impl Trie {
         let values_read_timer = metrics::GET_STATE_PART_READ_FS_ELAPSED
             .with_label_values(&[&shard_id.to_string()])
             .start_timer();
-        let flat_state_iter = self.iter_flat_state_entries(nibbles_begin, nibbles_end)?;
+        let flat_state_iter = self.iter_flat_state_entries(nibbles_begin, nibbles_end).unwrap();
         tracing::debug!(target: "state-parts", shard_id = shard_id, part_id = part_id.idx, num_parts = part_id.total, "flat_state_iter done");
         let mut value_refs = vec![];
         let mut values_inlined = 0;
@@ -223,6 +223,8 @@ impl Trie {
                 }
             })
             .collect::<Vec<_>>();
+        tracing::debug!(target: "state-parts", ?all_state_part_items);
+        tracing::debug!(target: "state-parts", ?value_refs);
         let values_read_duration = values_read_timer.stop_and_record();
 
         // 2. Lookup Referenced values in State. Note that FlatStorage snapshots don't have State.
@@ -231,11 +233,15 @@ impl Trie {
             .start_timer();
         let looked_up_value_refs: Vec<_> = value_refs
             .iter()
-            .map(|(k, hash)| Ok((k.clone(), Some(state_trie.retrieve_value(hash)?.to_vec()))))
+            .map(|(k, hash)| {
+                Ok((k.clone(), Some(state_trie.retrieve_value(hash).unwrap().to_vec())))
+            })
             .collect::<Result<_, StorageError>>()
             .unwrap();
+        tracing::debug!(target: "state-parts", ?looked_up_value_refs);
         tracing::debug!(target: "state-parts", shard_id = shard_id, part_id = part_id.idx, num_parts = part_id.total, "looked_up_value_refs done");
         all_state_part_items.extend(looked_up_value_refs.iter().cloned());
+        tracing::debug!(target: "state-parts", ?all_state_part_items);
         let lookup_values_duration = lookup_values_timer.stop_and_record();
 
         // 3. Create trie out of all key-value pairs.
@@ -245,7 +251,7 @@ impl Trie {
         let local_state_part_trie =
             Trie::new(Rc::new(TrieMemoryPartialStorage::default()), StateRoot::new(), None);
         let local_state_part_nodes =
-            local_state_part_trie.update(all_state_part_items.into_iter())?.insertions;
+            local_state_part_trie.update(all_state_part_items.into_iter()).unwrap().insertions;
         tracing::debug!(target: "state-parts", shard_id = shard_id, part_id = part_id.idx, num_parts = part_id.total, "local_state_part_nodes done");
         let local_trie_creation_duration = local_trie_creation_timer.stop_and_record();
 
@@ -255,19 +261,26 @@ impl Trie {
             .start_timer();
         let boundary_nodes_storage: HashMap<_, _> =
             path_boundary_nodes.iter().map(|entry| (hash(entry), entry.clone())).collect();
+        tracing::debug!(target: "state-parts", ?boundary_nodes_storage);
         let mut disk_read_hashes: HashSet<_> = boundary_nodes_storage.keys().cloned().collect();
+        tracing::debug!(target: "state-parts", ?disk_read_hashes);
+
         disk_read_hashes.extend(value_refs.iter().map(|(_, hash)| hash));
+        tracing::debug!(target: "state-parts", ?disk_read_hashes);
         let mut all_nodes: HashMap<CryptoHash, Arc<[u8]>> = HashMap::new();
+        tracing::debug!(target: "state-parts", ?all_nodes);
         all_nodes.extend(boundary_nodes_storage);
+        tracing::debug!(target: "state-parts", ?all_nodes);
         all_nodes.extend(
             local_state_part_nodes
                 .iter()
                 .map(|entry| (*entry.hash(), entry.payload().to_vec().into())),
         );
+        tracing::debug!(target: "state-parts", ?all_nodes);
         let final_trie =
             Trie::new(Rc::new(TrieMemoryPartialStorage::new(all_nodes)), self.root, None);
 
-        final_trie.visit_nodes_for_state_part(part_id)?;
+        final_trie.visit_nodes_for_state_part(part_id).unwrap();
         tracing::debug!(target: "state-parts", shard_id = shard_id, part_id = part_id.idx, num_parts = part_id.total, "visit_nodes_for_state_part done");
         let final_trie_storage = final_trie.storage.as_partial_storage().unwrap();
         let final_state_part_nodes = final_trie_storage.partial_state();

@@ -20,7 +20,7 @@ from transaction import sign_staking_tx, sign_create_account_with_full_access_ke
 from key import Key
 
 MAX_SYNC_WAIT = 350
-EPOCH_LENGTH = 300
+EPOCH_LENGTH = 100
 
 state_parts_dir = str(pathlib.Path(tempfile.gettempdir()) / 'state_parts')
 
@@ -88,6 +88,14 @@ logger.info('started node1')
 
 contract = utils.load_test_contract()
 
+def epoch_height(block_height):
+    if block_height == 0:
+        return 0
+    if block_height <= EPOCH_LENGTH:
+        # According to the protocol specifications, there are two epochs with height 1.
+        return "1*"
+    return int((block_height - 1) / EPOCH_LENGTH)
+
 def random_workload_until(target, nonce, keys, target_node):
     for cur_height, cur_block_hash in utils.poll_blocks(target_node,
                                          timeout=MAX_SYNC_WAIT,
@@ -120,7 +128,7 @@ def random_workload_until(target, nonce, keys, target_node):
                           cur_block_hash)
             # call_function('write', key, nonce, node1.signer_key,
             #               cur_block_hash)
-        logger.info(f'sent a transaction at height {cur_height}')
+        logger.info(f'sent a transaction at height {cur_height}, epoch height {epoch_height(cur_height)}')
     return (nonce, keys)
 
 
@@ -177,7 +185,7 @@ for signer_key in account_keys:
     assert 'error' not in res
 
 
-nonce, keys = random_workload_until(EPOCH_LENGTH * 4 - 10, nonce, keys, node0)
+nonce, keys = random_workload_until(EPOCH_LENGTH * 4, nonce, keys, node0)
 
 logger.info('restart node1')
 node1.start(boot_node=node0)
@@ -190,7 +198,7 @@ state_sync_done_height = None
 for node1_height, _ in utils.poll_blocks(node1,
                                          timeout=500,
                                          poll_interval=1):
-    if node1_height > EPOCH_LENGTH * 5 :
+    if node1_height > int(EPOCH_LENGTH * 4.2):
         break
     if node1_height >= EPOCH_LENGTH * 4:
         if state_sync_done_time is None:

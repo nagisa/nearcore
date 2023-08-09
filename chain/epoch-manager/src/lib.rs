@@ -200,7 +200,7 @@ impl EpochManager {
             largest_final_height: 0,
         };
         let genesis_epoch_id = EpochId::default();
-        if !epoch_manager.has_epoch_info(&genesis_epoch_id)? {
+        if !epoch_manager.has_epoch_info(&genesis_epoch_id).unwrap() {
             // Missing genesis epoch, means that there is no validator initialize yet.
             let genesis_epoch_config =
                 epoch_manager.config.for_protocol_version(genesis_protocol_version);
@@ -214,7 +214,8 @@ impl EpochManager {
                 0,
                 genesis_protocol_version,
                 genesis_protocol_version,
-            )?;
+            )
+            .unwrap();
             // Dummy block info.
             // Artificial block we add to simplify implementation: dummy block is the
             // parent of genesis block that points to itself.

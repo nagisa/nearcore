@@ -172,9 +172,16 @@ impl FlatStorageInner {
         block_hash: CryptoHash,
         strict: bool,
     ) -> Result<CryptoHash, FlatStorageError> {
+        tracing::debug!(?block_hash, ?strict, "get_new_flat_head");
         if strict {
+            tracing::debug!(
+                ?block_hash,
+                ?strict,
+                "get_new_flat_head -- strict -- directly block_hash"
+            );
             return Ok(block_hash);
         }
+        tracing::debug!(?block_hash, ?strict, "get_new_flat_head -- non-strict");
 
         let current_flat_head_hash = self.flat_head.hash;
         let current_flat_head_height = self.flat_head.height;
@@ -339,10 +346,13 @@ impl FlatStorage {
     ) -> Result<(), FlatStorageError> {
         let mut guard = self.0.write().expect(crate::flat::POISONED_LOCK_ERR);
         if !guard.move_head_enabled {
+            tracing::debug!(target: "store", "update_flat_head -- move-head-not-enabled");
             return Ok(());
         }
+        tracing::debug!(target: "store", "update_flat_head -- move-head-enabled");
 
         let new_head = guard.get_new_flat_head(*block_hash, strict)?;
+        tracing::debug!(target: "store", ?new_head, ?block_hash, strict, current_head = ?guard.flat_head.hash, "update_flat_head");
         if new_head == guard.flat_head.hash {
             return Ok(());
         }

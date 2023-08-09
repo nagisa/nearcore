@@ -84,6 +84,7 @@ impl StateSnapshot {
                     // Flat state snapshot needs to be at a height that lets it
                     // replay the last chunk of the shard.
                     let desired_flat_head = chunk.prev_block_hash();
+                    tracing::debug!(target: "state_snapshot", chunk_prev_block_hash = ?desired_flat_head, chunk_height_included = chunk.height_included(), chunk_height_created = chunk.height_created());
                     match flat_storage.update_flat_head(desired_flat_head, true) {
                         Ok(_) => {
                             tracing::debug!(target: "state_snapshot", ?shard_uid, ?current_flat_head, ?desired_flat_head, "Successfully moved FlatStorage head of the snapshot");
