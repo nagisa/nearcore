@@ -133,6 +133,7 @@ impl FlatStorageManager {
 
         if let Some(flat_store) = flat_storages.remove(&shard_uid) {
             flat_store.clear_state()?;
+            tracing::debug!(target: "store", ?shard_uid, "Reset FlatStorage state");
         }
 
         Ok(())
