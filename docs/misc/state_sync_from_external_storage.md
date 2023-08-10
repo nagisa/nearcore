@@ -49,11 +49,9 @@ your `config.json` file:
     }
   }
 },
-"consensus": {          
-  "state_sync_timeout": {
-    "secs": 30,
-    "nanos": 0
-  }
+"state_sync_timeout": {
+  "secs": 30,
+  "nanos": 0
 }
 ```
 
@@ -72,7 +70,7 @@ shards that can be downloaded in parallel during state sync.
 across all shards that can be downloaded in parallel during catchup. Generally,
 this number should not be higher than `num_concurrent_requests`. Keep it
 reasonably low to allow the node to process chunks of other shards.
-* `consensus.state_sync_timeout` determines the max duration of an attempt to download a
+* `state_sync_timeout` determines the max duration of an attempt to download a
 state part. Setting it too low may cause too many unsuccessful attempts.
 
 ### Amazon S3
