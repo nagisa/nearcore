@@ -1111,6 +1111,7 @@ impl RuntimeAdapter for NightshadeRuntime {
         let _timer = metrics::STATE_SYNC_APPLY_PART_DELAY
             .with_label_values(&[&shard_id.to_string()])
             .start_timer();
+        let _span = tracing::debug_span!(target: "client", "apply_state_part", ?shard_id, ?state_root, ?part_id, ?epoch_id).entered();
 
         let part = BorshDeserialize::try_from_slice(data)
             .expect("Part was already validated earlier, so could never fail here");
