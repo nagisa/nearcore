@@ -45,7 +45,7 @@ impl SyncJobsActor {
     ) -> Result<(), near_chain_primitives::error::Error> {
         let shard_id = msg.shard_uid.shard_id as ShardId;
         let _span =
-            tracing::debug_span!(target: "sync_jobs_actor", ?shard_id, "apply_parts").entered();
+            tracing::debug_span!(target: "sync_jobs_actor", "apply_parts", ?shard_id).entered();
         tracing::debug!(target: "sync_jobs_actor", ?shard_id, "Applying all state parts for shard");
         let store = msg.runtime_adapter.store();
 
