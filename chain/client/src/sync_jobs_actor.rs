@@ -102,9 +102,9 @@ impl actix::Handler<WithSpanContext<ApplyStatePartsRequest>> for SyncJobsActor {
             return;
         }
 
-        let result = self.apply_parts(&msg);
+        let apply_result = self.apply_parts(&msg);
         self.client_addr.do_send(
-            ApplyStatePartsResponse { apply_result: result, shard_id, sync_hash: msg.sync_hash }
+            ApplyStatePartsResponse { apply_result, shard_id, sync_hash: msg.sync_hash }
                 .with_span_context(),
         );
     }
