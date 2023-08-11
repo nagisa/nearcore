@@ -138,24 +138,25 @@ def random_workload_until(target, nonce, keys, target_node):
             call_function('read', key, nonce, boot_node.signer_key,
                           last_block_hash)
             call_function('read', key, nonce, node1.signer_key, last_block_hash)
-        elif random.random() < 0.3:
+        elif random.random() < 0.5:
+            if random.random() < 0.3:
+                key_from, account_to = boot_node.signer_key, node1.signer_key.account_id
+            elif random.random() < 0.3:
+                key_from, account_to = boot_node.signer_key, "near"
+            elif random.random() < 0.5:
+                key_from, account_to = node1.signer_key, boot_node.signer_key.account_id
+            else:
+                key_from, account_to = node1.signer_key, "near"
+            payment_tx = transaction.sign_payment_tx(key_from, account_to, 1,
+                                                     nonce, last_block_hash)
+            boot_node.send_tx(payment_tx).get('result')
+        else:
             key = random_u64()
             keys.append(key)
             call_function('write', key, nonce, boot_node.signer_key,
                           last_block_hash)
             call_function('write', key, nonce, node1.signer_key,
                           last_block_hash)
-        elif random.random() < 0.3:
-            key_from, account_to = boot_node.signer_key, node1.signer_key.account_id
-        elif random.random() < 0.3:
-            key_from, account_to = boot_node.signer_key, "near"
-        elif random.random() < 0.5:
-            key_from, account_to = node1.signer_key, boot_node.signer_key.account_id
-        else:
-            key_from, account_to = node1.signer_key, "near"
-        payment_tx = transaction.sign_payment_tx(key_from, account_to, 1,
-                                                 nonce, last_block_hash)
-        boot_node.send_tx(payment_tx).get('result')
     return (nonce, keys)
 
 
@@ -185,11 +186,14 @@ node1.kill()
 logger.info(f'killed node1')
 
 # Run node0 more to trigger block sync in node1.
-nonce, keys = random_workload_until(int(EPOCH_LENGTH * 3.3), nonce, keys, boot_node)
+nonce, keys = random_workload_until(int(EPOCH_LENGTH * 3), nonce, keys,
+                                    boot_node)
 
 # Node1 is now behind and needs to do header sync and block sync.
 node1.start(boot_node=boot_node)
 node1_height = node1.get_latest_block().height
 logger.info(f'started node1@{node1_height}')
 
-nonce, keys = random_workload_until(int(EPOCH_LENGTH * 6.2), nonce, keys, node1)
+nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), nonce, keys, node1)
+
+#nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), 1, [], node1)
