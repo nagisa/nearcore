@@ -68,11 +68,11 @@ config1 = {
         }
     },
     'state_sync_enabled': True,
-    'state_sync_timeout': {
+    'consensus.state_sync_timeout': {
         'secs': 0,
         'nanos': 500000000
     },
-    'tracked_shard_schedule': [[1], [1], [1], [2], [3], [1], [2], [3],],
+    'tracked_shard_schedule': [[0], [0], [1], [2], [3], [1], [2], [3],],
     'tracked_shards': [],
 }
 logger.info(f'state_parts_dir: {state_parts_dir}')
@@ -178,7 +178,6 @@ def call_function(op, key, nonce, signer_key, last_block_hash):
     return boot_node.send_tx(tx).get('result')
 
 
-"""
 nonce, keys = random_workload_until(EPOCH_LENGTH - 5, 1, [], boot_node)
 
 node1_height = node1.get_latest_block().height
@@ -196,6 +195,5 @@ node1_height = node1.get_latest_block().height
 logger.info(f'started node1@{node1_height}')
 
 nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), nonce, keys, node1)
-"""
 
-nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), 1, [], node1)
+#nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), 1, [], node1)

@@ -1961,7 +1961,6 @@ impl Chain {
 
     pub fn reset_data_pre_state_sync(&mut self, sync_hash: CryptoHash) -> Result<(), Error> {
         let _span = tracing::debug_span!(target: "sync", "reset_data_pre_state_sync").entered();
-        panic!("DONT");
         let head = self.head()?;
         // Get header we were syncing into.
         let header = self.get_block_header(&sync_hash)?;
