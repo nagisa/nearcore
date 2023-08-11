@@ -769,7 +769,7 @@ impl WrappedTrieChanges {
     ///
     /// NOTE: the changes are drained from `self`.
     pub fn state_changes_into(&mut self, store_update: &mut StoreUpdate) {
-        for change_with_trie_key in self.state_changes.drain(..) {
+        for mut change_with_trie_key in self.state_changes.drain(..) {
             assert!(
                 !change_with_trie_key.changes.iter().any(|RawStateChange { cause, .. }| matches!(
                     cause,
@@ -777,6 +777,13 @@ impl WrappedTrieChanges {
                 )),
                 "NotWritableToDisk changes must never be finalized."
             );
+
+            change_with_trie_key
+                .changes
+                .retain(|change| change.cause != StateChangeCause::Resharding);
+            if change_with_trie_key.changes.is_empty() {
+                continue;
+            }
 
             // assert!(
             //     !change_with_trie_key.changes.iter().any(|RawStateChange { cause, .. }| matches!(
