@@ -10,7 +10,6 @@ import pathlib
 import random
 import sys
 import tempfile
-import requests
 
 sys.path.append(str(pathlib.Path(__file__).resolve().parents[2] / 'lib'))
 
@@ -21,35 +20,7 @@ import utils
 
 from configured_logger import logger
 
-EPOCH_LENGTH = 500
-
-
-def epoch_height(block_height):
-    if block_height == 0:
-        return 0
-    if block_height <= EPOCH_LENGTH:
-        # According to the protocol specifications, there are two epochs with height 1.
-        return "1*"
-    return int((block_height - 1) / EPOCH_LENGTH)
-
-
-def random_u64():
-    return bytes(random.randint(0, 255) for _ in range(8))
-
-
-def call_function(op, key, nonce, signer_key, last_block_hash, tx_node):
-    if op == 'read':
-        args = key
-        fn = 'read_value'
-    else:
-        args = key + random_u64()
-        fn = 'write_key_value'
-
-    tx = transaction.sign_function_call_tx(signer_key, signer_key.account_id,
-                                           fn, args, 300 * account.TGAS, 0,
-                                           nonce, last_block_hash)
-    return tx_node.send_tx(tx).get('result')
-
+EPOCH_LENGTH = 50
 
 state_parts_dir = str(pathlib.Path(tempfile.gettempdir()) / 'state_parts')
 
@@ -77,214 +48,152 @@ config0 = {
     'store.state_snapshot_enabled': True,
     'tracked_shards': [0],
 }
-
-def get_config(num_validators, index):
-    config = {
-        'enable_multiline_logging': False,
-        'gc_num_epochs_to_keep': 100,
-        'log_summary_period': {
-            'secs': 0,
-            'nanos': 100000000
-        },
-        'log_summary_style': 'plain',
-        'state_sync': {
-            'sync': {
-                'ExternalStorage': {
-                    'location': {
-                        'Filesystem': {
-                            'root_dir': state_parts_dir
-                        }
+config1 = {
+    'enable_multiline_logging': False,
+    'gc_num_epochs_to_keep': 100,
+    'log_summary_period': {
+        'secs': 0,
+        'nanos': 100000000
+    },
+    'log_summary_style': 'plain',
+    'state_sync': {
+        'sync': {
+            'ExternalStorage': {
+                'location': {
+                    'Filesystem': {
+                        'root_dir': state_parts_dir
                     }
                 }
             }
-        },
-        'state_sync_enabled': True,
-        'consensus.state_sync_timeout': {
-            'secs': 0,
-            'nanos': 500000000
-        },
-        'tracked_shard_schedule': [],
-        'tracked_shards': [],
-    }
-    if index == num_validators:
-        config['tracked_shards'] = [0]
-    else:
-        for i in range(20):
-            if random.random() < 0.5:
-                config['tracked_shard_schedule'].append(
-                    [
-                        random.randint(0, 3),
-                    ]
-                )
-            else:
-                config['tracked_shard_schedule'].append(
-                    [
-                        random.randint(0, 3),
-                        random.randint(0, 3)
-                    ]
-                )
-
-    return config
-
-num_validators = 6
-num_non_validators = 4
-num_nodes = num_validators + num_non_validators
+        }
+    },
+    'state_sync_enabled': True,
+    'consensus.state_sync_timeout': {
+        'secs': 0,
+        'nanos': 500000000
+    },
+    'tracked_shard_schedule': [[0], [0], [1], [2], [3], [1], [2], [3],],
+    'tracked_shards': [],
+}
+logger.info(f'state_parts_dir: {state_parts_dir}')
+logger.info(f'config0: {config0}')
+logger.info(f'config1: {config1}')
 
 config = load_config()
-near_root, node_dirs = init_cluster(num_validators, num_non_validators, 4, config, [["epoch_length", EPOCH_LENGTH], ["block_producer_kickout_threshold", 1], ["chunk_producer_kickout_threshold", 1]], {i: config0 if i < num_validators else get_config(num_validators, i) for i in range(num_nodes)})
+near_root, node_dirs = init_cluster(1, 1, 4, config,
+                                    [["epoch_length", EPOCH_LENGTH]], {
+                                        0: config0,
+                                        1: config1
+                                    })
 
-i = 0
-node = spin_up_node(config, near_root, node_dirs[i], i)
-boot_nodes = [node]
-for i in range(1, num_validators):
-    boot_nodes.append(spin_up_node(config, near_root, node_dirs[i], i, boot_node=boot_nodes[0]))
-logger.info('started boot_nodes')
-
-other_nodes = [spin_up_node(config, near_root, node_dirs[i], i, boot_node=random.choice(boot_nodes)) for i in range(num_validators, num_nodes)]
-logger.info('started nodes')
-
-cur_height = boot_nodes[0].get_latest_block().height
-logger.info(f'cur_height: {cur_height}')
-
-all_nodes = boot_nodes + other_nodes
-node_account_ids = [node.signer_key.account_id for node in all_nodes]
-all_account_ids = node_account_ids + ["near"]
+boot_node = spin_up_node(config, near_root, node_dirs[0], 0)
+logger.info('started boot_node')
+node1 = spin_up_node(config, near_root, node_dirs[1], 1, boot_node=boot_node)
+logger.info('started node1')
 
 contract = utils.load_test_contract()
 
-for node in boot_nodes:
-    latest_block_hash = boot_nodes[0].get_latest_block().hash_bytes
-    deploy_contract_tx = transaction.sign_deploy_contract_tx(
-        node.signer_key, contract, 10, latest_block_hash)
-    result = boot_nodes[0].send_tx_and_wait(deploy_contract_tx, 10)
-    assert 'result' in result and 'error' not in result, (
-        'Expected "result" and no "error" in response, got: {}'.format(result))
-    logger.info(f'deployed contract to {node.signer_key.account_id}')
+latest_block_hash = boot_node.get_latest_block().hash_bytes
+deploy_contract_tx = transaction.sign_deploy_contract_tx(
+    boot_node.signer_key, contract, 10, latest_block_hash)
+result = boot_node.send_tx_and_wait(deploy_contract_tx, 10)
+assert 'result' in result and 'error' not in result, (
+    'Expected "result" and no "error" in response, got: {}'.format(result))
 
-def random_workload_until2(target, nonce, keys, target_node, alive_nodes):
-    last_height = -1
-    last_kill = -1
-    while True:
-        nonce += 1
-        last_block = target_node.get_latest_block()
-        height = last_block.height
-        logger.info(height)
-        if height != last_height:
-            logger.info(f'{target_node.signer_key.account_id}@{height}, epoch_height: {epoch_height(height)}')
-            if height > target:
-                break
-            last_height = height
+latest_block_hash = boot_node.get_latest_block().hash_bytes
+deploy_contract_tx = transaction.sign_deploy_contract_tx(
+    node1.signer_key, contract, 10, latest_block_hash)
+result = boot_node.send_tx_and_wait(deploy_contract_tx, 10)
+assert 'result' in result and 'error' not in result, (
+    'Expected "result" and no "error" in response, got: {}'.format(result))
 
-        tx_node = random.choice(boot_nodes)
 
-        last_block_hash = boot_nodes[0].get_latest_block().hash_bytes
-        if random.random() < 0.5:
-            # Make a transfer between shards.
-            # The goal is to generate cross-shard receipts.
-            key_from = random.choice(all_nodes).signer_key
-            account_to = random.choice(all_account_ids)
-            payment_tx = transaction.sign_payment_tx(key_from, account_to, 1, nonce, last_block_hash)
-            tx_node.send_tx(payment_tx).get('result')
-        elif (len(keys) > 100 and random.random() < 0.5) or len(keys) > 1000:
-            # Do some flat storage reads, but only if we have enough keys populated.
-            key = keys[random.randint(0, len(keys) - 1)]
-            call_function('read', key, nonce, random.choice(boot_nodes).signer_key, last_block_hash, tx_node)
-        else:
-            # Generate some data for flat storage reads
-            key = random_u64()
-            keys.append(key)
-            for node in boot_nodes:
-                call_function('write', key, nonce, node.signer_key, last_block_hash, tx_node)
+def epoch_height(block_height):
+    if block_height == 0:
+        return 0
+    if block_height <= EPOCH_LENGTH:
+        # According to the protocol specifications, there are two epochs with height 1.
+        return "1*"
+    return int((block_height - 1) / EPOCH_LENGTH)
 
-        if last_kill + 10 < last_height:
-            node = random.choice(other_nodes)
-            try:
-                h = requests.get("http://%s:%s/status" % node.rpc_addr(), timeout=2).json()['sync_info']['latest_block_height']
-                if h + 10 > last_height:
-                    logger.info(f'Node {node.signer_key.account_id} is in sync')
-                    node.kill()
-                    node.reset_data()
-                    logger.info(f'Killed {node.signer_key.account_id}')
-                    node.start(boot_node=boot_nodes[0])
-                    res = node.json_rpc('adv_disable_doomslug', [])
-                    logger.info(f'Started {node.signer_key.account_id}')
-                else:
-                    logger.info(f'Node {node.signer_key.account_id} is not in sync')
-            except:
-                logger.info(f'Node {node.signer_key.account_id} is down')
-
-    return nonce, keys
 
 # Generates traffic for all possible shards.
 # Assumes that `test0`, `test1`, `near` all belong to different shards.
-def random_workload_until(target, nonce, keys, target_node, alive_nodes):
+def random_workload_until(target, nonce, keys, target_node):
     last_height = -1
     while True:
         nonce += 1
-        """
-        if False and nonce % (int(EPOCH_LENGTH/2)) == 0:
-            heights = [(node.signer_key.account_id, node.get_latest_block().height) for node in alive_nodes]
-            logger.info(f'heights: {heights}')
-        """
 
         last_block = target_node.get_latest_block()
         height = last_block.height
-        logger.info(height)
+        if height > target:
+            break
         if height != last_height:
-            logger.info(f'{target_node.signer_key.account_id}@{height}, epoch_height: {epoch_height(height)}')
-            if height > target:
-                break
+            logger.info(f'@{height}, epoch_height: {epoch_height(height)}')
             last_height = height
 
-        tx_node = random.choice(boot_nodes)
-
-        last_block_hash = boot_nodes[0].get_latest_block().hash_bytes
-        if random.random() < 0.5:
-            # Make a transfer between shards.
-            # The goal is to generate cross-shard receipts.
-            key_from = random.choice(all_nodes).signer_key
-            account_to = random.choice(all_account_ids)
-            payment_tx = transaction.sign_payment_tx(key_from, account_to, 1, nonce, last_block_hash)
-            tx_node.send_tx(payment_tx).get('result')
-        elif (len(keys) > 100 and random.random() < 0.5) or len(keys) > 1000:
-            # Do some flat storage reads, but only if we have enough keys populated.
+        last_block_hash = boot_node.get_latest_block().hash_bytes
+        if (len(keys) > 100 and random.random() < 0.2) or len(keys) > 1000:
             key = keys[random.randint(0, len(keys) - 1)]
-            call_function('read', key, nonce, random.choice(boot_nodes).signer_key, last_block_hash, tx_node)
+            call_function('read', key, nonce, boot_node.signer_key,
+                          last_block_hash)
+            call_function('read', key, nonce, node1.signer_key, last_block_hash)
+        elif random.random() < 0.5:
+            if random.random() < 0.3:
+                key_from, account_to = boot_node.signer_key, node1.signer_key.account_id
+            elif random.random() < 0.3:
+                key_from, account_to = boot_node.signer_key, "near"
+            elif random.random() < 0.5:
+                key_from, account_to = node1.signer_key, boot_node.signer_key.account_id
+            else:
+                key_from, account_to = node1.signer_key, "near"
+            payment_tx = transaction.sign_payment_tx(key_from, account_to, 1,
+                                                     nonce, last_block_hash)
+            boot_node.send_tx(payment_tx).get('result')
         else:
-            # Generate some data for flat storage reads
             key = random_u64()
             keys.append(key)
-            for node in boot_nodes:
-                call_function('write', key, nonce, node.signer_key, last_block_hash, tx_node)
+            call_function('write', key, nonce, boot_node.signer_key,
+                          last_block_hash)
+            call_function('write', key, nonce, node1.signer_key,
+                          last_block_hash)
+    return (nonce, keys)
 
-    return nonce, keys
 
-nonce, keys = random_workload_until(cur_height + EPOCH_LENGTH * 2, 1, [], boot_nodes[0], all_nodes)
+def random_u64():
+    return bytes(random.randint(0, 255) for _ in range(8))
 
-for node in other_nodes:
-    node.kill()
-    node.reset_data()
-    logger.info(f'killed {node.signer_key.account_id}')
 
-# Disable doomslug to cause forks, but keep one validator node with the correct finality mechanism.
-for node in boot_nodes:
-    res = node.json_rpc('adv_disable_doomslug', [])
-    assert 'result' in res, res
-    logger.info(f'Disabled doomslug on {node.signer_key.account_id}')
+def call_function(op, key, nonce, signer_key, last_block_hash):
+    if op == 'read':
+        args = key
+        fn = 'read_value'
+    else:
+        args = key + random_u64()
+        fn = 'write_key_value'
 
-cur_height = boot_nodes[0].get_latest_block().height
-logger.info(f'cur_height: {cur_height}')
+    tx = transaction.sign_function_call_tx(signer_key, signer_key.account_id,
+                                           fn, args, 300 * account.TGAS, 0,
+                                           nonce, last_block_hash)
+    return boot_node.send_tx(tx).get('result')
 
-nonce, keys = random_workload_until(EPOCH_LENGTH * 2 + 5, 1, [], boot_nodes[0], all_nodes)
 
-# Nodes are now behind and needs to do header sync and block sync.
-for node in other_nodes:
-    node.start(boot_node=boot_nodes[0])
-    res = node.json_rpc('adv_disable_doomslug', [])
-    assert 'result' in res, res
-    logger.info(f'{node.signer_key.account_id}: Started and disabled doomslug')
+nonce, keys = random_workload_until(EPOCH_LENGTH - 5, 1, [], boot_node)
+
+node1_height = node1.get_latest_block().height
+logger.info(f'node1@{node1_height}')
+node1.kill()
+logger.info(f'killed node1')
 
 # Run node0 more to trigger block sync in node1.
+nonce, keys = random_workload_until(int(EPOCH_LENGTH * 3), nonce, keys,
+                                    boot_node)
 
-cur_height = boot_nodes[0].get_latest_block().height
-logger.info(f'cur_height: {cur_height}')
+# Node1 is now behind and needs to do header sync and block sync.
+node1.start(boot_node=boot_node)
+node1_height = node1.get_latest_block().height
+logger.info(f'started node1@{node1_height}')
+
+nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), nonce, keys, node1)
+
+#nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), 1, [], node1)
