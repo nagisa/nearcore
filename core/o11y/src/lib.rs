@@ -205,11 +205,14 @@ where
 }
 
 fn get_fmt_span(with_span_events: bool) -> fmt::format::FmtSpan {
+    fmt::format::FmtSpan::NONE
+    /*
     if with_span_events {
         fmt::format::FmtSpan::ENTER | fmt::format::FmtSpan::CLOSE
     } else {
         fmt::format::FmtSpan::NONE
     }
+     */
 }
 
 fn add_non_blocking_log_layer<S>(

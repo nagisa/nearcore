@@ -72,7 +72,7 @@ config1 = {
         'secs': 0,
         'nanos': 500000000
     },
-    'tracked_shard_schedule': [[1], [2], [3],],
+    'tracked_shard_schedule': [[1], [1], [1], [2], [3], [1], [2], [3],],
     'tracked_shards': [],
 }
 logger.info(f'state_parts_dir: {state_parts_dir}')
