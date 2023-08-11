@@ -1958,6 +1958,7 @@ impl Chain {
 
     pub fn reset_data_pre_state_sync(&mut self, sync_hash: CryptoHash) -> Result<(), Error> {
         let _span = tracing::debug_span!(target: "sync", "reset_data_pre_state_sync").entered();
+        panic!("DONT");
         let head = self.head()?;
         // Get header we were syncing into.
         let header = self.get_block_header(&sync_hash)?;
@@ -2691,7 +2692,7 @@ impl Chain {
                         if let Err(e) = self.ping_missing_chunks(me, block_hash, orphan) {
                             return match e {
                                 Error::ChunksMissing(missing_chunks) => {
-                                    debug!(target:"chain", "Request missing chunks for orphan {:?} {:?}", orphan.hash(), missing_chunks.iter().map(|chunk|{(chunk.shard_id(), chunk.chunk_hash())}).collect::<Vec<_>>());
+                                    debug!(target: "chain", orphan = ?orphan.hash(), missing_chunks = ?missing_chunks.iter().map(|chunk|{(chunk.shard_id(), chunk.chunk_hash())}).collect::<Vec<_>>(), "Request missing chunks for orphan");
                                     Some(OrphanMissingChunks {
                                         missing_chunks,
                                         epoch_id,
@@ -2826,7 +2827,7 @@ impl Chain {
         apply_chunks_done_callback: DoneApplyChunkCallback,
     ) {
         // Check if there are orphans we can process.
-        debug!(target: "chain", "Check orphans: from {}, # total orphans {}", prev_hash, self.orphans.len());
+        debug!(target: "chain", ?prev_hash, num_orphans = self.orphans.len(), "Check orphans");
         // check within the descendents of `prev_hash` to see if there are orphans there that
         // are ready to request missing chunks for
         let orphans_to_check =
