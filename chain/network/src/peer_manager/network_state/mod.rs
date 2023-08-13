@@ -21,6 +21,7 @@ use crate::shards_manager::ShardsManagerRequestFromNetwork;
 use crate::stats::metrics;
 use crate::store;
 use crate::tcp;
+use crate::traffic::rate_limiter::RateLimiter;
 use crate::types::{ChainInfo, PeerType, ReasonForBan};
 use anyhow::Context;
 use arc_swap::ArcSwap;
@@ -139,6 +140,8 @@ pub(crate) struct NetworkState {
     /// messages sincce last block.
     pub txns_since_last_block: AtomicUsize,
 
+    pub recv_limiter: Arc<RateLimiter>,
+
     /// Whitelisted nodes, which are allowed to connect even if the connection limit has been
     /// reached.
     whitelist_nodes: Vec<WhitelistNode>,
@@ -199,6 +202,10 @@ impl NetworkState {
                 RECENT_ROUTED_MESSAGES_CACHE_SIZE,
             )),
             txns_since_last_block: AtomicUsize::new(0),
+            recv_limiter: Arc::new(RateLimiter::new(
+                config.recv_rate_limiter_config,
+                Arc::new(clock.clone()),
+            )),
             whitelist_nodes,
             add_edges_demux: demux::Demux::new(config.routing_table_update_rate_limit),
             update_routes_demux: demux::Demux::new(config.routing_table_update_rate_limit),

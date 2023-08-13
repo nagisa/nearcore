@@ -2,11 +2,13 @@ use crate::blacklist;
 use crate::concurrency::rate;
 use crate::network_protocol::PeerAddr;
 use crate::network_protocol::PeerInfo;
+use crate::peer::peer_actor::NETWORK_MESSAGE_MAX_SIZE_BYTES;
 use crate::peer_manager::peer_manager_actor::Event;
 use crate::peer_manager::peer_store;
 use crate::sink::Sink;
 use crate::stun;
 use crate::tcp;
+use crate::traffic::rate_limiter::RateLimiterConfig;
 use crate::types::ROUTED_MESSAGE_TTL;
 use anyhow::Context;
 use near_async::time;
@@ -160,6 +162,8 @@ pub struct NetworkConfig {
     //   * not broadcasting deleted edges
     //   * ignoring received deleted edges as well
     pub skip_tombstones: Option<time::Duration>,
+
+    pub recv_rate_limiter_config: RateLimiterConfig,
 
     /// TEST-ONLY
     /// TODO(gprusak): make it pub(crate), once all integration tests
@@ -332,6 +336,11 @@ impl NetworkConfig {
             } else {
                 None
             },
+            recv_rate_limiter_config: RateLimiterConfig {
+                capacity: (5 * bytesize::GIB as usize),
+                refill_period: time::Duration::seconds(1),
+                refill_amount: (1 * bytesize::GIB as usize),
+            },
             event_sink: Sink::null(),
         };
         this.override_config(cfg.experimental.network_config_overrides);
@@ -397,6 +406,11 @@ impl NetworkConfig {
                 enable_outbound: true,
             }),
             skip_tombstones: None,
+            recv_rate_limiter_config: RateLimiterConfig {
+                capacity: NETWORK_MESSAGE_MAX_SIZE_BYTES,
+                refill_period: time::Duration::seconds(1),
+                refill_amount: NETWORK_MESSAGE_MAX_SIZE_BYTES,
+            },
             event_sink: Sink::null(),
         }
     }

@@ -363,6 +363,19 @@ pub(crate) static ACCOUNT_TO_PEER_LOOKUPS: Lazy<IntCounterVec> = Lazy::new(|| {
     .unwrap()
 });
 
+pub(crate) static READ_RATE_LIMITER_BALANCE: Lazy<IntGauge> = Lazy::new(|| {
+    try_create_int_gauge("near_read_rate_limiter_balance", "Current balance of read rate limiter")
+        .unwrap()
+});
+
+pub(crate) static READ_TIMEOUTS_NUM: Lazy<IntCounter> = Lazy::new(|| {
+    try_create_int_counter(
+        "near_read_num_timeouts",
+        "Number of timeouts that occurred during reading of bytes",
+    )
+    .unwrap()
+});
+
 /// Updated the prometheus metrics about the received routed message `msg`.
 /// `tier` indicates the network over which the message was transmitted.
 /// `fastest` indicates whether this message is the first copy of `msg` received -

@@ -55,6 +55,17 @@ const REQUEST_PEERS_INTERVAL: time::Duration = time::Duration::seconds(60);
 /// Maximal allowed UTC clock skew between this node and the peer.
 const MAX_CLOCK_SKEW: time::Duration = time::Duration::minutes(30);
 
+/// Maximum size of network message in encoded format.
+/// We encode length as `u32`, and therefore maximum size can't be larger than `u32::MAX`.
+pub(crate) const NETWORK_MESSAGE_MAX_SIZE_BYTES: usize = (512 * bytesize::MIB) as usize;
+
+// Recommended hardware memory: https://near-nodes.io/validator/hardware
+#[cfg(test)]
+pub(crate) const RECOMMENDED_HARDWARE_MEMORY: usize = (24 * bytesize::GIB) as usize;
+
+// Need a timeout for reading each message to prevent malicious senders from holding on to its connection for long periods
+const READ_MESSAGE_TIMEOUT: time::Duration = time::Duration::seconds(2);
+
 /// Maximum number of transaction messages we will accept between block messages.
 /// The purpose of this constant is to ensure we do not spend too much time deserializing and
 /// dispatching transactions when we should be focusing on consensus-related messages.
@@ -302,7 +313,15 @@ impl PeerActor {
                 let peer_addr = stream.peer_addr;
                 let stream_type = stream.type_.clone();
                 let stats = Arc::new(connection::Stats::default());
-                let framed = stream::FramedStream::spawn(ctx, stream, stats.clone());
+                let network_state = network_state.clone();
+                let receive_rate_limiter = network_state.recv_limiter.clone(); // rate limit only receive traffic
+                let framed = stream::FramedStream::spawn(
+                    ctx,
+                    stream,
+                    stats.clone(),
+                    receive_rate_limiter,
+                    READ_MESSAGE_TIMEOUT,
+                );
                 Self {
                     closing_reason: None,
                     clock,
@@ -1519,6 +1538,7 @@ impl actix::Handler<stream::Error> for PeerActor {
             }
             // It is expected in a sense that the peer might be just slow.
             stream::Error::Send(stream::SendError::QueueOverflow { .. }) => true,
+            stream::Error::Recv(stream::RecvError::Timeout(_err)) => true, // expected to occasionally receive timeouts over network
             stream::Error::Recv(stream::RecvError::IO(err))
             | stream::Error::Send(stream::SendError::IO(err)) => match err.kind() {
                 // Connection has been closed.

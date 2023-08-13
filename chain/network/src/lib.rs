@@ -9,6 +9,7 @@ mod private_actix;
 mod stats;
 mod store;
 mod stun;
+mod traffic;
 
 pub mod actix;
 pub mod blacklist;

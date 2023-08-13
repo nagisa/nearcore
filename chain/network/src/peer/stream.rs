@@ -1,21 +1,23 @@
 use crate::peer_manager::connection;
 use crate::stats::metrics;
 use crate::tcp;
+use crate::traffic::rate_limiter::RateLimiter;
 use actix::fut::future::wrap_future;
 use actix::AsyncContext as _;
-use bytesize::{GIB, MIB};
+use bytesize::GIB;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::io::AsyncReadExt as _;
 use tokio::io::AsyncWriteExt as _;
+use tokio::time::error::Elapsed;
 
 /// Maximum size of network message in encoded format.
 /// We encode length as `u32`, and therefore maximum size can't be larger than `u32::MAX`.
-const NETWORK_MESSAGE_MAX_SIZE_BYTES: usize = 512 * MIB as usize;
+use crate::peer::peer_actor::NETWORK_MESSAGE_MAX_SIZE_BYTES; // send and receive message size limit
 /// Maximum capacity of write buffer in bytes.
-const MAX_WRITE_BUFFER_CAPACITY_BYTES: usize = GIB as usize;
+pub(crate) const MAX_WRITE_BUFFER_CAPACITY_BYTES: usize = GIB as usize;
 
 type ReadHalf = tokio::io::ReadHalf<tokio::net::TcpStream>;
 type WriteHalf = tokio::io::WriteHalf<tokio::net::TcpStream>;
@@ -34,6 +36,8 @@ pub(crate) enum RecvError {
     IO(#[source] io::Error),
     #[error("message too large: got {got_bytes}B, want <={want_max_bytes}B")]
     MessageTooLarge { got_bytes: usize, want_max_bytes: usize },
+    #[error("Timeout error")]
+    Timeout(#[source] Elapsed),
 }
 
 #[derive(actix::Message, PartialEq, Eq, Clone, Debug)]
@@ -73,6 +77,8 @@ where
         ctx: &mut actix::Context<Actor>,
         stream: tcp::Stream,
         stats: Arc<connection::Stats>,
+        recv_rate_limiter: Arc<RateLimiter>,
+        recv_timeout: time::Duration,
     ) -> Self {
         let (tcp_recv, tcp_send) = tokio::io::split(stream.stream);
         let (queue_send, queue_recv) = tokio::sync::mpsc::unbounded_channel();
@@ -94,9 +100,19 @@ where
             let addr = ctx.address();
             let stats = stats.clone();
             async move {
-                if let Err(err) =
-                    Self::run_recv_loop(stream.peer_addr, tcp_recv, addr.clone(), stats).await
+                if let Err(err) = Self::run_recv_loop(
+                    stream.peer_addr,
+                    tcp_recv,
+                    addr.clone(),
+                    stats,
+                    recv_rate_limiter,
+                    recv_timeout,
+                )
+                .await
                 {
+                    if let RecvError::Timeout(_) = &err {
+                        metrics::READ_TIMEOUTS_NUM.inc();
+                    }
                     addr.do_send(Error::Recv(err));
                 }
             }
@@ -141,6 +157,8 @@ where
         read: ReadHalf,
         addr: actix::Addr<Actor>,
         stats: Arc<connection::Stats>,
+        rate_limiter: Arc<RateLimiter>,
+        recv_timeout: time::Duration,
     ) -> Result<(), RecvError> {
         const READ_BUFFER_CAPACITY: usize = 8 * 1024;
         let mut read = tokio::io::BufReader::with_capacity(READ_BUFFER_CAPACITY, read);
@@ -153,6 +171,11 @@ where
         );
         loop {
             let n = read.read_u32_le().await.map_err(RecvError::IO)? as usize;
+            rate_limiter.acquire(n).await.map_err(|err| RecvError::MessageTooLarge {
+                got_bytes: err.amount_requested,
+                want_max_bytes: err.max_allowed,
+            })?;
+
             if n > NETWORK_MESSAGE_MAX_SIZE_BYTES {
                 return Err(RecvError::MessageTooLarge {
                     got_bytes: n,
@@ -163,7 +186,11 @@ where
             buf_size_metric.set(n as i64);
             let mut buf = vec![0; n];
             let t = metrics::PEER_MSG_READ_LATENCY.start_timer();
-            read.read_exact(&mut buf[..]).await.map_err(RecvError::IO)?;
+            let n =
+                tokio::time::timeout(recv_timeout.unsigned_abs(), read.read_exact(&mut buf[..]))
+                    .await
+                    .map_err(|err| RecvError::Timeout(err))?
+                    .map_err(RecvError::IO)?;
             t.observe_duration();
             buf_size_metric.set(0);
             stats.received_messages.fetch_add(1, Ordering::Relaxed);
@@ -171,6 +198,8 @@ where
             if let Err(_) = addr.send(Frame(buf)).await {
                 // We got mailbox error, which means that Actor has stopped,
                 // so we should just close the stream.
+                // note: mailbox error could also mean the Actor's mailbox buffer (default: 16 messages) is currently full
+                // https://docs.rs/actix/latest/actix/struct.Addr.html#method.send
                 return Ok(());
             }
         }
