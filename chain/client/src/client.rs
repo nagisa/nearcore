@@ -1306,6 +1306,7 @@ impl Client {
         shard_chunk: Option<ShardChunk>,
         apply_chunks_done_callback: DoneApplyChunkCallback,
     ) {
+        tracing::info!(target: "debug-me", reciepts = ?partial_chunk.receipts(), "on_chunk_completed");
         let chunk_header = partial_chunk.cloned_header();
         self.chain.blocks_delay_tracker.mark_chunk_completed(&chunk_header, StaticClock::utc());
         self.block_production_info

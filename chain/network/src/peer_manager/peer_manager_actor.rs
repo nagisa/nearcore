@@ -809,6 +809,7 @@ impl PeerManagerActor {
                 NetworkResponses::NoResponse
             }
             NetworkRequests::PartialEncodedChunkRequest { target, request, create_time } => {
+                tracing::info!(target: "debug-me", ?request, "PartialEncodedChunkRequest");
                 metrics::PARTIAL_ENCODED_CHUNK_REQUEST_DELAY
                     .observe((self.clock.now() - create_time.0).as_seconds_f64());
                 let mut success = false;
@@ -872,6 +873,7 @@ impl PeerManagerActor {
                 }
             }
             NetworkRequests::PartialEncodedChunkResponse { route_back, response } => {
+                tracing::info!(target: "debug-me", receipts = ?response.receipts, "handle_msg_network_requests PartialEncodedChunkResponse");
                 if self.state.send_message_to_peer(
                     &self.clock,
                     tcp::Tier::T2,
