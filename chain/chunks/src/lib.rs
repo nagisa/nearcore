@@ -798,11 +798,22 @@ impl ShardsManager {
         request: PartialEncodedChunkRequestMsg,
     ) -> (PartialEncodedChunkResponseSource, PartialEncodedChunkResponseMsg) {
         let (src, mut response_msg) = self.prepare_partial_encoded_chunk_response_unsorted(request);
+        let before = response_msg
+            .receipts
+            .clone()
+            .into_iter()
+            .map(|ReceiptProof(_, shard_proof)| shard_proof);
         response_msg.receipts.sort_by_key(
             |ReceiptProof(_receipt, ShardProof { from_shard_id, to_shard_id, proof: _proof })| {
                 (*from_shard_id, *to_shard_id)
             },
         );
+        let after = response_msg
+            .receipts
+            .clone()
+            .into_iter()
+            .map(|ReceiptProof(_, shard_proof)| shard_proof);
+        tracing::info!(target: "debug-me", ?before, ?after);
         (src, response_msg)
     }
 
@@ -1584,6 +1595,7 @@ impl ShardsManager {
         }
         // we can safely unwrap here because we already checked that chunk_hash exist in encoded_chunks
         let entry = self.encoded_chunks.get(&chunk_hash).unwrap();
+        tracing::debug!(target: "debug-me", entry_receipts = ?entry.receipts, ?can_reconstruct, ?have_all_parts, "try_process_chunk_parts_and_receipts");
 
         let cares_about_shard = cares_about_shard_this_or_next_epoch(
             self.me.as_ref(),
