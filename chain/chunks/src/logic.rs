@@ -90,6 +90,7 @@ pub fn make_outgoing_receipts_proofs(
         let receipts = receipts_by_shard.remove(&proof_shard_id).unwrap_or_else(Vec::new);
         let shard_proof =
             ShardProof { from_shard_id: shard_id, to_shard_id: proof_shard_id, proof };
+        tracing::info!(target: "debug-me", ?shard_proof, ?receipts, "make_outgoing_receipts_proofs");
         ReceiptProof(receipts, shard_proof)
     });
     Ok(it)
@@ -185,6 +186,7 @@ fn create_partial_chunk(
     let header = encoded_chunk.cloned_header();
     let receipts =
         make_outgoing_receipts_proofs(&header, &outgoing_receipts, epoch_manager)?.collect();
+    tracing::info!(target: "debug-me", ?outgoing_receipts, ?receipts, "create_partial_chunk");
     let partial_chunk = PartialEncodedChunkV2 {
         header,
         parts: encoded_chunk
