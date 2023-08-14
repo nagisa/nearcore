@@ -792,7 +792,21 @@ impl ShardsManager {
     /// Finds the parts and receipt proofs asked for in the request, and returns a response
     /// containing whatever was found. See comment for PartialEncodedChunkResponseSource for
     /// an explanation of that part of the return value.
+    /// Ensures the receipts in the response are in a deterministic order.
     fn prepare_partial_encoded_chunk_response(
+        &mut self,
+        request: PartialEncodedChunkRequestMsg,
+    ) -> (PartialEncodedChunkResponseSource, PartialEncodedChunkResponseMsg) {
+        let (src, mut response_msg) = self.prepare_partial_encoded_chunk_response_unsorted(request);
+        response_msg.receipts.sort_by_key(
+            |ReceiptProof(_receipt, ShardProof { from_shard_id, to_shard_id, proof: _proof })| {
+                (*from_shard_id, *to_shard_id)
+            },
+        );
+        (src, response_msg)
+    }
+
+    fn prepare_partial_encoded_chunk_response_unsorted(
         &mut self,
         request: PartialEncodedChunkRequestMsg,
     ) -> (PartialEncodedChunkResponseSource, PartialEncodedChunkResponseMsg) {
@@ -1477,6 +1491,7 @@ impl ShardsManager {
         &mut self,
         response: PartialEncodedChunkResponseMsg,
     ) -> Result<(), Error> {
+        tracing::info!(target: "debug-me", receipts = ?response.receipts, "process_partial_encoded_chunk_response");
         let header = self.get_partial_encoded_chunk_header(&response.chunk_hash)?;
         let partial_chunk = PartialEncodedChunk::new(header, response.parts, response.receipts);
         // We already know the header signature is valid because we read it from the
@@ -1590,6 +1605,7 @@ impl ShardsManager {
                 &self.shard_tracker,
             );
 
+            tracing::info!(target: "debug-me", receipts=?partial_chunk.receipts(), "!cares_about_shard -- complete_chunk0");
             self.complete_chunk(partial_chunk, None);
             return Ok(ProcessPartialEncodedChunkResult::HaveAllPartsAndReceipts);
         }
@@ -1617,8 +1633,10 @@ impl ShardsManager {
             // Don't persist if we don't care about the shard, even if we accidentally got enough
             // parts to reconstruct the full shard.
             if cares_about_shard {
+                tracing::info!(target: "debug-me", receipts=?partial_chunk.receipts(), "can_reconstruct complete_chunk1");
                 self.complete_chunk(partial_chunk, Some(shard_chunk));
             } else {
+                tracing::info!(target: "debug-me", receipts=?partial_chunk.receipts(), "can_reconstruct complete_chunk2");
                 self.complete_chunk(partial_chunk, None);
             }
             return Ok(ProcessPartialEncodedChunkResult::HaveAllPartsAndReceipts);
@@ -1636,7 +1654,7 @@ impl ShardsManager {
         self.encoded_chunks.mark_entry_complete(&chunk_hash);
         self.encoded_chunks.remove_from_cache_if_outside_horizon(&chunk_hash);
         self.requested_partial_encoded_chunks.remove(&chunk_hash);
-        debug!(target: "chunks", "Completed chunk {:?}", chunk_hash);
+        tracing::debug!(target: "chunks", partial_chunk_receipts = ?partial_chunk.receipts(), backtrace = ?std::backtrace::Backtrace::force_capture(), "Completed chunk {:?}", chunk_hash);
         self.client_adapter
             .send(ShardsManagerResponse::ChunkCompleted { partial_chunk, shard_chunk });
     }
