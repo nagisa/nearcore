@@ -99,7 +99,7 @@ The new implementation expects to find state parts as files on an S3 storage.
 
 The sync mechanism proceeds to download state parts mostly-sequentially from S3.
 In case the state part is not available, the request will be retried after a
-delay defined by `consensus.state_sync_timeout`, which by default is 1 minute.
+delay defined by `state_sync_timeout`, which by default is 1 minute.
 
 State parts are location on S3 at the following location:
 ```

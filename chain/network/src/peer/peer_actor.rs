@@ -953,7 +953,6 @@ impl PeerActor {
                 None
             }
             RoutedMessageBody::PartialEncodedChunkResponse(response) => {
-                tracing::info!(target: "debug-me", receipts = ?response.receipts, "receive_routed_message");
                 network_state.shards_manager_adapter.send(
                     ShardsManagerRequestFromNetwork::ProcessPartialEncodedChunkResponse {
                         partial_encoded_chunk_response: response,

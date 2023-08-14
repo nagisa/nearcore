@@ -66,7 +66,7 @@ config1 = {
         }
     },
     'state_sync_enabled': True,
-    'consensus.state_sync_timeout': {
+    'state_sync_timeout': {
         'secs': 0,
         'nanos': 500000000
     },
