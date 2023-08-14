@@ -194,6 +194,6 @@ node1.start(boot_node=boot_node)
 node1_height = node1.get_latest_block().height
 logger.info(f'started node1@{node1_height}')
 
-nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), nonce, keys, node1)
+nonce, keys = random_workload_until(int(EPOCH_LENGTH * 3.7), nonce, keys, node1)
 
 #nonce, keys = random_workload_until(int(EPOCH_LENGTH * 8.1), 1, [], node1)
