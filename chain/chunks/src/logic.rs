@@ -90,7 +90,6 @@ pub fn make_outgoing_receipts_proofs(
         let receipts = receipts_by_shard.remove(&proof_shard_id).unwrap_or_else(Vec::new);
         let shard_proof =
             ShardProof { from_shard_id: shard_id, to_shard_id: proof_shard_id, proof };
-        tracing::info!(target: "debug-me", ?shard_proof, ?receipts, "make_outgoing_receipts_proofs");
         ReceiptProof(receipts, shard_proof)
     });
     Ok(it)
@@ -119,7 +118,7 @@ pub fn make_partial_encoded_chunk_from_owned_parts_and_needed_receipts<'a>(
         })
         .cloned()
         .collect();
-    let mut receipts: Vec<ReceiptProof> = receipts
+    let mut receipts: Vec<_> = receipts
         .filter(|receipt| {
             cares_about_shard
                 || need_receipt(prev_block_hash, receipt.1.to_shard_id, me, shard_tracker)
@@ -127,11 +126,7 @@ pub fn make_partial_encoded_chunk_from_owned_parts_and_needed_receipts<'a>(
         .cloned()
         .collect();
     // Make sure the receipts are in a deterministic order.
-    receipts.sort_by_key(
-        |ReceiptProof(_, ShardProof { from_shard_id, to_shard_id, proof: _proof })| {
-            (*from_shard_id, *to_shard_id)
-        },
-    );
+    receipts.sort();
     match header.clone() {
         ShardChunkHeader::V1(header) => {
             PartialEncodedChunk::V1(PartialEncodedChunkV1 { header, parts, receipts })
@@ -190,7 +185,6 @@ fn create_partial_chunk(
     let header = encoded_chunk.cloned_header();
     let receipts =
         make_outgoing_receipts_proofs(&header, &outgoing_receipts, epoch_manager)?.collect();
-    tracing::info!(target: "debug-me", ?outgoing_receipts, ?receipts, "create_partial_chunk");
     let partial_chunk = PartialEncodedChunkV2 {
         header,
         parts: encoded_chunk
