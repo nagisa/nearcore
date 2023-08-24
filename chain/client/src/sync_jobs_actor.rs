@@ -43,26 +43,21 @@ impl SyncJobsActor {
         &mut self,
         msg: &ApplyStatePartsRequest,
     ) -> Result<(), near_chain_primitives::error::Error> {
-        let shard_id = msg.shard_uid.shard_id as ShardId;
-        let _span =
-            tracing::debug_span!(target: "sync_jobs_actor", "apply_parts", ?shard_id).entered();
-        tracing::debug!(target: "sync_jobs_actor", ?msg);
+        let _span = tracing::debug_span!(target: "client", "apply_parts").entered();
         let store = msg.runtime_adapter.store();
 
+        let shard_id = msg.shard_uid.shard_id as ShardId;
         for part_id in 0..msg.num_parts {
             let key = StatePartKey(msg.sync_hash, shard_id, part_id).try_to_vec()?;
             let part = store.get(DBCol::StateParts, &key)?.unwrap();
 
-            if let Err(err) = msg.runtime_adapter.apply_state_part(
+            msg.runtime_adapter.apply_state_part(
                 shard_id,
                 &msg.state_root,
                 PartId::new(part_id, msg.num_parts),
                 &part,
                 &msg.epoch_id,
-            ) {
-                tracing::error!(target: "sync_jobs_actor", ?err, ?part_id, shard_id, "Failed to apply state part");
-                return Err(err);
-            }
+            )?;
         }
 
         Ok(())
@@ -73,7 +68,7 @@ impl SyncJobsActor {
         &mut self,
         msg: &ApplyStatePartsRequest,
     ) -> Result<(), near_chain_primitives::error::Error> {
-        let _span = tracing::debug_span!(target: "sync_jobs_actor", "clear_flat_state").entered();
+        let _span = tracing::debug_span!(target: "client", "clear_flat_state").entered();
         if let Some(flat_storage_manager) = msg.runtime_adapter.get_flat_storage_manager() {
             flat_storage_manager.remove_flat_storage_for_shard(msg.shard_uid)?
         }
@@ -93,21 +88,24 @@ impl actix::Handler<WithSpanContext<ApplyStatePartsRequest>> for SyncJobsActor {
         msg: WithSpanContext<ApplyStatePartsRequest>,
         _: &mut Self::Context,
     ) -> Self::Result {
-        let (_span, msg) = handler_debug_span!(target: "sync_jobs_actor", msg);
-        tracing::debug!(target: "sync_jobs_actor", ?msg);
+        let (_span, msg) = handler_debug_span!(target: "client", msg);
         let shard_id = msg.shard_uid.shard_id as ShardId;
-        let sync_hash = msg.sync_hash;
         if let Err(err) = self.clear_flat_state(&msg) {
             self.client_addr.do_send(
-                ApplyStatePartsResponse { apply_result: Err(err), shard_id, sync_hash }
-                    .with_span_context(),
+                ApplyStatePartsResponse {
+                    apply_result: Err(err),
+                    shard_id,
+                    sync_hash: msg.sync_hash,
+                }
+                .with_span_context(),
             );
             return;
         }
 
-        let apply_result = self.apply_parts(&msg);
+        let result = self.apply_parts(&msg);
         self.client_addr.do_send(
-            ApplyStatePartsResponse { apply_result, shard_id, sync_hash }.with_span_context(),
+            ApplyStatePartsResponse { apply_result: result, shard_id, sync_hash: msg.sync_hash }
+                .with_span_context(),
         );
     }
 }
@@ -120,8 +118,8 @@ impl actix::Handler<WithSpanContext<BlockCatchUpRequest>> for SyncJobsActor {
         msg: WithSpanContext<BlockCatchUpRequest>,
         _: &mut Self::Context,
     ) -> Self::Result {
-        let (_span, msg) = handler_debug_span!(target: "sync_jobs_actor", msg);
-        tracing::debug!(target: "sync_jobs_actor", ?msg);
+        let (_span, msg) = handler_debug_span!(target: "client", msg);
+        tracing::debug!(target: "client", ?msg);
         let results = do_apply_chunks(msg.block_hash, msg.block_height, msg.work);
 
         self.client_addr.do_send(
@@ -139,8 +137,8 @@ impl actix::Handler<WithSpanContext<StateSplitRequest>> for SyncJobsActor {
         msg: WithSpanContext<StateSplitRequest>,
         _: &mut Self::Context,
     ) -> Self::Result {
-        let (_span, msg) = handler_debug_span!(target: "sync_jobs_actor", msg);
-        tracing::debug!(target: "sync_jobs_actor", ?msg);
+        let (_span, msg) = handler_debug_span!(target: "client", msg);
+        tracing::debug!(target: "client", ?msg);
         let response = Chain::build_state_for_split_shards(msg);
         self.client_addr.do_send(response.with_span_context());
     }
