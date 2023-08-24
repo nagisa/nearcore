@@ -11,6 +11,8 @@ use near_epoch_manager::EpochManagerAdapter;
 use near_primitives::block::Tip;
 #[cfg(feature = "protocol_feature_simple_nightshade_v2")]
 use near_primitives::checked_feature;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::errors::InvalidTxError;
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::{MerklePath, PartialMerkleTree};
@@ -201,11 +203,13 @@ pub trait ChainStoreAccess {
         hash: &CryptoHash,
         shard_id: ShardId,
     ) -> Result<Arc<Vec<Receipt>>, Error>;
+
     fn get_incoming_receipts(
         &self,
         hash: &CryptoHash,
         shard_id: ShardId,
     ) -> Result<Arc<Vec<ReceiptProof>>, Error>;
+
     /// Collect incoming receipts for shard `shard_id` from
     /// the block at height `last_chunk_height_included` (non-inclusive) to the block `block_hash` (inclusive)
     /// This is because the chunks for the shard are empty for the blocks in between,
@@ -237,6 +241,11 @@ pub trait ChainStoreAccess {
                 ret.push(ReceiptProofResponse(block_hash, Arc::new(vec![])));
             }
 
+            // TODO(resharding)
+            // when crossing the epoch boundary we should check if the shard
+            // layout is different and handle that
+            // one idea would be to do shard_id := parent(shard_id) but remember to
+            // deduplicate the receipts as well
             block_hash = prev_hash;
         }
 
@@ -820,6 +829,15 @@ impl ChainStore {
         store_update.set_ser(DBCol::BlockMisc, LATEST_KNOWN_KEY, &latest_known)?;
         self.latest_known = once_cell::unsync::OnceCell::from(latest_known);
         store_update.commit().map_err(|err| err.into())
+    }
+
+    /// Save epoch sync info
+    #[cfg(feature = "new_epoch_sync")]
+    pub fn get_epoch_sync_info(&self, epoch_id: &EpochId) -> Result<EpochSyncInfo, Error> {
+        option_to_not_found(
+            self.store.get_ser(DBCol::EpochSyncInfo, epoch_id.as_ref()),
+            "EpochSyncInfo",
+        )
     }
 
     /// Retrieve the kinds of state changes occurred in a given block.
@@ -2706,9 +2724,10 @@ impl<'a> ChainStoreUpdate<'a> {
             | DBCol::FlatStateChanges
             | DBCol::FlatStateDeltaMetadata
             | DBCol::FlatStorageStatus
-            | DBCol::Misc => {
-                unreachable!();
-            }
+            | DBCol::Misc
+            => unreachable!(),
+            #[cfg(feature = "new_epoch_sync")]
+            DBCol::EpochSyncInfo => unreachable!(),
         }
         self.merge(store_update);
     }
