@@ -540,7 +540,15 @@ fn catchup(
 
     let mut blocks_processed = 0;
     while blocks_processed < num_blocks_to_process {
-        tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, ?blocks_catch_up_state);
+        tracing::debug!(
+            target: "state-parts",
+            blocks_processed,
+            num_blocks_to_process,
+            blocks_catch_up_state_pending = ?blocks_catch_up_state.pending_blocks,
+            blocks_catch_up_state_scheduled = ?blocks_catch_up_state.scheduled_blocks,
+            processed_blocks = ?blocks_catch_up_state.processed_blocks.iter().map(|(k, v)| (k, v.iter().map(|x| x.is_ok()))).collect::<Vec<_>>(),
+            done_blocks = blocks_catch_up_state.done_blocks.len()
+        );
         let got_msg = RefCell::new(None);
 
         chain
@@ -554,7 +562,7 @@ fn catchup(
         tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, sync_hash = ?msg.sync_hash, block_hash = ?msg.block_hash, block_height = msg.block_height, work_len = msg.work.len());
         let results =
             near_chain::chain::do_apply_chunks(msg.block_hash, msg.block_height, msg.work);
-        tracing::debug!(target: "state-parts", ?results);
+        // tracing::debug!(target: "state-parts", ?results);
         assert!(blocks_catch_up_state.scheduled_blocks.remove(&msg.block_hash));
         assert!(blocks_catch_up_state.processed_blocks.insert(msg.block_hash, results).is_none());
     }
