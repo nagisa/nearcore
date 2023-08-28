@@ -64,19 +64,6 @@ impl NeardCmd {
             latest_protocol = near_primitives::version::PROTOCOL_VERSION
         );
 
-        #[cfg(feature = "test_features")]
-        {
-            error!("THIS IS A NODE COMPILED WITH ADVERSARIAL BEHAVIORS. DO NOT USE IN PRODUCTION.");
-            if std::env::var("ADVERSARY_CONSENT").unwrap_or_default() != "1" {
-                error!(
-                    "To run a node with adversarial behavior enabled give your consent \
-                            by setting an environment variable:"
-                );
-                error!("ADVERSARY_CONSENT=1");
-                std::process::exit(1);
-            }
-        }
-
         let home_dir = neard_cmd.opts.home.clone();
         let genesis_validation = if neard_cmd.opts.unsafe_fast_startup {
             GenesisValidationMode::UnsafeFast
@@ -87,12 +74,27 @@ impl NeardCmd {
         match neard_cmd.subcmd {
             NeardSubCommand::Init(cmd) => cmd.run(&home_dir)?,
             NeardSubCommand::Localnet(cmd) => cmd.run(&home_dir),
-            NeardSubCommand::Run(cmd) => cmd.run(
-                &home_dir,
-                genesis_validation,
-                neard_cmd.opts.verbose_target(),
-                &neard_cmd.opts.o11y,
-            ),
+            NeardSubCommand::Run(cmd) => {
+                #[cfg(feature = "test_features")]
+                {
+                    error!("THIS IS A NODE COMPILED WITH ADVERSARIAL BEHAVIORS. DO NOT USE IN PRODUCTION.");
+                    if std::env::var("ADVERSARY_CONSENT").unwrap_or_default() != "1" {
+                        error!(
+                            "To run a node with adversarial behavior enabled give your consent \
+                            by setting an environment variable:"
+                        );
+                        error!("ADVERSARY_CONSENT=1");
+                        std::process::exit(1);
+                    }
+                }
+
+                cmd.run(
+                    &home_dir,
+                    genesis_validation,
+                    neard_cmd.opts.verbose_target(),
+                    &neard_cmd.opts.o11y,
+                )
+            }
 
             NeardSubCommand::StateViewer(cmd) => {
                 let mode = if cmd.readwrite { Mode::ReadWrite } else { Mode::ReadOnly };

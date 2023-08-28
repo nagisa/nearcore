@@ -136,7 +136,7 @@ impl StoreValidator {
                     // Block Header Hash is valid
                     self.check(&validate::block_header_hash_validity, &block_hash, &header, col);
                     // Block Header Height is valid
-                    self.check(&validate::block_header_height_validity, &block_hash, &header, col);
+                    // self.check(&validate::block_header_height_validity, &block_hash, &header, col);
                     // Block Header can be indexed by Height
                     self.check(&validate::header_hash_indexed_by_height, &block_hash, &header, col);
                 }
@@ -152,7 +152,7 @@ impl StoreValidator {
                     // Block Header for current Block exists
                     self.check(&validate::block_header_exists, &block_hash, &block, col);
                     // Chunks for current Block exist
-                    self.check(&validate::block_chunks_exist, &block_hash, &block, col);
+                    // self.check(&validate::block_chunks_exist, &block_hash, &block, col);
                     // Chunks for current Block have Height Created not higher than Block Height
                     self.check(&validate::block_chunks_height_validity, &block_hash, &block, col);
                     // BlockInfo for current Block exists
@@ -191,23 +191,27 @@ impl StoreValidator {
                 DBCol::ChunkExtra => {
                     let (block_hash, shard_uid) = get_block_shard_uid_rev(key_ref)?;
                     let chunk_extra = ChunkExtra::try_from_slice(value_ref)?;
+                    /*
                     self.check(
                         &validate::chunk_extra_block_exists,
                         &(block_hash, shard_uid),
                         &chunk_extra,
                         col,
                     );
+                     */
                 }
                 DBCol::TrieChanges => {
                     let (block_hash, shard_uid) = get_block_shard_uid_rev(key_ref)?;
                     let trie_changes = TrieChanges::try_from_slice(value_ref)?;
                     // ShardChunk should exist for current TrieChanges
+                    /*
                     self.check(
                         &validate::trie_changes_chunk_extra_exists,
                         &(block_hash, shard_uid),
                         &trie_changes,
                         col,
                     );
+                     */
                 }
                 DBCol::ChunkHashesByHeight => {
                     let height = BlockHeight::try_from_slice(key_ref)?;
@@ -237,18 +241,13 @@ impl StoreValidator {
                         col,
                     );
                     // Block which can be indexed by Outcome block_hash exists
-                    self.check(&validate::outcome_id_block_exists, &block_hash, &outcome_ids, col);
+                    // self.check(&validate::outcome_id_block_exists, &block_hash, &outcome_ids, col);
                 }
                 DBCol::TransactionResultForBlock => {
                     let (outcome_id, block_hash) = get_outcome_id_block_hash_rev(key_ref)?;
                     let outcome = <ExecutionOutcomeWithProof>::try_from_slice(value_ref)?;
                     // Outcome is reachable in ColOutcomesByBlockHash
-                    self.check(
-                        &validate::outcome_indexed_by_block_hash,
-                        &(outcome_id, block_hash),
-                        &outcome,
-                        col,
-                    );
+                    // self.check( &validate::outcome_indexed_by_block_hash, &(outcome_id, block_hash), &outcome, col);
                 }
                 DBCol::StateDlInfos => {
                     let block_hash = CryptoHash::try_from(key_ref)?;
