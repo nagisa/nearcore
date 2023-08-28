@@ -568,8 +568,9 @@ fn catchup(
         FlatStorageStatus::Ready(FlatStorageReadyStatus { flat_head }) => flat_head.height,
         _ => panic!("!"),
     };
+    let start_height = std::cmp::max(flat_head_height + 1, sync_block_header.height());
     let mut first_block = None;
-    for height in flat_head_height + 1.. {
+    for height in start_height.. {
         if let Ok(header) = chain.get_block_header_by_height(height) {
             first_block = Some(*header.hash());
             tracing::debug!(target: "state_parts", ?height, ?first_block, ?flat_head_height);
