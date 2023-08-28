@@ -816,26 +816,21 @@ impl Chain {
     }
 
     pub fn save_block(&mut self, block: MaybeValidated<Block>) -> Result<(), Error> {
-        tracing::debug!(target: "sync", hash = ?block.hash(), "save_block");
         if self.store.get_block(block.hash()).is_ok() {
-            tracing::debug!(target: "sync", hash = ?block.hash(), "save_block !1");
             return Ok(());
         }
         if let Err(e) = self.validate_block(&block) {
-            tracing::debug!(target: "sync", hash = ?block.hash(), "save_block !2");
             byzantine_assert!(false);
             return Err(e);
         }
 
         let mut chain_store_update = ChainStoreUpdate::new(&mut self.store);
 
-        chain_store_update.save_block(block.clone().into_inner());
+        chain_store_update.save_block(block.into_inner());
         // We don't need to increase refcount for `prev_hash` at this point
         // because this is the block before State Sync.
 
-        tracing::debug!(target: "sync", hash = ?block.hash(), "save_block !3");
         chain_store_update.commit()?;
-        tracing::debug!(target: "sync", hash = ?block.hash(), "save_block !4");
         Ok(())
     }
 
@@ -844,25 +839,17 @@ impl Chain {
         block: MaybeValidated<Block>,
         requested_missing_chunks: bool,
     ) -> Result<(), Error> {
-        tracing::debug!(target: "sync", requested_missing_chunks, hash = ?block.hash(), "save_orphan");
         if self.orphans.contains(block.hash()) {
-            tracing::debug!(target: "sync", requested_missing_chunks, hash = ?block.hash(), "save_orphan -- orphans.contains()==true");
             return Ok(());
         }
         if let Err(e) = self.validate_block(&block) {
-            tracing::debug!(target: "sync", requested_missing_chunks, hash = ?block.hash(), ?e, "save_orphan -- failed validation");
             byzantine_assert!(false);
             return Err(e);
         }
         self.orphans.add(
-            Orphan {
-                block: block.clone(),
-                provenance: Provenance::NONE,
-                added: StaticClock::instant(),
-            },
+            Orphan { block, provenance: Provenance::NONE, added: StaticClock::instant() },
             requested_missing_chunks,
         );
-        tracing::debug!(target: "sync", requested_missing_chunks, hash = ?block.hash(), "save_orphan -- added orphan");
         Ok(())
     }
 
@@ -2654,7 +2641,7 @@ impl Chain {
                         if let Err(e) = self.ping_missing_chunks(me, block_hash, orphan) {
                             return match e {
                                 Error::ChunksMissing(missing_chunks) => {
-                                    debug!(target: "chain", orphan = ?orphan.hash(), missing_chunks = ?missing_chunks.iter().map(|chunk|{(chunk.shard_id(), chunk.chunk_hash())}).collect::<Vec<_>>(), "Request missing chunks for orphan");
+                                    debug!(target:"chain", "Request missing chunks for orphan {:?} {:?}", orphan.hash(), missing_chunks.iter().map(|chunk|{(chunk.shard_id(), chunk.chunk_hash())}).collect::<Vec<_>>());
                                     Some(OrphanMissingChunks {
                                         missing_chunks,
                                         epoch_id,
