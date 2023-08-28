@@ -1,6 +1,6 @@
 use crate::epoch_info::iterate_and_filter;
 use borsh::BorshDeserialize;
-use near_chain::chain::BlocksCatchUpState;
+use near_chain::chain::{BlockCatchUpRequest, BlocksCatchUpState};
 use near_chain::{Chain, ChainGenesis, ChainStoreAccess, DoomslugThresholdMode};
 use near_client::sync::external::{
     create_bucket_readonly, create_bucket_readwrite, external_storage_location,
@@ -17,12 +17,11 @@ use near_primitives::syncing::get_num_state_parts;
 use near_primitives::types::{AccountId, EpochId, StateRoot};
 use near_primitives_core::hash::CryptoHash;
 use near_primitives_core::types::{BlockHeight, BlockHeightDelta, EpochHeight, ShardId};
-use near_store::flat::{FlatStorageReadyStatus, FlatStorageStatus};
 use near_store::{PartialStorage, Store, Trie};
 use nearcore::{NearConfig, NightshadeRuntime};
-use std::cell::RefCell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -84,7 +83,7 @@ pub(crate) enum StatePartsSubCommand {
         sync_hash: CryptoHash,
     },
     /// Process blocks as if catching up.
-    Catchup {
+    CatchUp {
         #[clap(long)]
         num_blocks: BlockHeightDelta,
         /// Select an epoch to work on.
@@ -111,19 +110,22 @@ impl StatePartsSubCommand {
             TrackedConfig::from_config(&near_config.client_config),
             epoch_manager.clone(),
         );
-        let runtime =
-            NightshadeRuntime::from_config(home_dir, store, &near_config, epoch_manager.clone());
+        let runtime = NightshadeRuntime::from_config(
+            home_dir,
+            store.clone(),
+            &near_config,
+            epoch_manager.clone(),
+        );
         let chain_genesis = ChainGenesis::new(&near_config.genesis);
         let mut chain = Chain::new_for_view_client(
             epoch_manager,
             shard_tracker,
-            runtime,
+            runtime.clone(),
             &chain_genesis,
             DoomslugThresholdMode::TwoThirds,
             false,
         )
         .unwrap();
-
         let chain_id = &near_config.genesis.config.chain_id;
         let sys = actix::System::new();
         sys.block_on(async move {
@@ -152,6 +154,7 @@ impl StatePartsSubCommand {
                         sync_hash,
                         &mut chain,
                         chain_id,
+                        store,
                         &external,
                     )
                     .await
@@ -177,19 +180,20 @@ impl StatePartsSubCommand {
                         part_to,
                         &chain,
                         chain_id,
+                        store,
                         &external,
                     )
                     .await
                 }
                 StatePartsSubCommand::ReadStateHeader { epoch_selection } => {
-                    read_state_header(epoch_selection, shard_id, &chain)
+                    read_state_header(epoch_selection, shard_id, &chain, store)
                 }
                 StatePartsSubCommand::Finalize { sync_hash } => {
                     finalize_state_sync(sync_hash, shard_id, &mut chain)
                 }
-                StatePartsSubCommand::Catchup { num_blocks, epoch_selection } => {
+                StatePartsSubCommand::CatchUp { num_blocks, epoch_selection } => {
                     let me = near_config.validator_signer.map(|v| v.validator_id().clone());
-                    catchup(shard_id, num_blocks, epoch_selection, &mut chain, &me)
+                    catchup(num_blocks, epoch_selection, store, &mut chain, &me)
                 }
             }
         });
@@ -320,9 +324,10 @@ async fn load_state_parts(
     maybe_sync_hash: Option<CryptoHash>,
     chain: &mut Chain,
     chain_id: &str,
+    store: Store,
     external: &ExternalConnection,
 ) {
-    let epoch_id = epoch_selection.to_epoch_id(chain.store().store().clone(), chain);
+    let epoch_id = epoch_selection.to_epoch_id(store, chain);
     let (state_root, epoch_height, epoch_id, sync_hash) =
         if let (Some(state_root), Some(sync_hash), EpochSelection::EpochHeight { epoch_height }) =
             (maybe_state_root, maybe_sync_hash, &epoch_selection)
@@ -348,7 +353,7 @@ async fn load_state_parts(
     assert_eq!(Some(num_parts), get_num_parts_from_filename(&part_file_names[0]));
     let part_ids = get_part_ids(part_id, part_id.map(|x| x + 1), num_parts);
     tracing::info!(
-        target: "state_parts",
+        target: "state-parts",
         epoch_height,
         shard_id,
         num_parts,
@@ -386,7 +391,7 @@ async fn load_state_parts(
                         &epoch_id,
                     )
                     .unwrap();
-                tracing::info!(target: "state_parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Loaded a state part");
+                tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Loaded a state part");
             }
             LoadAction::Validate => {
                 assert!(chain.runtime_adapter.validate_state_part(
@@ -394,14 +399,14 @@ async fn load_state_parts(
                     PartId::new(part_id, num_parts),
                     &part
                 ));
-                tracing::info!(target: "state_parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Validated a state part");
+                tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Validated a state part");
             }
             LoadAction::Print => {
                 print_state_part(&state_root, PartId::new(part_id, num_parts), &part)
             }
         }
     }
-    tracing::info!(target: "state_parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Loaded all requested state parts");
+    tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Loaded all requested state parts");
 }
 
 fn print_state_part(state_root: &StateRoot, _part_id: PartId, data: &[u8]) {
@@ -418,9 +423,10 @@ async fn dump_state_parts(
     part_to: Option<u64>,
     chain: &Chain,
     chain_id: &str,
+    store: Store,
     external: &ExternalConnection,
 ) {
-    let epoch_id = epoch_selection.to_epoch_id(chain.store().store().clone(), chain);
+    let epoch_id = epoch_selection.to_epoch_id(store, chain);
     let epoch = chain.epoch_manager.get_epoch_info(&epoch_id).unwrap();
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
     let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
@@ -434,7 +440,7 @@ async fn dump_state_parts(
     let part_ids = get_part_ids(part_from, part_to, num_parts);
 
     tracing::info!(
-        target: "state_parts",
+        target: "state-parts",
         epoch_height = epoch.epoch_height(),
         epoch_id = ?epoch_id.0,
         shard_id,
@@ -472,14 +478,14 @@ async fn dump_state_parts(
         let elapsed_sec = timer.elapsed().as_secs_f64();
         let first_state_record = get_first_state_record(&state_root, &state_part);
         tracing::info!(
-            target: "state_parts",
+            target: "state-parts",
             part_id,
             part_length = state_part.len(),
             elapsed_sec,
             first_state_record = ?first_state_record.map(|sr| format!("{}", sr)),
             "Wrote a state part");
     }
-    tracing::info!(target: "state_parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Wrote all requested state parts");
+    tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Wrote all requested state parts");
 }
 
 /// Returns the first `StateRecord` encountered while iterating over a sub-trie in the state part.
@@ -497,15 +503,20 @@ fn get_first_state_record(state_root: &StateRoot, data: &[u8]) -> Option<StateRe
 }
 
 /// Reads `StateHeader` stored in the DB.
-fn read_state_header(epoch_selection: EpochSelection, shard_id: ShardId, chain: &Chain) {
-    let epoch_id = epoch_selection.to_epoch_id(chain.store().store().clone(), chain);
+fn read_state_header(
+    epoch_selection: EpochSelection,
+    shard_id: ShardId,
+    chain: &Chain,
+    store: Store,
+) {
+    let epoch_id = epoch_selection.to_epoch_id(store, chain);
     let epoch = chain.epoch_manager.get_epoch_info(&epoch_id).unwrap();
 
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
     let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
 
     let state_header = chain.store().get_state_header(shard_id, sync_hash);
-    tracing::info!(target: "state_parts", ?epoch_id, ?sync_hash, ?state_header);
+    tracing::info!(target: "state-parts", ?epoch_id, ?sync_hash, ?state_header);
 }
 
 fn finalize_state_sync(sync_hash: CryptoHash, shard_id: ShardId, chain: &mut Chain) {
@@ -513,102 +524,36 @@ fn finalize_state_sync(sync_hash: CryptoHash, shard_id: ShardId, chain: &mut Cha
 }
 
 fn catchup(
-    shard_id: ShardId,
     num_blocks_to_process: BlockHeightDelta,
     epoch_selection: EpochSelection,
+    store: Store,
     chain: &mut Chain,
     me: &Option<AccountId>,
 ) {
-    let epoch_id = epoch_selection.to_epoch_id(chain.store().store().clone(), chain);
+    let epoch_id = epoch_selection.to_epoch_id(store, chain);
     let epoch = chain.epoch_manager.get_epoch_info(&epoch_id).unwrap();
 
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
     let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
 
-    let shard_uid = chain.epoch_manager.shard_id_to_uid(shard_id, &epoch_id).unwrap();
-    let flat_storage_manager = chain.runtime_adapter.get_flat_storage_manager().unwrap();
-    flat_storage_manager.create_flat_storage_for_shard(shard_uid).unwrap();
+    let blocks_catch_up_state =
+        Rc::new(std::cell::RefCell::new(BlocksCatchUpState::new(sync_hash, epoch_id)));
 
-    // Populate BlocksToCatchup.
-    let sync_block_header = chain.get_block_header(&sync_hash).unwrap();
-    let sync_block_height = sync_block_header.height();
-    let mut blocks_to_catchup = vec![];
-    for height in sync_block_height..=sync_block_height + num_blocks_to_process {
-        if let Ok(header) = chain.get_block_header_by_height(height) {
-            blocks_to_catchup.push((*header.prev_hash(), *header.hash()));
-        }
-    }
-    {
-        let mut update = chain.mut_store().store_update();
-        for (prev_hash, _hash) in &blocks_to_catchup {
-            update.remove_prev_block_to_catchup(*prev_hash);
-        }
-        update.commit().unwrap();
-    }
-    {
-        let mut update = chain.mut_store().store_update();
-        for (prev_hash, hash) in blocks_to_catchup {
-            update.add_block_to_catchup(prev_hash, hash);
-        }
-        update.commit().unwrap();
-    }
-
-    let flat_head_height = match flat_storage_manager.get_flat_storage_status(shard_uid) {
-        FlatStorageStatus::Ready(FlatStorageReadyStatus { flat_head }) => flat_head.height,
-        _ => panic!("!"),
-    };
-    let start_height = std::cmp::max(flat_head_height + 1, sync_block_header.height());
-    let mut first_block = None;
-    for height in start_height.. {
-        if let Ok(header) = chain.get_block_header_by_height(height) {
-            first_block = Some(*header.hash());
-            tracing::debug!(target: "state_parts", ?height, ?first_block, ?flat_head_height);
-            break;
-        }
-    }
-    assert!(flat_storage_manager.set_flat_state_updates_mode(false));
-
-    let mut blocks_catch_up_state = BlocksCatchUpState::new(first_block.unwrap(), epoch_id);
-
-    let mut blocks_processed = 0;
-    while blocks_processed < num_blocks_to_process {
-        tracing::debug!(
-            target: "state_parts",
-            blocks_processed,
-            num_blocks_to_process,
-        );
-        let requests = RefCell::new(vec![]);
-
-        chain
-            .catchup_blocks_step(me, &sync_hash, &mut blocks_catch_up_state, &|msg| {
-                requests.borrow_mut().push(msg);
-            })
-            .unwrap();
-        let requests = requests.take();
-        tracing::debug!(target: "state_parts", num_msgs = requests.len());
-        if requests.is_empty() {
-            break;
-        }
-
-        for msg in requests {
-            blocks_processed += 1;
-            tracing::debug!(
-                target: "state_parts",
-                blocks_processed,
-                num_blocks_to_process,
-                sync_hash = ?msg.sync_hash,
-                block_hash = ?msg.block_hash,
-                block_height = msg.block_height,
-                work_len = msg.work.len(),
-            );
-            let results =
-                near_chain::chain::do_apply_chunks(msg.block_hash, msg.block_height, msg.work);
-            assert!(blocks_catch_up_state.scheduled_blocks.remove(&msg.block_hash));
-            assert!(blocks_catch_up_state
-                .processed_blocks
-                .insert(msg.block_hash, results)
-                .is_none());
-        }
+    for blocks_processed in 0..num_blocks_to_process {
+        let cloned_state = Rc::clone(&blocks_catch_up_state);
+        let mut state = (*cloned_state).borrow_mut();
+        tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, blocks_catch_up_state = ?state);
+        chain.catchup_blocks_step(me, &sync_hash,&mut state,
+                                  &|BlockCatchUpRequest{ sync_hash, block_hash, block_height, work }| {
+                                      tracing::debug!(target: "state-parts", ?sync_hash, ?block_hash, block_height, work_len = work.len());
+                                      let results = near_chain::chain::do_apply_chunks(block_hash, block_height, work);
+                                      tracing::debug!(target: "state-parts", ?results);
+                                      let cloned_state = Rc::clone(&blocks_catch_up_state);
+                                      let mut state = (*cloned_state).borrow_mut();
+                                      assert!(state.scheduled_blocks.remove(&block_hash));
+                                      assert!(state.processed_blocks.insert(block_hash, results).is_none());
+                                  }
+        ).unwrap()
     }
 }
 
