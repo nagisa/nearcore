@@ -1,6 +1,6 @@
 use crate::epoch_info::iterate_and_filter;
 use borsh::BorshDeserialize;
-use near_chain::chain::{BlockCatchUpRequest, BlocksCatchUpState};
+use near_chain::chain::BlocksCatchUpState;
 use near_chain::{Chain, ChainGenesis, ChainStoreAccess, DoomslugThresholdMode};
 use near_client::sync::external::{
     create_bucket_readonly, create_bucket_readwrite, external_storage_location,
@@ -19,9 +19,9 @@ use near_primitives_core::hash::CryptoHash;
 use near_primitives_core::types::{BlockHeight, BlockHeightDelta, EpochHeight, ShardId};
 use near_store::{PartialStorage, Store, Trie};
 use nearcore::{NearConfig, NightshadeRuntime};
+use std::cell::RefCell;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -83,7 +83,7 @@ pub(crate) enum StatePartsSubCommand {
         sync_hash: CryptoHash,
     },
     /// Process blocks as if catching up.
-    CatchUp {
+    Catchup {
         #[clap(long)]
         num_blocks: BlockHeightDelta,
         /// Select an epoch to work on.
@@ -191,7 +191,7 @@ impl StatePartsSubCommand {
                 StatePartsSubCommand::Finalize { sync_hash } => {
                     finalize_state_sync(sync_hash, shard_id, &mut chain)
                 }
-                StatePartsSubCommand::CatchUp { num_blocks, epoch_selection } => {
+                StatePartsSubCommand::Catchup { num_blocks, epoch_selection } => {
                     let me = near_config.validator_signer.map(|v| v.validator_id().clone());
                     catchup(num_blocks, epoch_selection, store, &mut chain, &me)
                 }
@@ -536,24 +536,34 @@ fn catchup(
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
     let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
 
-    let blocks_catch_up_state =
-        Rc::new(std::cell::RefCell::new(BlocksCatchUpState::new(sync_hash, epoch_id)));
+    let mut blocks_catch_up_state = BlocksCatchUpState::new(sync_hash, epoch_id);
 
-    for blocks_processed in 0..num_blocks_to_process {
-        let cloned_state = Rc::clone(&blocks_catch_up_state);
-        let mut state = (*cloned_state).borrow_mut();
-        tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, blocks_catch_up_state = ?state);
-        chain.catchup_blocks_step(me, &sync_hash,&mut state,
-                                  &|BlockCatchUpRequest{ sync_hash, block_hash, block_height, work }| {
-                                      tracing::debug!(target: "state-parts", ?sync_hash, ?block_hash, block_height, work_len = work.len());
-                                      let results = near_chain::chain::do_apply_chunks(block_hash, block_height, work);
-                                      tracing::debug!(target: "state-parts", ?results);
-                                      let cloned_state = Rc::clone(&blocks_catch_up_state);
-                                      let mut state = (*cloned_state).borrow_mut();
-                                      assert!(state.scheduled_blocks.remove(&block_hash));
-                                      assert!(state.processed_blocks.insert(block_hash, results).is_none());
-                                  }
-        ).unwrap()
+    let mut blocks_processed = 0;
+    while blocks_processed < num_blocks_to_process {
+        tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, ?blocks_catch_up_state);
+        let got_msg = RefCell::new(None);
+
+        chain
+            .catchup_blocks_step(me, &sync_hash, &mut blocks_catch_up_state, &|msg| {
+                *got_msg.borrow_mut() = Some(msg);
+            })
+            .unwrap();
+
+        let msg = got_msg.take();
+        if let Some(msg) = msg {
+            blocks_processed += 1;
+            tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, sync_hash = ?msg.sync_hash, block_hash = ?msg.block_hash, block_height = msg.block_height, work_len = msg.work.len());
+            let results =
+                near_chain::chain::do_apply_chunks(msg.block_hash, msg.block_height, msg.work);
+            tracing::debug!(target: "state-parts", ?results);
+            assert!(blocks_catch_up_state.scheduled_blocks.remove(&msg.block_hash));
+            assert!(blocks_catch_up_state
+                .processed_blocks
+                .insert(msg.block_hash, results)
+                .is_none());
+        } else {
+            tracing::debug!(target: "state-parts", "no BlockCatchUpRequest");
+        };
     }
 }
 
