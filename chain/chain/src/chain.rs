@@ -3429,8 +3429,10 @@ impl Chain {
             // these blocks will never get caught up. So we add these blocks back to the processed_blocks
             // queue.
             if self.blocks_in_processing.has_blocks_to_catch_up(&queued_block) {
+                tracing::debug!(target: "catchup", ?queued_block, "has_blocks_to_catch_up");
                 processed_blocks.insert(queued_block, results);
             } else {
+                tracing::debug!(target: "catchup", ?queued_block, "doesn't have blocks to catch up");
                 match self.block_catch_up_postprocess(me, &queued_block, results) {
                     Ok(_) => {
                         let mut saw_one = false;
@@ -3445,11 +3447,14 @@ impl Chain {
                                 self.epoch_manager.get_epoch_id_from_prev_block(&queued_block)?,
                                 blocks_catch_up_state.epoch_id
                             );
+                            tracing::debug!(target: "catchup", ?queued_block, "saw it in blocks_to_catchup");
+                        } else {
+                            tracing::debug!(target: "catchup", ?queued_block, "didn't see it in blocks_to_catchup");
                         }
                         blocks_catch_up_state.done_blocks.push(queued_block);
                     }
                     Err(_) => {
-                        error!("Error processing block during catch up, retrying");
+                        error!(target: "catchup", "Error processing block during catch up, retrying");
                         blocks_catch_up_state.pending_blocks.push(queued_block);
                     }
                 }
@@ -3458,10 +3463,12 @@ impl Chain {
         blocks_catch_up_state.processed_blocks = processed_blocks;
 
         for pending_block in blocks_catch_up_state.pending_blocks.drain(..) {
+            tracing::debug!(target: "catchup", ?pending_block);
             let block = self.store.get_block(&pending_block)?.clone();
             let prev_block = self.store.get_block(block.header().prev_hash())?.clone();
 
             let receipts_by_shard = self.collect_incoming_receipts_from_block(me, &block)?;
+            tracing::debug!(target: "catchup", ?pending_block, num_receipts = ?receipts_by_shard.iter().map(|(k, v)| (k, v.len())).collect::<Vec<_>>());
             let work = self.apply_chunks_preprocessing(
                 me,
                 &block,

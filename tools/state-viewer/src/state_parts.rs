@@ -354,7 +354,7 @@ async fn load_state_parts(
     assert_eq!(Some(num_parts), get_num_parts_from_filename(&part_file_names[0]));
     let part_ids = get_part_ids(part_id, part_id.map(|x| x + 1), num_parts);
     tracing::info!(
-        target: "state-parts",
+        target: "state_parts",
         epoch_height,
         shard_id,
         num_parts,
@@ -392,7 +392,7 @@ async fn load_state_parts(
                         &epoch_id,
                     )
                     .unwrap();
-                tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Loaded a state part");
+                tracing::info!(target: "state_parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Loaded a state part");
             }
             LoadAction::Validate => {
                 assert!(chain.runtime_adapter.validate_state_part(
@@ -400,14 +400,14 @@ async fn load_state_parts(
                     PartId::new(part_id, num_parts),
                     &part
                 ));
-                tracing::info!(target: "state-parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Validated a state part");
+                tracing::info!(target: "state_parts", part_id, part_length = part.len(), elapsed_sec = timer.elapsed().as_secs_f64(), "Validated a state part");
             }
             LoadAction::Print => {
                 print_state_part(&state_root, PartId::new(part_id, num_parts), &part)
             }
         }
     }
-    tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Loaded all requested state parts");
+    tracing::info!(target: "state_parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Loaded all requested state parts");
 }
 
 fn print_state_part(state_root: &StateRoot, _part_id: PartId, data: &[u8]) {
@@ -441,7 +441,7 @@ async fn dump_state_parts(
     let part_ids = get_part_ids(part_from, part_to, num_parts);
 
     tracing::info!(
-        target: "state-parts",
+        target: "state_parts",
         epoch_height = epoch.epoch_height(),
         epoch_id = ?epoch_id.0,
         shard_id,
@@ -479,14 +479,14 @@ async fn dump_state_parts(
         let elapsed_sec = timer.elapsed().as_secs_f64();
         let first_state_record = get_first_state_record(&state_root, &state_part);
         tracing::info!(
-            target: "state-parts",
+            target: "state_parts",
             part_id,
             part_length = state_part.len(),
             elapsed_sec,
             first_state_record = ?first_state_record.map(|sr| format!("{}", sr)),
             "Wrote a state part");
     }
-    tracing::info!(target: "state-parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Wrote all requested state parts");
+    tracing::info!(target: "state_parts", total_elapsed_sec = timer.elapsed().as_secs_f64(), "Wrote all requested state parts");
 }
 
 /// Returns the first `StateRecord` encountered while iterating over a sub-trie in the state part.
@@ -517,7 +517,7 @@ fn read_state_header(
     let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
 
     let state_header = chain.store().get_state_header(shard_id, sync_hash);
-    tracing::info!(target: "state-parts", ?epoch_id, ?sync_hash, ?state_header);
+    tracing::info!(target: "state_parts", ?epoch_id, ?sync_hash, ?state_header);
 }
 
 fn finalize_state_sync(sync_hash: CryptoHash, shard_id: ShardId, chain: &mut Chain) {
@@ -551,30 +551,39 @@ fn catchup(
     let mut blocks_processed = 0;
     while blocks_processed < num_blocks_to_process {
         tracing::debug!(
-            target: "state-parts",
+            target: "state_parts",
             blocks_processed,
             num_blocks_to_process,
-            blocks_catch_up_state_pending = ?blocks_catch_up_state.pending_blocks,
-            blocks_catch_up_state_scheduled = ?blocks_catch_up_state.scheduled_blocks,
-            processed_blocks = ?blocks_catch_up_state.processed_blocks.iter().map(|(k, v)| (k, v.iter().map(|x| x.is_ok()))).collect::<Vec<_>>(),
-            done_blocks = blocks_catch_up_state.done_blocks.len()
         );
-        let got_msg = RefCell::new(None);
+        let requests = RefCell::new(vec![]);
 
         chain
             .catchup_blocks_step(me, &sync_hash, &mut blocks_catch_up_state, &|msg| {
-                *got_msg.borrow_mut() = Some(msg);
+                requests.borrow_mut().push(msg);
             })
             .unwrap();
+        let requests = requests.take();
+        tracing::debug!(target: "state_parts", num_msgs = requests.len());
 
-        let msg = got_msg.take().unwrap();
-        blocks_processed += 1;
-        tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, sync_hash = ?msg.sync_hash, block_hash = ?msg.block_hash, block_height = msg.block_height, work_len = msg.work.len());
-        let results =
-            near_chain::chain::do_apply_chunks(msg.block_hash, msg.block_height, msg.work);
-        // tracing::debug!(target: "state-parts", ?results);
-        assert!(blocks_catch_up_state.scheduled_blocks.remove(&msg.block_hash));
-        assert!(blocks_catch_up_state.processed_blocks.insert(msg.block_hash, results).is_none());
+        for msg in requests {
+            blocks_processed += 1;
+            tracing::debug!(
+                target: "state_parts",
+                blocks_processed,
+                num_blocks_to_process,
+                sync_hash = ?msg.sync_hash,
+                block_hash = ?msg.block_hash,
+                block_height = msg.block_height,
+                work_len = msg.work.len(),
+            );
+            let results =
+                near_chain::chain::do_apply_chunks(msg.block_hash, msg.block_height, msg.work);
+            assert!(blocks_catch_up_state.scheduled_blocks.remove(&msg.block_hash));
+            assert!(blocks_catch_up_state
+                .processed_blocks
+                .insert(msg.block_hash, results)
+                .is_none());
+        }
     }
 }
 
