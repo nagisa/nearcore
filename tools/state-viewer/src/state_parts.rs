@@ -111,12 +111,8 @@ impl StatePartsSubCommand {
             TrackedConfig::from_config(&near_config.client_config),
             epoch_manager.clone(),
         );
-        let runtime = NightshadeRuntime::from_config(
-            home_dir,
-            store.clone(),
-            &near_config,
-            epoch_manager.clone(),
-        );
+        let runtime =
+            NightshadeRuntime::from_config(home_dir, store, &near_config, epoch_manager.clone());
         let chain_genesis = ChainGenesis::new(&near_config.genesis);
         let mut chain = Chain::new_for_view_client(
             epoch_manager,
@@ -156,7 +152,6 @@ impl StatePartsSubCommand {
                         sync_hash,
                         &mut chain,
                         chain_id,
-                        store,
                         &external,
                     )
                     .await
@@ -182,20 +177,19 @@ impl StatePartsSubCommand {
                         part_to,
                         &chain,
                         chain_id,
-                        store,
                         &external,
                     )
                     .await
                 }
                 StatePartsSubCommand::ReadStateHeader { epoch_selection } => {
-                    read_state_header(epoch_selection, shard_id, &chain, store)
+                    read_state_header(epoch_selection, shard_id, &chain)
                 }
                 StatePartsSubCommand::Finalize { sync_hash } => {
                     finalize_state_sync(sync_hash, shard_id, &mut chain)
                 }
                 StatePartsSubCommand::Catchup { num_blocks, epoch_selection } => {
                     let me = near_config.validator_signer.map(|v| v.validator_id().clone());
-                    catchup(shard_id, num_blocks, epoch_selection, store, &mut chain, &me)
+                    catchup(shard_id, num_blocks, epoch_selection, &mut chain, &me)
                 }
             }
         });
@@ -326,10 +320,9 @@ async fn load_state_parts(
     maybe_sync_hash: Option<CryptoHash>,
     chain: &mut Chain,
     chain_id: &str,
-    store: Store,
     external: &ExternalConnection,
 ) {
-    let epoch_id = epoch_selection.to_epoch_id(store, chain);
+    let epoch_id = epoch_selection.to_epoch_id(chain.store().store().clone(), chain);
     let (state_root, epoch_height, epoch_id, sync_hash) =
         if let (Some(state_root), Some(sync_hash), EpochSelection::EpochHeight { epoch_height }) =
             (maybe_state_root, maybe_sync_hash, &epoch_selection)
@@ -425,10 +418,9 @@ async fn dump_state_parts(
     part_to: Option<u64>,
     chain: &Chain,
     chain_id: &str,
-    store: Store,
     external: &ExternalConnection,
 ) {
-    let epoch_id = epoch_selection.to_epoch_id(store, chain);
+    let epoch_id = epoch_selection.to_epoch_id(chain.store().store().clone(), chain);
     let epoch = chain.epoch_manager.get_epoch_info(&epoch_id).unwrap();
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
     let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
@@ -505,13 +497,8 @@ fn get_first_state_record(state_root: &StateRoot, data: &[u8]) -> Option<StateRe
 }
 
 /// Reads `StateHeader` stored in the DB.
-fn read_state_header(
-    epoch_selection: EpochSelection,
-    shard_id: ShardId,
-    chain: &Chain,
-    store: Store,
-) {
-    let epoch_id = epoch_selection.to_epoch_id(store, chain);
+fn read_state_header(epoch_selection: EpochSelection, shard_id: ShardId, chain: &Chain) {
+    let epoch_id = epoch_selection.to_epoch_id(chain.store().store().clone(), chain);
     let epoch = chain.epoch_manager.get_epoch_info(&epoch_id).unwrap();
 
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
@@ -529,11 +516,10 @@ fn catchup(
     shard_id: ShardId,
     num_blocks_to_process: BlockHeightDelta,
     epoch_selection: EpochSelection,
-    store: Store,
     chain: &mut Chain,
     me: &Option<AccountId>,
 ) {
-    let epoch_id = epoch_selection.to_epoch_id(store, chain);
+    let epoch_id = epoch_selection.to_epoch_id(chain.store().store().clone(), chain);
     let epoch = chain.epoch_manager.get_epoch_info(&epoch_id).unwrap();
 
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
@@ -552,11 +538,20 @@ fn catchup(
             blocks_to_catchup.push((*header.prev_hash(), *header.hash()));
         }
     }
-    let mut update = chain.mut_store().store_update();
-    for (prev_hash, hash) in blocks_to_catchup {
-        update.add_block_to_catchup(prev_hash, hash);
+    {
+        let mut update = chain.mut_store().store_update();
+        for (prev_hash, _hash) in &blocks_to_catchup {
+            update.remove_prev_block_to_catchup(*prev_hash);
+        }
+        update.commit().unwrap();
     }
-    update.commit().unwrap();
+    {
+        let mut update = chain.mut_store().store_update();
+        for (prev_hash, hash) in blocks_to_catchup {
+            update.add_block_to_catchup(prev_hash, hash);
+        }
+        update.commit().unwrap();
+    }
 
     let flat_head_height = match flat_storage_manager.get_flat_storage_status(shard_uid) {
         FlatStorageStatus::Ready(FlatStorageReadyStatus { flat_head }) => flat_head.height,
