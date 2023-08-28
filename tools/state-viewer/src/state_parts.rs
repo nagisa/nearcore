@@ -120,9 +120,9 @@ impl StatePartsSubCommand {
         );
         let chain_genesis = ChainGenesis::new(&near_config.genesis);
         let mut chain = Chain::new_for_view_client(
-            epoch_manager.clone(),
+            epoch_manager,
             shard_tracker,
-            runtime.clone(),
+            runtime,
             &chain_genesis,
             DoomslugThresholdMode::TwoThirds,
             false,
