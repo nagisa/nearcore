@@ -1,6 +1,8 @@
 use crate::commands::*;
 use crate::contract_accounts::ContractAccountFilter;
 use crate::rocksdb_stats::get_rocksdb_stats;
+use crate::trie_iteration_benchmark::TrieIterationBenchmarkCmd;
+use borsh::BorshSerialize;
 use near_chain_configs::{GenesisChangeConfig, GenesisValidationMode};
 use near_primitives::account::id::AccountId;
 use near_primitives::hash::CryptoHash;
@@ -37,6 +39,9 @@ pub enum StateViewerSubCommand {
     CheckBlock,
     /// Looks up a certain chunk.
     Chunks(ChunksCmd),
+    /// Clear recoverable data in CachedContractCode column.
+    #[clap(alias = "clear_cache")]
+    ClearCache,
     /// List account names with contracts deployed.
     #[clap(alias = "contract_accounts")]
     ContractAccounts(ContractAccountsCmd),
@@ -68,6 +73,8 @@ pub enum StateViewerSubCommand {
     /// Dump stats for the RocksDB storage.
     #[clap(name = "rocksdb-stats", alias = "rocksdb_stats")]
     RocksDBStats(RocksDBStatsCmd),
+    /// Reads all rows of a DB column and deserializes keys and values and prints them.
+    ScanDbColumn(ScanDbColumnCmd),
     /// Iterates over a trie and prints the StateRecords.
     State,
     /// Dumps or applies StateChanges.
@@ -75,6 +82,8 @@ pub enum StateViewerSubCommand {
     StateChanges(StateChangesCmd),
     /// Dump or apply state parts.
     StateParts(StatePartsCmd),
+    /// Benchmark how long does it take to iterate the trie.
+    TrieIterationBenchmark(TrieIterationBenchmarkCmd),
     /// View head of the storage.
     #[clap(alias = "view_chain")]
     ViewChain(ViewChainCmd),
@@ -118,6 +127,7 @@ impl StateViewerSubCommand {
             StateViewerSubCommand::Chain(cmd) => cmd.run(near_config, store),
             StateViewerSubCommand::CheckBlock => check_block_chunk_existence(near_config, store),
             StateViewerSubCommand::Chunks(cmd) => cmd.run(near_config, store),
+            StateViewerSubCommand::ClearCache => clear_cache(store),
             StateViewerSubCommand::ContractAccounts(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::DumpAccountStorage(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::DumpCode(cmd) => cmd.run(home_dir, near_config, store),
@@ -127,13 +137,15 @@ impl StateViewerSubCommand {
             StateViewerSubCommand::EpochInfo(cmd) => cmd.run(near_config, store),
             StateViewerSubCommand::PartialChunks(cmd) => cmd.run(near_config, store),
             StateViewerSubCommand::Receipts(cmd) => cmd.run(near_config, store),
-            StateViewerSubCommand::Replay(cmd) => cmd.run(home_dir, near_config, store),
+            StateViewerSubCommand::Replay(cmd) => cmd.run(near_config, store),
             StateViewerSubCommand::RocksDBStats(cmd) => cmd.run(store_opener.path()),
+            StateViewerSubCommand::ScanDbColumn(cmd) => cmd.run(store),
             StateViewerSubCommand::State => state(home_dir, near_config, store),
             StateViewerSubCommand::StateChanges(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::StateParts(cmd) => cmd.run(home_dir, near_config, store),
             StateViewerSubCommand::ViewChain(cmd) => cmd.run(near_config, store),
             StateViewerSubCommand::ViewTrie(cmd) => cmd.run(store),
+            StateViewerSubCommand::TrieIterationBenchmark(cmd) => cmd.run(near_config, store),
         }
     }
 }
@@ -144,11 +156,21 @@ pub struct ApplyCmd {
     height: BlockHeight,
     #[clap(long)]
     shard_id: ShardId,
+    #[clap(long)]
+    use_flat_storage: bool,
 }
 
 impl ApplyCmd {
     pub fn run(self, home_dir: &Path, near_config: NearConfig, store: Store) {
-        apply_block_at_height(self.height, self.shard_id, home_dir, near_config, store).unwrap();
+        apply_block_at_height(
+            self.height,
+            self.shard_id,
+            self.use_flat_storage,
+            home_dir,
+            near_config,
+            store,
+        )
+        .unwrap();
     }
 }
 
@@ -158,12 +180,15 @@ pub struct ApplyChunkCmd {
     chunk_hash: String,
     #[clap(long)]
     target_height: Option<u64>,
+    #[clap(long)]
+    use_flat_storage: bool,
 }
 
 impl ApplyChunkCmd {
     pub fn run(self, home_dir: &Path, near_config: NearConfig, store: Store) {
         let hash = ChunkHash::from(CryptoHash::from_str(&self.chunk_hash).unwrap());
-        apply_chunk(home_dir, near_config, store, hash, self.target_height).unwrap()
+        apply_chunk(home_dir, near_config, store, hash, self.target_height, self.use_flat_storage)
+            .unwrap()
     }
 }
 
@@ -183,6 +208,8 @@ pub struct ApplyRangeCmd {
     only_contracts: bool,
     #[clap(long)]
     sequential: bool,
+    #[clap(long)]
+    use_flat_storage: bool,
 }
 
 impl ApplyRangeCmd {
@@ -198,6 +225,7 @@ impl ApplyRangeCmd {
             store,
             self.only_contracts,
             self.sequential,
+            self.use_flat_storage,
         );
     }
 }
@@ -206,12 +234,14 @@ impl ApplyRangeCmd {
 pub struct ApplyReceiptCmd {
     #[clap(long)]
     hash: String,
+    #[clap(long)]
+    use_flat_storage: bool,
 }
 
 impl ApplyReceiptCmd {
     pub fn run(self, home_dir: &Path, near_config: NearConfig, store: Store) {
         let hash = CryptoHash::from_str(&self.hash).unwrap();
-        apply_receipt(home_dir, near_config, store, hash).unwrap();
+        apply_receipt(home_dir, near_config, store, hash, self.use_flat_storage).unwrap();
     }
 }
 
@@ -219,12 +249,14 @@ impl ApplyReceiptCmd {
 pub struct ApplyTxCmd {
     #[clap(long)]
     hash: String,
+    #[clap(long)]
+    use_flat_storage: bool,
 }
 
 impl ApplyTxCmd {
     pub fn run(self, home_dir: &Path, near_config: NearConfig, store: Store) {
         let hash = CryptoHash::from_str(&self.hash).unwrap();
-        apply_tx(home_dir, near_config, store, hash).unwrap();
+        apply_tx(home_dir, near_config, store, hash, self.use_flat_storage).unwrap();
     }
 }
 
@@ -402,11 +434,15 @@ impl DumpTxCmd {
 
 #[derive(clap::Args)]
 pub struct EpochInfoCmd {
+    /// Which EpochInfos to process.
     #[clap(subcommand)]
     epoch_selection: crate::epoch_info::EpochSelection,
     /// Displays kickouts of the given validator and expected and missed blocks and chunks produced.
     #[clap(long)]
     validator_account_id: Option<String>,
+    /// Show only information about kickouts.
+    #[clap(long)]
+    kickouts_summary: bool,
 }
 
 impl EpochInfoCmd {
@@ -414,6 +450,7 @@ impl EpochInfoCmd {
         print_epoch_info(
             self.epoch_selection,
             self.validator_account_id.map(|s| AccountId::from_str(&s).unwrap()),
+            self.kickouts_summary,
             near_config,
             store,
         );
@@ -455,8 +492,8 @@ pub struct ReplayCmd {
 }
 
 impl ReplayCmd {
-    pub fn run(self, home_dir: &Path, near_config: NearConfig, store: Store) {
-        replay_chain(self.start_index, self.end_index, home_dir, near_config, store);
+    pub fn run(self, near_config: NearConfig, store: Store) {
+        replay_chain(self.start_index, self.end_index, near_config, store);
     }
 }
 
@@ -470,6 +507,64 @@ pub struct RocksDBStatsCmd {
 impl RocksDBStatsCmd {
     pub fn run(self, store_dir: &Path) {
         get_rocksdb_stats(store_dir, self.file).expect("Couldn't get RocksDB stats");
+    }
+}
+
+#[derive(clap::Parser, Debug)]
+pub struct ScanDbColumnCmd {
+    /// Column name, e.g. 'Block' or 'BlockHeader'.
+    #[clap(long)]
+    column: String,
+    #[clap(long)]
+    from: Option<String>,
+    // List of comma-separated u8-values.
+    #[clap(long)]
+    from_bytes: Option<String>,
+    #[clap(long)]
+    from_hash: Option<CryptoHash>,
+    #[clap(long)]
+    to: Option<String>,
+    // List of comma-separated u8-values.
+    // For example, if a column key starts wth ShardUId and you want to scan starting from s2.v1 use `--from-bytes 1,0,0,0,2,0,0,0`.
+    // Note that the numbers are generally saved as low-endian.
+    #[clap(long)]
+    to_bytes: Option<String>,
+    #[clap(long)]
+    to_hash: Option<CryptoHash>,
+    #[clap(long)]
+    max_keys: Option<usize>,
+    #[clap(long, default_value = "false")]
+    no_value: bool,
+}
+
+impl ScanDbColumnCmd {
+    pub fn run(self, store: Store) {
+        let lower_bound = Self::prefix(self.from, self.from_bytes, self.from_hash);
+        let upper_bound = Self::prefix(self.to, self.to_bytes, self.to_hash);
+        crate::scan_db::scan_db_column(
+            &self.column,
+            lower_bound.as_deref().map(|v| v.as_ref()),
+            upper_bound.as_deref().map(|v| v.as_ref()),
+            self.max_keys,
+            self.no_value,
+            store,
+        )
+    }
+
+    fn prefix(
+        s: Option<String>,
+        bytes: Option<String>,
+        hash: Option<CryptoHash>,
+    ) -> Option<Vec<u8>> {
+        match (s, bytes, hash) {
+            (None, None, None) => None,
+            (Some(s), None, None) => Some(s.into_bytes()),
+            (None, Some(bytes), None) => {
+                Some(bytes.split(",").map(|s| s.parse::<u8>().unwrap()).collect::<Vec<u8>>())
+            }
+            (None, None, Some(hash)) => Some(hash.try_to_vec().unwrap()),
+            _ => panic!("Need to provide exactly one of bytes, str, or hash"),
+        }
     }
 }
 
@@ -499,6 +594,9 @@ pub struct StatePartsCmd {
     /// Store state parts in an S3 bucket.
     #[clap(long)]
     s3_region: Option<String>,
+    /// Store state parts in an GCS bucket.
+    #[clap(long)]
+    gcs_bucket: Option<String>,
     /// Dump or Apply state parts.
     #[clap(subcommand)]
     command: crate::state_parts::StatePartsSubCommand,
@@ -511,6 +609,7 @@ impl StatePartsCmd {
             self.root_dir,
             self.s3_bucket,
             self.s3_region,
+            self.gcs_bucket,
             home_dir,
             near_config,
             store,

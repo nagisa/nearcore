@@ -10,7 +10,7 @@ use near_o11y::tracing::error;
 use near_primitives::hash::CryptoHash;
 use near_primitives::shard_layout::ShardUId;
 use near_primitives::trie_key::TrieKey;
-use near_primitives::types::{AccountId, ShardId, StateRoot, TrieNodesCount};
+use near_primitives::types::{AccountId, ShardId, StateRoot};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -250,7 +250,7 @@ impl TrieStorage for TriePrefetchingStorage {
                         // Releasing the lock here to unstuck main thread if it
                         // was blocking on this value, but it will also fail on its read.
                         self.prefetching.release(hash);
-                        Err(StorageError::TrieNodeMissing)
+                        Err(StorageError::MissingTrieValue)
                     }
                     Err(e) => {
                         // This is an unrecoverable IO error.
@@ -290,10 +290,6 @@ impl TrieStorage for TriePrefetchingStorage {
                 format!("Prefetcher failed due to memory limit hash {hash}"),
             )),
         }
-    }
-
-    fn get_trie_nodes_count(&self) -> TrieNodesCount {
-        unimplemented!()
     }
 }
 

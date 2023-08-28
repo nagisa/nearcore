@@ -15,7 +15,8 @@ use near_network::test_utils::MockPeerManagerAdapter;
 use near_network::types::NetworkRequests;
 use near_o11y::testonly::init_test_logger;
 use near_primitives::challenge::{
-    BlockDoubleSign, Challenge, ChallengeBody, ChunkProofs, MaybeEncodedShardChunk, StateItem,
+    BlockDoubleSign, Challenge, ChallengeBody, ChunkProofs, MaybeEncodedShardChunk, PartialState,
+    TrieValue,
 };
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::{merklize, MerklePath, PartialMerkleTree};
@@ -45,18 +46,27 @@ fn test_block_with_challenges() {
     let signer = env.clients[0].validator_signer.as_ref().unwrap().clone();
 
     {
-        let body = match &mut block {
-            Block::BlockV1(_) => unreachable!(),
-            Block::BlockV2(body) => Arc::make_mut(body),
-        };
         let challenge_body = ChallengeBody::BlockDoubleSign(BlockDoubleSign {
             left_block_header: genesis.header().try_to_vec().unwrap(),
             right_block_header: genesis.header().try_to_vec().unwrap(),
         });
         let challenge = Challenge::produce(challenge_body, &*signer);
-        body.challenges = vec![challenge];
+        let challenges = vec![challenge];
+        match &mut block {
+            Block::BlockV1(_) => unreachable!(),
+            Block::BlockV2(body) => {
+                let body = Arc::make_mut(body);
+                body.challenges = challenges.clone();
+            }
+            Block::BlockV3(body) => {
+                let body = Arc::make_mut(body);
+                body.body.challenges = challenges.clone();
+            }
+        };
+        let block_body_hash = block.compute_block_body_hash().unwrap();
+        block.mut_header().get_mut().inner_rest.block_body_hash = block_body_hash;
         block.mut_header().get_mut().inner_rest.challenges_root =
-            Block::compute_challenges_root(&body.challenges);
+            Block::compute_challenges_root(&challenges);
         block.mut_header().resign(&*signer);
     }
 
@@ -447,7 +457,7 @@ fn test_verify_chunk_invalid_state_challenge() {
         assert_eq!(prev_merkle_proofs[0], challenge_body.prev_merkle_proof);
         assert_eq!(merkle_proofs[0], challenge_body.merkle_proof);
         // TODO (#6316): enable storage proof generation
-        assert_eq!(challenge_body.partial_state.0, Vec::<StateItem>::new());
+        assert_eq!(challenge_body.partial_state, PartialState::TrieValues(Vec::<TrieValue>::new()));
         // assert_eq!(
         //     challenge_body.partial_state.0,
         //     vec![

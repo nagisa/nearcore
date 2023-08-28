@@ -22,6 +22,20 @@ pub struct VMConfig {
     /// Gas cost of a regular operation.
     pub regular_op_cost: u32,
 
+    /// Disable the fix for the #9393 issue in near-vm-runner.
+    pub disable_9393_fix: bool,
+
+    /// Enable the `FlatStorageReads` protocol feature.
+    ///
+    // TODO(nagisa): replace with StorageGetMode when VMConfig is moved to near-vm-runner.
+    pub flat_storage_reads: bool,
+
+    /// Enable the `FixContractLoadingCost` protocol feature.
+    pub fix_contract_loading_cost: bool,
+
+    /// Enable the `ImplicitAccountCreation` protocol feature.
+    pub implicit_account_creation: bool,
+
     /// Describes limits for VM and Runtime.
     pub limit_config: VMLimitConfig,
 }
@@ -179,7 +193,11 @@ impl VMConfig {
             ext_costs: ExtCostsConfig::test(),
             grow_mem_cost: 1,
             regular_op_cost: (SAFETY_MULTIPLIER as u32) * 1285457,
+            disable_9393_fix: false,
             limit_config: VMLimitConfig::test(),
+            fix_contract_loading_cost: cfg!(feature = "protocol_feature_fix_contract_loading_cost"),
+            flat_storage_reads: true,
+            implicit_account_creation: true,
         }
     }
 
@@ -196,22 +214,24 @@ impl VMConfig {
             ext_costs: ExtCostsConfig::free(),
             grow_mem_cost: 0,
             regular_op_cost: 0,
+            disable_9393_fix: false,
             // We shouldn't have any costs in the limit config.
             limit_config: VMLimitConfig { max_gas_burnt: u64::MAX, ..VMLimitConfig::test() },
+            fix_contract_loading_cost: cfg!(feature = "protocol_feature_fix_contract_loading_cost"),
+            flat_storage_reads: true,
+            implicit_account_creation: true,
         }
     }
 }
 
 impl VMLimitConfig {
     pub fn test() -> Self {
+        const KB: u32 = 1024;
         let max_contract_size = 4 * 2u64.pow(20);
         Self {
             max_gas_burnt: 2 * 10u64.pow(14), // with 10**15 block gas limit this will allow 5 calls.
-
-            // NOTE: Stack height has to be 16K, otherwise Wasmer produces non-deterministic results.
-            // For experimentation try `test_stack_overflow`.
-            max_stack_height: 16 * 1024, // 16Kib of stack.
-            contract_prepare_version: ContractPrepareVersion::V1,
+            max_stack_height: 256 * KB,
+            contract_prepare_version: ContractPrepareVersion::V2,
             initial_memory_pages: 2u32.pow(10), // 64Mib of memory.
             max_memory_pages: 2u32.pow(11),     // 128Mib of memory.
 

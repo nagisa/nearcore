@@ -2,14 +2,28 @@ use crate::test_helpers::heavy_test;
 use actix::{Actor, System};
 use futures::{future, FutureExt};
 use near_actix_test_utils::run_actix;
+use near_chain::chain::ApplyStatePartsRequest;
+use near_chain::types::RuntimeAdapter;
+use near_chain::{ChainGenesis, Provenance};
 use near_chain_configs::ExternalStorageLocation::Filesystem;
 use near_chain_configs::{DumpConfig, ExternalStorageConfig, Genesis, SyncConfig};
-use near_client::GetBlock;
+use near_client::test_utils::TestEnv;
+use near_client::{GetBlock, ProcessTxResponse};
+use near_crypto::{InMemorySigner, KeyType};
+use near_epoch_manager::{EpochManager, EpochManagerHandle};
 use near_network::tcp;
 use near_network::test_utils::{convert_boot_nodes, wait_or_timeout, WaitOrTimeoutActor};
-use near_o11y::testonly::init_integration_logger;
+use near_o11y::testonly::{init_integration_logger, init_test_logger};
 use near_o11y::WithSpanContextExt;
-use nearcore::{config::GenesisExt, load_test_config, start_with_config};
+use near_primitives::shard_layout::ShardUId;
+use near_primitives::state_part::PartId;
+use near_primitives::syncing::{get_num_state_parts, StatePartKey};
+use near_primitives::transaction::SignedTransaction;
+use near_primitives::utils::MaybeValidated;
+use near_primitives_core::types::ShardId;
+use near_store::genesis::initialize_genesis_state;
+use near_store::{DBCol, NodeStorage, Store};
+use nearcore::{config::GenesisExt, load_test_config, start_with_config, NightshadeRuntime};
 use std::ops::ControlFlow;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -335,8 +349,6 @@ fn sync_empty_state() {
                                             Duration::from_millis(200);
                                         near2.client_config.max_block_production_delay =
                                             Duration::from_millis(400);
-                                        near2.client_config.state_fetch_horizon =
-                                            state_sync_horizon;
                                         near2.client_config.block_header_fetch_horizon =
                                             block_header_fetch_horizon;
                                         near2.client_config.block_fetch_horizon =
@@ -398,10 +410,10 @@ fn sync_empty_state() {
     });
 }
 
-/// Runs one node for some time, which dumps state to a temp directory.
-/// Start the second node which gets state parts from that temp directory.
 #[test]
 #[cfg_attr(not(feature = "expensive_tests"), ignore)]
+/// Runs one node for some time, which dumps state to a temp directory.
+/// Start the second node which gets state parts from that temp directory.
 fn sync_state_dump() {
     heavy_test(|| {
         init_integration_logger();
@@ -468,7 +480,6 @@ fn sync_state_dump() {
                                     Duration::from_millis(300);
                                 near2.client_config.max_block_production_delay =
                                     Duration::from_millis(600);
-                                near2.client_config.state_fetch_horizon = state_sync_horizon;
                                 near2.client_config.block_header_fetch_horizon =
                                     block_header_fetch_horizon;
                                 near2.client_config.block_fetch_horizon = block_fetch_horizon;
@@ -482,6 +493,7 @@ fn sync_state_dump() {
                                             root_dir: dump_dir.path().to_path_buf(),
                                         },
                                         num_concurrent_requests: 10,
+                                        num_concurrent_requests_during_catchup: 1,
                                     });
 
                                 let nearcore::NearNode {
@@ -528,5 +540,203 @@ fn sync_state_dump() {
             .unwrap();
             System::current().stop();
         });
+    });
+}
+
+#[test]
+// Test that state sync behaves well when the chunks are absent at the end of the epoch.
+// The test actually fails and the code needs fixing.
+fn test_dump_epoch_missing_chunk_in_last_block() {
+    heavy_test(|| {
+        init_test_logger();
+        let epoch_length = 10;
+
+        for num_last_chunks_missing in 0..6 {
+            assert!(num_last_chunks_missing < epoch_length);
+            let mut genesis =
+                Genesis::test(vec!["test0".parse().unwrap(), "test1".parse().unwrap()], 1);
+            genesis.config.epoch_length = epoch_length;
+            let chain_genesis = ChainGenesis::new(&genesis);
+
+            let num_clients = 2;
+            let env_objects =
+                (0..num_clients)
+                    .map(|_| {
+                        let tmp_dir = tempfile::tempdir().unwrap();
+                        // Use default StoreConfig rather than NodeStorage::test_opener so we’re using the
+                        // same configuration as in production.
+                        let store =
+                            NodeStorage::opener(&tmp_dir.path(), false, &Default::default(), None)
+                                .open()
+                                .unwrap()
+                                .get_hot_store();
+                        initialize_genesis_state(store.clone(), &genesis, Some(tmp_dir.path()));
+                        let epoch_manager =
+                            EpochManager::new_arc_handle(store.clone(), &genesis.config);
+                        let runtime = NightshadeRuntime::test(
+                            tmp_dir.path(),
+                            store.clone(),
+                            &genesis.config,
+                            epoch_manager.clone(),
+                        ) as Arc<dyn RuntimeAdapter>;
+                        (tmp_dir, store, epoch_manager, runtime)
+                    })
+                    .collect::<Vec<(
+                        tempfile::TempDir,
+                        Store,
+                        Arc<EpochManagerHandle>,
+                        Arc<dyn RuntimeAdapter>,
+                    )>>();
+
+            let stores = env_objects.iter().map(|x| x.1.clone()).collect();
+            let epoch_managers = env_objects.iter().map(|x| x.2.clone()).collect();
+            let runtimes = env_objects.iter().map(|x| x.3.clone()).collect();
+
+            let mut env = TestEnv::builder(chain_genesis)
+                .clients_count(num_clients)
+                .stores(stores)
+                .epoch_managers(epoch_managers)
+                .runtimes(runtimes)
+                .use_state_snapshots()
+                .build();
+
+            let genesis_block = env.clients[0].chain.get_block_by_height(0).unwrap();
+            let mut blocks = vec![genesis_block.clone()];
+            let signer =
+                InMemorySigner::from_seed("test0".parse().unwrap(), KeyType::ED25519, "test0");
+            let target_height = epoch_length + 1;
+            for i in 1..=target_height {
+                let block = env.clients[0].produce_block(i).unwrap().unwrap();
+                blocks.push(block.clone());
+                if (i % epoch_length) != 0
+                    && epoch_length - (i % epoch_length) <= num_last_chunks_missing
+                {
+                    // Don't produce chunks for the last blocks of an epoch.
+                    env.clients[0]
+                        .process_block_test_no_produce_chunk(
+                            MaybeValidated::from(block.clone()),
+                            Provenance::PRODUCED,
+                        )
+                        .unwrap();
+                    tracing::info!(
+                        "Block {i}: {:?} -- produced no chunk",
+                        block.header().epoch_id()
+                    );
+                } else {
+                    env.process_block(0, block.clone(), Provenance::PRODUCED);
+                    tracing::info!(
+                        "Block {i}: {:?} -- also produced a chunk",
+                        block.header().epoch_id()
+                    );
+                }
+                env.process_block(1, block, Provenance::NONE);
+
+                let tx = SignedTransaction::send_money(
+                    i + 1,
+                    "test0".parse().unwrap(),
+                    "test1".parse().unwrap(),
+                    &signer,
+                    1,
+                    *genesis_block.hash(),
+                );
+                assert_eq!(env.clients[0].process_tx(tx, false, false), ProcessTxResponse::ValidTx);
+            }
+
+            // Simulate state sync
+
+            // No blocks were skipped, therefore we can compute the block height of the first block of the current epoch.
+            let sync_hash_height = ((target_height / epoch_length) * epoch_length + 1) as usize;
+            let sync_hash = *blocks[sync_hash_height].hash();
+            assert_ne!(
+                blocks[sync_hash_height].header().epoch_id(),
+                blocks[sync_hash_height - 1].header().epoch_id()
+            );
+
+            let state_sync_header =
+                env.clients[0].chain.get_state_response_header(0, sync_hash).unwrap();
+            let state_root = state_sync_header.chunk_prev_state_root();
+            let state_root_node = state_sync_header.state_root_node();
+            let num_parts = get_num_state_parts(state_root_node.memory_usage);
+            // Check that state parts can be obtained.
+            let state_sync_parts: Vec<_> = (0..num_parts)
+                .map(|i| {
+                    // This should obviously not fail, aka succeed.
+                    env.clients[0].chain.get_state_response_part(0, i, sync_hash).unwrap()
+                })
+                .collect();
+
+            env.clients[1].chain.reset_data_pre_state_sync(sync_hash).unwrap();
+            let epoch_id = blocks.last().unwrap().header().epoch_id();
+            for i in 0..num_parts {
+                env.clients[1]
+                    .runtime_adapter
+                    .apply_state_part(
+                        0,
+                        &state_root,
+                        PartId::new(i, num_parts),
+                        &state_sync_parts[i as usize],
+                        &epoch_id,
+                    )
+                    .unwrap();
+            }
+
+            env.clients[1].chain.set_state_header(0, sync_hash, state_sync_header).unwrap();
+            for i in 0..num_parts {
+                env.clients[1]
+                    .chain
+                    .set_state_part(
+                        0,
+                        sync_hash,
+                        PartId::new(i, num_parts),
+                        &state_sync_parts[i as usize],
+                    )
+                    .unwrap();
+            }
+            let rt = Arc::clone(&env.clients[1].runtime_adapter);
+            let f = move |msg: ApplyStatePartsRequest| {
+                use borsh::BorshSerialize;
+                let store = rt.store();
+
+                let shard_id = msg.shard_uid.shard_id as ShardId;
+                for part_id in 0..msg.num_parts {
+                    let key = StatePartKey(msg.sync_hash, shard_id, part_id).try_to_vec().unwrap();
+                    let part = store.get(DBCol::StateParts, &key).unwrap().unwrap();
+
+                    rt.apply_state_part(
+                        shard_id,
+                        &msg.state_root,
+                        PartId::new(part_id, msg.num_parts),
+                        &part,
+                        &msg.epoch_id,
+                    )
+                    .unwrap();
+                }
+            };
+            env.clients[1].chain.schedule_apply_state_parts(0, sync_hash, num_parts, &f).unwrap();
+            env.clients[1].chain.set_state_finalize(0, sync_hash, Ok(())).unwrap();
+            let last_chunk_height = epoch_length - num_last_chunks_missing;
+            for height in 1..epoch_length {
+                if height < last_chunk_height {
+                    assert!(env.clients[1]
+                        .chain
+                        .get_chunk_extra(blocks[height as usize].hash(), &ShardUId::single_shard())
+                        .is_err());
+                } else {
+                    let chunk_extra = env.clients[1]
+                        .chain
+                        .get_chunk_extra(blocks[height as usize].hash(), &ShardUId::single_shard())
+                        .unwrap();
+                    let expected_chunk_extra = env.clients[0]
+                        .chain
+                        .get_chunk_extra(
+                            blocks[last_chunk_height as usize].hash(),
+                            &ShardUId::single_shard(),
+                        )
+                        .unwrap();
+                    // The chunk extra of the prev block of sync block should be the same as the node that it is syncing from
+                    assert_eq!(chunk_extra, expected_chunk_extra);
+                }
+            }
+        }
     });
 }

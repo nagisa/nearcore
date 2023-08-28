@@ -1,13 +1,12 @@
 use crate::errors::ContractPrecompilatonResult;
+use crate::logic::errors::{CacheError, CompilationError, VMRunnerError};
+use crate::logic::types::PromiseResult;
+use crate::logic::{CompiledContractCache, External, VMContext, VMOutcome};
 use crate::vm_kind::VMKind;
-use near_primitives::config::VMConfig;
-use near_primitives::contract::ContractCode;
-use near_primitives::runtime::fees::RuntimeFeesConfig;
-use near_primitives::types::CompiledContractCache;
-use near_primitives::version::ProtocolVersion;
-use near_vm_errors::{CacheError, CompilationError, VMRunnerError};
-use near_vm_logic::types::PromiseResult;
-use near_vm_logic::{External, VMContext, VMOutcome};
+use near_primitives_core::config::VMConfig;
+use near_primitives_core::contract::ContractCode;
+use near_primitives_core::runtime::fees::RuntimeFeesConfig;
+use near_primitives_core::types::ProtocolVersion;
 
 /// Returned by VM::run method.
 ///

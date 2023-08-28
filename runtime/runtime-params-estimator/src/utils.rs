@@ -5,8 +5,8 @@ use crate::transaction_builder::TransactionBuilder;
 use near_primitives::transaction::{
     Action, DeployContractAction, FunctionCallAction, SignedTransaction,
 };
-use near_vm_logic::{ExtCosts, VMConfig};
 use near_vm_runner::internal::VMKind;
+use near_vm_runner::logic::{ExtCosts, VMConfig};
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use rand_xorshift::XorShiftRng;
@@ -295,12 +295,12 @@ pub(crate) fn fn_cost_in_contract(
 }
 
 fn function_call_action(method_name: String) -> Action {
-    Action::FunctionCall(FunctionCallAction {
+    Action::FunctionCall(Box::new(FunctionCallAction {
         method_name,
         args: Vec::new(),
         gas: 10u64.pow(15),
         deposit: 0,
-    })
+    }))
 }
 
 /// Takes a list of measurements of input blocks and returns the cost for a

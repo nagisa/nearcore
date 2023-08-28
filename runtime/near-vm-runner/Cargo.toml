@@ -1,38 +1,43 @@
 [package]
 name = "near-vm-runner"
-version = "0.0.0"
+version.workspace = true
 authors.workspace = true
-publish = true
-# Please update rust-toolchain.toml as well when changing version here:
-rust-version.workspace = true
 edition.workspace = true
-license = "MIT OR Apache-2.0"
-readme = "README.md"
+rust-version.workspace = true
+description = "This crate implements the specification of the interface that Near blockchain exposes to the smart contracts."
+repository.workspace = true
+license.workspace = true
 categories = ["wasm"]
-repository = "https://github.com/near/nearcore"
-description = """
-This crate implements the specification of the interface that Near blockchain exposes to the smart contracts.
-"""
+publish = true
 
 [dependencies]
 anyhow = { workspace = true, optional = true }
+base64.workspace = true
+bn.workspace = true
 borsh.workspace = true
+clap = { workspace = true, optional = true }
+ed25519-dalek.workspace = true
 finite-wasm = { workspace = true, features = ["instrument"] }
+wasm-encoder.workspace = true
 loupe.workspace = true
 memoffset.workspace = true
 once_cell.workspace = true
 parity-wasm.workspace = true
 prefix-sum-vec.workspace = true
+ripemd.workspace = true
 serde.workspace = true
+serde_with.workspace = true
+sha2.workspace = true
+sha3.workspace = true
+stdx.workspace = true
+strum.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
 wasmparser.workspace = true
 wasmtime = { workspace = true, optional = true }
 
-near-cache.workspace = true
-near-vm-logic.workspace = true
-near-vm-errors.workspace = true
-near-primitives.workspace = true
-near-stable-hasher.workspace = true
+near-crypto.workspace = true
+near-primitives-core.workspace = true
 
 # Old versions of pwasm-utils we need to preserve backwards compatibility under
 # old protocol versions.
@@ -41,7 +46,7 @@ parity-wasm_41.workspace = true
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 wasmer-runtime = { workspace = true, optional = true }
-wasmer-runtime-core = { workspace = true, optional = true}
+wasmer-runtime-core = { workspace = true, optional = true }
 wasmer-compiler = { workspace = true, optional = true }
 wasmer-compiler-singlepass = { workspace = true, optional = true }
 wasmer-engine = { workspace = true, optional = true }
@@ -51,7 +56,6 @@ wasmer-vm = { workspace = true, optional = true }
 near-vm-compiler = { workspace = true, optional = true }
 near-vm-compiler-singlepass = { workspace = true, optional = true }
 near-vm-engine = { workspace = true, optional = true }
-near-vm-engine-universal = { workspace = true, features = ["compiler"], optional = true }
 near-vm-types = { workspace = true, optional = true }
 near-vm-vm = { workspace = true, optional = true }
 
@@ -61,14 +65,18 @@ assert_matches.workspace = true
 bolero.workspace = true
 expect-test.workspace = true
 hex.workspace = true
-near-primitives-core.workspace = true
+near-primitives.workspace = true
 near-test-contracts.workspace = true
 rand.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }
 wasm-smith.workspace = true
 wasmprinter.workspace = true
 wat.workspace = true
 
 [features]
+nightly_protocol = [
+  "near-primitives-core/nightly_protocol",
+]
 # all vms enabled for now
 default = [
   "wasmer0_vm",
@@ -90,7 +98,6 @@ near_vm = [
     "near-vm-compiler",
     "near-vm-compiler-singlepass",
     "near-vm-engine",
-    "near-vm-engine-universal",
     "near-vm-types",
     "near-vm-vm"
 ]
@@ -106,17 +113,19 @@ no_cpu_compatibility_checks = []
 no_cache = []
 
 protocol_feature_fix_contract_loading_cost = [
-    "near-primitives/protocol_feature_fix_contract_loading_cost",
-    "near-vm-logic/protocol_feature_fix_contract_loading_cost",
+    "near-primitives-core/protocol_feature_fix_contract_loading_cost",
 ]
 
 nightly = [
-    "near-primitives/nightly",
-    "protocol_feature_fix_contract_loading_cost",
+  "nightly_protocol",
+  "protocol_feature_fix_contract_loading_cost",
+  "near-primitives-core/nightly",
 ]
-sandbox = ["near-vm-logic/sandbox"]
-io_trace = ["near-vm-logic/io_trace"]
+sandbox = []
+io_trace = []
 
+# Use this feature to enable counting of fees and costs applied.
+costs_counting = []
 
 [package.metadata.cargo-udeps.ignore]
 # `no_cache` feature leads to an unused `cached` crate

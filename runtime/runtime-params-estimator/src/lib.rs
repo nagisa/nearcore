@@ -100,8 +100,8 @@ use near_primitives::transaction::{
 };
 use near_primitives::types::AccountId;
 use near_primitives::version::PROTOCOL_VERSION;
-use near_vm_logic::mocks::mock_external::MockedExternal;
-use near_vm_logic::{ExtCosts, VMConfig};
+use near_vm_runner::logic::mocks::mock_external::MockedExternal;
+use near_vm_runner::logic::{ExtCosts, VMConfig};
 use near_vm_runner::MockCompiledContractCache;
 use serde_json::json;
 use utils::{
@@ -244,8 +244,6 @@ static ALL_COSTS: &[(Cost, fn(&mut EstimatorContext) -> GasCost)] = &[
     (Cost::StorageRemoveRetValueByte, storage_remove_ret_value_byte),
     (Cost::TouchingTrieNode, touching_trie_node),
     (Cost::ReadCachedTrieNode, read_cached_trie_node),
-    (Cost::TouchingTrieNodeRead, touching_trie_node_read),
-    (Cost::TouchingTrieNodeWrite, touching_trie_node_write),
     (Cost::ApplyBlock, apply_block_cost),
     (Cost::ContractCompileBase, contract_compile_base),
     (Cost::ContractCompileBytes, contract_compile_bytes),
@@ -524,7 +522,7 @@ fn add_key_transaction(
     tb.transaction_from_actions(
         sender,
         receiver,
-        vec![Action::AddKey(AddKeyAction { public_key, access_key })],
+        vec![Action::AddKey(Box::new(AddKeyAction { public_key, access_key }))],
     )
 }
 
@@ -534,9 +532,9 @@ fn action_delete_key(ctx: &mut EstimatorContext) -> GasCost {
             let sender = tb.random_unused_account();
             let receiver = sender.clone();
 
-            let actions = vec![Action::DeleteKey(DeleteKeyAction {
+            let actions = vec![Action::DeleteKey(Box::new(DeleteKeyAction {
                 public_key: SecretKey::from_seed(KeyType::ED25519, sender.as_ref()).public_key(),
-            })];
+            }))];
             tb.transaction_from_actions(sender, receiver, actions)
         };
         transaction_cost(ctx, &mut make_transaction)
@@ -553,10 +551,10 @@ fn action_stake(ctx: &mut EstimatorContext) -> GasCost {
             let sender = tb.random_unused_account();
             let receiver = sender.clone();
 
-            let actions = vec![Action::Stake(StakeAction {
+            let actions = vec![Action::Stake(Box::new(StakeAction {
                 stake: 1,
                 public_key: "22skMptHjFWNyuEWY22ftn2AbLPSYpmYwGJRGwpNHbTV".parse().unwrap(),
-            })];
+            }))];
             tb.transaction_from_actions(sender, receiver, actions)
         };
         transaction_cost(ctx, &mut make_transaction)
@@ -1168,24 +1166,9 @@ fn storage_remove_ret_value_byte(ctx: &mut EstimatorContext) -> GasCost {
 }
 
 fn touching_trie_node(ctx: &mut EstimatorContext) -> GasCost {
-    let read = touching_trie_node_read(ctx);
-    let write = touching_trie_node_write(ctx);
-    return std::cmp::max(read, write);
-}
-
-fn touching_trie_node_read(ctx: &mut EstimatorContext) -> GasCost {
-    if let Some(cost) = ctx.cached.touching_trie_node_read.clone() {
-        return cost;
-    }
-    let warmup_iters = ctx.config.warmup_iters_per_block;
-    let measured_iters = ctx.config.iter_per_block;
-    // Number of bytes in the final key. Will create 2x that many nodes.
-    // Picked somewhat arbitrarily, balancing estimation time vs accuracy.
-    let final_key_len = 1000;
-    let cost = trie::read_node_from_db(ctx, warmup_iters, measured_iters, final_key_len);
-
-    ctx.cached.touching_trie_node_read = Some(cost.clone());
-    cost
+    // TTN write cost = TTN cost because we no longer charge it on reads since
+    // flat storage for reads was introduced
+    touching_trie_node_write(ctx)
 }
 
 fn touching_trie_node_write(ctx: &mut EstimatorContext) -> GasCost {
@@ -1209,7 +1192,7 @@ fn read_cached_trie_node(ctx: &mut EstimatorContext) -> GasCost {
     let mut testbed = ctx.testbed();
 
     let results = (0..(warmup_iters + iters))
-        .map(|_| trie::read_node_from_chunk_cache(&mut testbed))
+        .map(|_| trie::read_node_from_accounting_cache(&mut testbed))
         .skip(warmup_iters)
         .collect::<Vec<_>>();
     average_cost(results)

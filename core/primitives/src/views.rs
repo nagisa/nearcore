@@ -4,21 +4,23 @@
 //! type gets changed, the view should preserve the old shape and only re-map the necessary bits
 //! from the source structure in the relevant `From<SourceStruct>` impl.
 use crate::account::{AccessKey, AccessKeyPermission, Account, FunctionCallPermission};
+use crate::action::delegate::{DelegateAction, SignedDelegateAction};
 use crate::block::{Block, BlockHeader, Tip};
 use crate::block_header::{
     BlockHeaderInnerLite, BlockHeaderInnerRest, BlockHeaderInnerRestV2, BlockHeaderInnerRestV3,
     BlockHeaderV1, BlockHeaderV2, BlockHeaderV3,
 };
+use crate::block_header::{BlockHeaderInnerRestV4, BlockHeaderV4};
 use crate::challenge::{Challenge, ChallengesResult};
+use crate::checked_feature;
 use crate::contract::ContractCode;
-use crate::delegate_action::{DelegateAction, SignedDelegateAction};
 use crate::errors::TxExecutionError;
 use crate::hash::{hash, CryptoHash};
 use crate::merkle::{combine_hash, MerklePath};
 use crate::network::PeerId;
 use crate::receipt::{ActionReceipt, DataReceipt, DataReceiver, Receipt, ReceiptEnum};
 use crate::runtime::config::RuntimeConfig;
-use crate::serialize::{base64_format, dec_format, option_base64_format};
+use crate::serialize::dec_format;
 use crate::sharding::{
     ChunkHash, ShardChunk, ShardChunkHeader, ShardChunkHeaderInner, ShardChunkHeaderInnerV2,
     ShardChunkHeaderV3,
@@ -30,10 +32,10 @@ use crate::transaction::{
     SignedTransaction, StakeAction, TransferAction,
 };
 use crate::types::{
-    AccountId, AccountWithPublicKey, Balance, BlockHeight, CompiledContractCache, EpochHeight,
-    EpochId, FunctionArgs, Gas, Nonce, NumBlocks, ShardId, StateChangeCause, StateChangeKind,
-    StateChangeValue, StateChangeWithCause, StateChangesRequest, StateRoot, StorageUsage, StoreKey,
-    StoreValue, ValidatorKickoutReason,
+    AccountId, AccountWithPublicKey, Balance, BlockHeight, EpochHeight, EpochId, FunctionArgs, Gas,
+    Nonce, NumBlocks, ShardId, StateChangeCause, StateChangeKind, StateChangeValue,
+    StateChangeWithCause, StateChangesRequest, StateRoot, StorageUsage, StoreKey, StoreValue,
+    ValidatorKickoutReason,
 };
 use crate::version::{ProtocolVersion, Version};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -42,7 +44,10 @@ use near_crypto::{PublicKey, Signature};
 use near_fmt::{AbbrBytes, Slice};
 use near_primitives_core::config::{ActionCosts, ExtCosts, ParameterCost, VMConfig};
 use near_primitives_core::runtime::fees::Fee;
+use near_vm_runner::logic::CompiledContractCache;
 use num_rational::Rational32;
+use serde_with::base64::Base64;
+use serde_with::serde_as;
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
@@ -65,9 +70,11 @@ pub struct AccountView {
 }
 
 /// A view of the contract code.
+#[serde_as]
 #[derive(serde::Serialize, serde::Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct ContractCodeView {
-    #[serde(rename = "code_base64", with = "base64_format")]
+    #[serde(rename = "code_base64")]
+    #[serde_as(as = "Base64")]
     pub code: Vec<u8>,
     pub hash: CryptoHash,
 }
@@ -217,19 +224,14 @@ impl From<AccessKeyView> for AccessKey {
 pub struct StateItem {
     pub key: StoreKey,
     pub value: StoreValue,
-    /// Deprecated, always empty, eventually will be deleted.
-    // TODO(mina86): This was deprecated in 1.30.  Get rid of the field
-    // altogether at 1.33 or something.
-    #[serde(default)]
-    pub proof: Vec<()>,
 }
 
+#[serde_as]
 #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct ViewStateResult {
     pub values: Vec<StateItem>,
-    // TODO(mina86): Empty proof (i.e. sending proof when include_proof is not
-    // set in the request) was deprecated in 1.30.  Add
-    // `#[serde(skip(Vec::if_empty))` at 1.33 or something.
+    #[serde_as(as = "Vec<Base64>")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub proof: Vec<Arc<[u8]>>,
 }
 
@@ -454,6 +456,34 @@ pub struct EdgeView {
 #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
 pub struct NetworkGraphView {
     pub edges: Vec<EdgeView>,
+    pub next_hops: HashMap<PeerId, Vec<PeerId>>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
+pub struct LabeledEdgeView {
+    pub peer0: u32,
+    pub peer1: u32,
+    pub nonce: u64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
+pub struct EdgeCacheView {
+    pub peer_labels: HashMap<PeerId, u32>,
+    pub spanning_trees: HashMap<u32, Vec<LabeledEdgeView>>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
+pub struct PeerDistancesView {
+    pub distance: Vec<Option<u32>>,
+    pub min_nonce: u64,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
+pub struct NetworkRoutesView {
+    pub edge_cache: EdgeCacheView,
+    pub local_edges: HashMap<PeerId, EdgeView>,
+    pub peer_distances: HashMap<PeerId, PeerDistancesView>,
+    pub my_distances: HashMap<PeerId, u32>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq)]
@@ -696,6 +726,7 @@ pub struct BlockHeaderView {
     pub hash: CryptoHash,
     pub prev_hash: CryptoHash,
     pub prev_state_root: CryptoHash,
+    pub block_body_hash: Option<CryptoHash>,
     pub chunk_receipts_root: CryptoHash,
     pub chunk_headers_root: CryptoHash,
     pub chunk_tx_root: CryptoHash,
@@ -726,7 +757,7 @@ pub struct BlockHeaderView {
     pub next_bp_hash: CryptoHash,
     pub block_merkle_root: CryptoHash,
     pub epoch_sync_data_hash: Option<CryptoHash>,
-    pub approvals: Vec<Option<Signature>>,
+    pub approvals: Vec<Option<Box<Signature>>>,
     pub signature: Signature,
     pub latest_protocol_version: ProtocolVersion,
 }
@@ -741,6 +772,7 @@ impl From<BlockHeader> for BlockHeaderView {
             hash: *header.hash(),
             prev_hash: *header.prev_hash(),
             prev_state_root: *header.prev_state_root(),
+            block_body_hash: header.block_body_hash(),
             chunk_receipts_root: *header.chunk_receipts_root(),
             chunk_headers_root: *header.chunk_headers_root(),
             chunk_tx_root: *header.chunk_tx_root(),
@@ -849,7 +881,7 @@ impl From<BlockHeaderView> for BlockHeader {
             };
             header.init();
             BlockHeader::BlockHeaderV2(Arc::new(header))
-        } else {
+        } else if !checked_feature!("stable", BlockHeaderV4, view.latest_protocol_version) {
             let mut header = BlockHeaderV3 {
                 prev_hash: view.prev_hash,
                 inner_lite,
@@ -881,6 +913,39 @@ impl From<BlockHeaderView> for BlockHeader {
             };
             header.init();
             BlockHeader::BlockHeaderV3(Arc::new(header))
+        } else {
+            let mut header = BlockHeaderV4 {
+                prev_hash: view.prev_hash,
+                inner_lite,
+                inner_rest: BlockHeaderInnerRestV4 {
+                    block_body_hash: view.block_body_hash.unwrap_or_default(),
+                    chunk_receipts_root: view.chunk_receipts_root,
+                    chunk_headers_root: view.chunk_headers_root,
+                    chunk_tx_root: view.chunk_tx_root,
+                    challenges_root: view.challenges_root,
+                    random_value: view.random_value,
+                    validator_proposals: view
+                        .validator_proposals
+                        .into_iter()
+                        .map(Into::into)
+                        .collect(),
+                    chunk_mask: view.chunk_mask,
+                    gas_price: view.gas_price,
+                    block_ordinal: view.block_ordinal.unwrap_or(0),
+                    total_supply: view.total_supply,
+                    challenges_result: view.challenges_result,
+                    last_final_block: view.last_final_block,
+                    last_ds_final_block: view.last_ds_final_block,
+                    prev_height: view.prev_height.unwrap_or_default(),
+                    epoch_sync_data_hash: view.epoch_sync_data_hash,
+                    approvals: view.approvals.clone(),
+                    latest_protocol_version: view.latest_protocol_version,
+                },
+                signature: view.signature,
+                hash: CryptoHash::default(),
+            };
+            header.init();
+            BlockHeader::BlockHeaderV4(Arc::new(header))
         }
     }
 }
@@ -911,40 +976,22 @@ pub struct BlockHeaderInnerLiteView {
 
 impl From<BlockHeader> for BlockHeaderInnerLiteView {
     fn from(header: BlockHeader) -> Self {
-        match header {
-            BlockHeader::BlockHeaderV1(header) => BlockHeaderInnerLiteView {
-                height: header.inner_lite.height,
-                epoch_id: header.inner_lite.epoch_id.0,
-                next_epoch_id: header.inner_lite.next_epoch_id.0,
-                prev_state_root: header.inner_lite.prev_state_root,
-                outcome_root: header.inner_lite.outcome_root,
-                timestamp: header.inner_lite.timestamp,
-                timestamp_nanosec: header.inner_lite.timestamp,
-                next_bp_hash: header.inner_lite.next_bp_hash,
-                block_merkle_root: header.inner_lite.block_merkle_root,
-            },
-            BlockHeader::BlockHeaderV2(header) => BlockHeaderInnerLiteView {
-                height: header.inner_lite.height,
-                epoch_id: header.inner_lite.epoch_id.0,
-                next_epoch_id: header.inner_lite.next_epoch_id.0,
-                prev_state_root: header.inner_lite.prev_state_root,
-                outcome_root: header.inner_lite.outcome_root,
-                timestamp: header.inner_lite.timestamp,
-                timestamp_nanosec: header.inner_lite.timestamp,
-                next_bp_hash: header.inner_lite.next_bp_hash,
-                block_merkle_root: header.inner_lite.block_merkle_root,
-            },
-            BlockHeader::BlockHeaderV3(header) => BlockHeaderInnerLiteView {
-                height: header.inner_lite.height,
-                epoch_id: header.inner_lite.epoch_id.0,
-                next_epoch_id: header.inner_lite.next_epoch_id.0,
-                prev_state_root: header.inner_lite.prev_state_root,
-                outcome_root: header.inner_lite.outcome_root,
-                timestamp: header.inner_lite.timestamp,
-                timestamp_nanosec: header.inner_lite.timestamp,
-                next_bp_hash: header.inner_lite.next_bp_hash,
-                block_merkle_root: header.inner_lite.block_merkle_root,
-            },
+        let inner_lite = match &header {
+            BlockHeader::BlockHeaderV1(header) => &header.inner_lite,
+            BlockHeader::BlockHeaderV2(header) => &header.inner_lite,
+            BlockHeader::BlockHeaderV3(header) => &header.inner_lite,
+            BlockHeader::BlockHeaderV4(header) => &header.inner_lite,
+        };
+        BlockHeaderInnerLiteView {
+            height: inner_lite.height,
+            epoch_id: inner_lite.epoch_id.0,
+            next_epoch_id: inner_lite.next_epoch_id.0,
+            prev_state_root: inner_lite.prev_state_root,
+            outcome_root: inner_lite.outcome_root,
+            timestamp: inner_lite.timestamp,
+            timestamp_nanosec: inner_lite.timestamp,
+            next_bp_hash: inner_lite.next_bp_hash,
+            block_merkle_root: inner_lite.block_merkle_root,
         }
     }
 }
@@ -1091,6 +1138,7 @@ impl ChunkView {
     }
 }
 
+#[serde_as]
 #[derive(
     BorshSerialize,
     BorshDeserialize,
@@ -1104,7 +1152,7 @@ impl ChunkView {
 pub enum ActionView {
     CreateAccount,
     DeployContract {
-        #[serde(with = "base64_format")]
+        #[serde_as(as = "Base64")]
         code: Vec<u8>,
     },
     FunctionCall {
@@ -1183,31 +1231,28 @@ impl TryFrom<ActionView> for Action {
                 Action::DeployContract(DeployContractAction { code })
             }
             ActionView::FunctionCall { method_name, args, gas, deposit } => {
-                Action::FunctionCall(FunctionCallAction {
+                Action::FunctionCall(Box::new(FunctionCallAction {
                     method_name,
                     args: args.into(),
                     gas,
                     deposit,
-                })
+                }))
             }
             ActionView::Transfer { deposit } => Action::Transfer(TransferAction { deposit }),
             ActionView::Stake { stake, public_key } => {
-                Action::Stake(StakeAction { stake, public_key })
+                Action::Stake(Box::new(StakeAction { stake, public_key }))
             }
             ActionView::AddKey { public_key, access_key } => {
-                Action::AddKey(AddKeyAction { public_key, access_key: access_key.into() })
+                Action::AddKey(Box::new(AddKeyAction { public_key, access_key: access_key.into() }))
             }
             ActionView::DeleteKey { public_key } => {
-                Action::DeleteKey(DeleteKeyAction { public_key })
+                Action::DeleteKey(Box::new(DeleteKeyAction { public_key }))
             }
             ActionView::DeleteAccount { beneficiary_id } => {
                 Action::DeleteAccount(DeleteAccountAction { beneficiary_id })
             }
             ActionView::Delegate { delegate_action, signature } => {
-                Action::Delegate(SignedDelegateAction {
-                    delegate_action: delegate_action,
-                    signature,
-                })
+                Action::Delegate(Box::new(SignedDelegateAction { delegate_action, signature }))
             }
         })
     }
@@ -1253,6 +1298,7 @@ impl From<SignedTransaction> for SignedTransactionView {
     }
 }
 
+#[serde_as]
 #[derive(
     BorshSerialize,
     BorshDeserialize,
@@ -1272,7 +1318,7 @@ pub enum FinalExecutionStatus {
     /// The execution has failed with the given error.
     Failure(TxExecutionError),
     /// The execution has succeeded and returned some value or an empty vec encoded in base64.
-    SuccessValue(#[serde(with = "base64_format")] Vec<u8>),
+    SuccessValue(#[serde_as(as = "Base64")] Vec<u8>),
 }
 
 impl fmt::Debug for FinalExecutionStatus {
@@ -1304,6 +1350,7 @@ pub enum ServerError {
     Closed,
 }
 
+#[serde_as]
 #[derive(
     BorshSerialize, BorshDeserialize, serde::Serialize, serde::Deserialize, PartialEq, Eq, Clone,
 )]
@@ -1313,7 +1360,7 @@ pub enum ExecutionStatusView {
     /// The execution has failed.
     Failure(TxExecutionError),
     /// The final action succeeded and returned some value or an empty vec encoded in base64.
-    SuccessValue(#[serde(with = "base64_format")] Vec<u8>),
+    SuccessValue(#[serde_as(as = "Base64")] Vec<u8>),
     /// The final action of the receipt returned a promise or the signed transaction was converted
     /// to a receipt. Contains the receipt_id of the generated receipt.
     SuccessReceiptId(CryptoHash),
@@ -1770,6 +1817,7 @@ pub struct DataReceiverView {
     pub receiver_id: AccountId,
 }
 
+#[serde_as]
 #[derive(
     BorshSerialize,
     BorshDeserialize,
@@ -1792,7 +1840,7 @@ pub enum ReceiptEnumView {
     },
     Data {
         data_id: CryptoHash,
-        #[serde(with = "option_base64_format")]
+        #[serde_as(as = "Option<Base64>")]
         data: Option<Vec<u8>>,
     },
 }
@@ -1963,7 +2011,7 @@ pub struct LightClientBlockView {
     pub inner_lite: BlockHeaderInnerLiteView,
     pub inner_rest_hash: CryptoHash,
     pub next_bps: Option<Vec<ValidatorStakeView>>,
-    pub approvals_after_next: Vec<Option<Signature>>,
+    pub approvals_after_next: Vec<Option<Box<Signature>>>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, BorshDeserialize, BorshSerialize)]
@@ -2124,6 +2172,7 @@ impl From<StateChangeCause> for StateChangeCauseView {
     }
 }
 
+#[serde_as]
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type", content = "change")]
 pub enum StateChangeValueView {
@@ -2158,7 +2207,8 @@ pub enum StateChangeValueView {
     },
     ContractCodeUpdate {
         account_id: AccountId,
-        #[serde(rename = "code_base64", with = "base64_format")]
+        #[serde(rename = "code_base64")]
+        #[serde_as(as = "Base64")]
         code: Vec<u8>,
     },
     ContractCodeDeletion {
@@ -2423,6 +2473,15 @@ pub struct VMConfigView {
     /// Gas cost of a regular operation.
     pub regular_op_cost: u32,
 
+    /// See [`VMConfig::disable_9393_fix`].
+    pub disable_9393_fix: bool,
+    /// See [`VMConfig::flat_storage_reads`].
+    pub flat_storage_reads: bool,
+    /// See [`VMConfig::fix_contract_loading_cost`].
+    pub fix_contract_loading_cost: bool,
+    /// See [`VMConfig::implicit_account_creation`].
+    pub implicit_account_creation: bool,
+
     /// Describes limits for VM and Runtime.
     ///
     /// TODO: Consider changing this to `VMLimitConfigView` to avoid dependency
@@ -2436,7 +2495,11 @@ impl From<VMConfig> for VMConfigView {
             ext_costs: ExtCostsConfigView::from(config.ext_costs),
             grow_mem_cost: config.grow_mem_cost,
             regular_op_cost: config.regular_op_cost,
+            disable_9393_fix: config.disable_9393_fix,
             limit_config: config.limit_config,
+            flat_storage_reads: config.flat_storage_reads,
+            fix_contract_loading_cost: config.fix_contract_loading_cost,
+            implicit_account_creation: config.implicit_account_creation,
         }
     }
 }
@@ -2447,7 +2510,11 @@ impl From<VMConfigView> for VMConfig {
             ext_costs: near_primitives_core::config::ExtCostsConfig::from(view.ext_costs),
             grow_mem_cost: view.grow_mem_cost,
             regular_op_cost: view.regular_op_cost,
+            disable_9393_fix: view.disable_9393_fix,
             limit_config: view.limit_config,
+            flat_storage_reads: view.flat_storage_reads,
+            fix_contract_loading_cost: view.fix_contract_loading_cost,
+            implicit_account_creation: view.implicit_account_creation,
         }
     }
 }
@@ -2783,6 +2850,8 @@ mod tests {
         use crate::runtime::config::RuntimeConfig;
         use crate::views::RuntimeConfigView;
 
+        // FIXME(#8202): This is snapshotting a config used for *tests*, rather than proper
+        // production configurations. That seems… subpar?
         let config = RuntimeConfig::test();
         let view = RuntimeConfigView::from(config);
         insta::assert_json_snapshot!(&view);

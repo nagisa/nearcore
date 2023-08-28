@@ -138,8 +138,8 @@ wasm_alt_bn128_g1_sum_base                     3_000_000_000
 wasm_alt_bn128_g1_sum_element                  5_000_000_000
 max_gas_burnt                            300_000_000_000_000
 max_gas_burnt_view                       300_000_000_000_000
-max_stack_height                                      16_384
-contract_prepare_version                                   1
+max_stack_height                                     262_144
+contract_prepare_version                                   2
 initial_memory_pages                                   1_024
 max_memory_pages                                       2_048
 registers_memory_limit                         1_073_741_824
@@ -163,4 +163,8 @@ max_functions_number_per_contract                     10_000
 wasmer2_stack_limit                                  204_800
 max_locals_per_contract                            1_000_000
 account_id_validity_rules_version                          1
+disable_9393_fix                        false
+flat_storage_reads                      true
+implicit_account_creation               true
+fix_contract_loading_cost               true
 

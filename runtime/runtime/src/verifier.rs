@@ -1,7 +1,8 @@
 use near_crypto::key_conversion::is_valid_staking_key;
+use near_primitives::action::delegate::SignedDelegateAction;
 use near_primitives::checked_feature;
-use near_primitives::delegate_action::SignedDelegateAction;
 use near_primitives::runtime::config::RuntimeConfig;
+use near_primitives::transaction::DeleteAccountAction;
 use near_primitives::types::{BlockHeight, StorageUsage};
 use near_primitives::version::ProtocolFeature;
 use near_primitives::{
@@ -122,7 +123,7 @@ pub fn validate_transaction(
 
     let sender_is_receiver = &transaction.receiver_id == signer_id;
 
-    tx_cost(&config.fees, transaction, gas_price, sender_is_receiver, current_protocol_version)
+    tx_cost(&config, transaction, gas_price, sender_is_receiver)
         .map_err(|_| InvalidTxError::CostOverflow.into())
 }
 
@@ -134,7 +135,7 @@ pub fn verify_and_charge_transaction(
     gas_price: Balance,
     signed_transaction: &SignedTransaction,
     verify_signature: bool,
-    #[allow(unused)] block_height: Option<BlockHeight>,
+    block_height: Option<BlockHeight>,
     current_protocol_version: ProtocolVersion,
 ) -> Result<VerificationResult, RuntimeError> {
     let TransactionCost { gas_burnt, gas_remaining, receipt_gas_price, total_cost, burnt_amount } =
@@ -403,7 +404,7 @@ pub fn validate_action(
         Action::Stake(a) => validate_stake_action(a),
         Action::AddKey(a) => validate_add_key_action(limit_config, a),
         Action::DeleteKey(_) => Ok(()),
-        Action::DeleteAccount(_) => Ok(()),
+        Action::DeleteAccount(a) => validate_delete_action(a),
         Action::Delegate(a) => validate_delegate_action(limit_config, a, current_protocol_version),
     }
 }
@@ -482,8 +483,8 @@ fn validate_add_key_action(
         // Check whether `receiver_id` is a valid account_id. Historically, we
         // allowed arbitrary strings there!
         match limit_config.account_id_validity_rules_version {
-            near_vm_logic::AccountIdValidityRulesVersion::V0 => (),
-            near_vm_logic::AccountIdValidityRulesVersion::V1 => {
+            near_vm_runner::logic::AccountIdValidityRulesVersion::V0 => (),
+            near_vm_runner::logic::AccountIdValidityRulesVersion::V1 => {
                 if let Err(_) = fc.receiver_id.parse::<AccountId>() {
                     return Err(ActionsValidationError::InvalidAccountId {
                         account_id: truncate_string(&fc.receiver_id, AccountId::MAX_LEN * 2),
@@ -511,6 +512,19 @@ fn validate_add_key_action(
                 limit: limit_config.max_number_bytes_method_names,
             });
         }
+    }
+
+    Ok(())
+}
+
+/// Validates `DeleteAction`.
+///
+/// Checks that the `beneficiary_id` is a valid account ID.
+fn validate_delete_action(action: &DeleteAccountAction) -> Result<(), ActionsValidationError> {
+    if AccountId::validate(&action.beneficiary_id).is_err() {
+        return Err(ActionsValidationError::InvalidAccountId {
+            account_id: action.beneficiary_id.to_string(),
+        });
     }
 
     Ok(())
@@ -548,7 +562,7 @@ mod tests {
     use crate::near_primitives::borsh::BorshSerialize;
     use near_crypto::{InMemorySigner, KeyType, PublicKey, Signature, Signer};
     use near_primitives::account::{AccessKey, FunctionCallPermission};
-    use near_primitives::delegate_action::{DelegateAction, NonDelegateAction};
+    use near_primitives::action::delegate::{DelegateAction, NonDelegateAction};
     use near_primitives::hash::{hash, CryptoHash};
     use near_primitives::test_utils::account_new;
     use near_primitives::transaction::{
@@ -925,12 +939,12 @@ mod tests {
                 alice_account(),
                 bob_account(),
                 &*signer,
-                vec![Action::FunctionCall(FunctionCallAction {
+                vec![Action::FunctionCall(Box::new(FunctionCallAction {
                     method_name: "hello".to_string(),
                     args: b"abc".to_vec(),
                     gas: 200,
                     deposit: 0,
-                })],
+                }))],
                 CryptoHash::default(),
             ),
             RuntimeError::InvalidTxError(InvalidTxError::ActionsValidation(
@@ -1087,12 +1101,12 @@ mod tests {
                 alice_account(),
                 bob_account(),
                 &*signer,
-                vec![Action::FunctionCall(FunctionCallAction {
+                vec![Action::FunctionCall(Box::new(FunctionCallAction {
                     method_name: "hello".to_string(),
                     args: b"abc".to_vec(),
                     gas: 300,
                     deposit: 0,
-                })],
+                }))],
                 CryptoHash::default(),
             ),
             true,
@@ -1220,12 +1234,12 @@ mod tests {
                     bob_account(),
                     &*signer,
                     vec![
-                        Action::FunctionCall(FunctionCallAction {
+                        Action::FunctionCall(Box::new(FunctionCallAction {
                             method_name: "hello".to_string(),
                             args: b"abc".to_vec(),
                             gas: 100,
                             deposit: 0,
-                        }),
+                        })),
                         Action::CreateAccount(CreateAccountAction {})
                     ],
                     CryptoHash::default(),
@@ -1313,12 +1327,12 @@ mod tests {
                     alice_account(),
                     eve_dot_alice_account(),
                     &*signer,
-                    vec![Action::FunctionCall(FunctionCallAction {
+                    vec![Action::FunctionCall(Box::new(FunctionCallAction {
                         method_name: "hello".to_string(),
                         args: b"abc".to_vec(),
                         gas: 100,
                         deposit: 0,
-                    }),],
+                    })),],
                     CryptoHash::default(),
                 ),
                 true,
@@ -1361,12 +1375,12 @@ mod tests {
                     alice_account(),
                     bob_account(),
                     &*signer,
-                    vec![Action::FunctionCall(FunctionCallAction {
+                    vec![Action::FunctionCall(Box::new(FunctionCallAction {
                         method_name: "hello".to_string(),
                         args: b"abc".to_vec(),
                         gas: 100,
                         deposit: 0,
-                    }),],
+                    })),],
                     CryptoHash::default(),
                 ),
                 true,
@@ -1406,12 +1420,12 @@ mod tests {
                     alice_account(),
                     bob_account(),
                     &*signer,
-                    vec![Action::FunctionCall(FunctionCallAction {
+                    vec![Action::FunctionCall(Box::new(FunctionCallAction {
                         method_name: "hello".to_string(),
                         args: b"abc".to_vec(),
                         gas: 100,
                         deposit: 100,
-                    }),],
+                    })),],
                     CryptoHash::default(),
                 ),
                 true,
@@ -1561,12 +1575,12 @@ mod tests {
         let limit_config = VMLimitConfig::test();
         validate_actions(
             &limit_config,
-            &[Action::FunctionCall(FunctionCallAction {
+            &[Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: "hello".to_string(),
                 args: b"abc".to_vec(),
                 gas: 100,
                 deposit: 0,
-            })],
+            }))],
             PROTOCOL_VERSION,
         )
         .expect("valid function call action");
@@ -1580,18 +1594,18 @@ mod tests {
             validate_actions(
                 &limit_config,
                 &[
-                    Action::FunctionCall(FunctionCallAction {
+                    Action::FunctionCall(Box::new(FunctionCallAction {
                         method_name: "hello".to_string(),
                         args: b"abc".to_vec(),
                         gas: 100,
                         deposit: 0,
-                    }),
-                    Action::FunctionCall(FunctionCallAction {
+                    })),
+                    Action::FunctionCall(Box::new(FunctionCallAction {
                         method_name: "hello".to_string(),
                         args: b"abc".to_vec(),
                         gas: 150,
                         deposit: 0,
-                    })
+                    }))
                 ],
                 PROTOCOL_VERSION,
             )
@@ -1608,18 +1622,18 @@ mod tests {
             validate_actions(
                 &limit_config,
                 &[
-                    Action::FunctionCall(FunctionCallAction {
+                    Action::FunctionCall(Box::new(FunctionCallAction {
                         method_name: "hello".to_string(),
                         args: b"abc".to_vec(),
                         gas: u64::max_value() / 2 + 1,
                         deposit: 0,
-                    }),
-                    Action::FunctionCall(FunctionCallAction {
+                    })),
+                    Action::FunctionCall(Box::new(FunctionCallAction {
                         method_name: "hello".to_string(),
                         args: b"abc".to_vec(),
                         gas: u64::max_value() / 2 + 1,
                         deposit: 0,
-                    })
+                    }))
                 ],
                 PROTOCOL_VERSION,
             )
@@ -1704,12 +1718,12 @@ mod tests {
     fn test_validate_action_valid_function_call() {
         validate_action(
             &VMLimitConfig::test(),
-            &Action::FunctionCall(FunctionCallAction {
+            &Action::FunctionCall(Box::new(FunctionCallAction {
                 method_name: "hello".to_string(),
                 args: b"abc".to_vec(),
                 gas: 100,
                 deposit: 0,
-            }),
+            })),
             PROTOCOL_VERSION,
         )
         .expect("valid action");
@@ -1720,12 +1734,12 @@ mod tests {
         assert_eq!(
             validate_action(
                 &VMLimitConfig::test(),
-                &Action::FunctionCall(FunctionCallAction {
+                &Action::FunctionCall(Box::new(FunctionCallAction {
                     method_name: "new".to_string(),
                     args: vec![],
                     gas: 0,
                     deposit: 0,
-                }),
+                })),
                 PROTOCOL_VERSION,
             )
             .expect_err("expected an error"),
@@ -1747,10 +1761,10 @@ mod tests {
     fn test_validate_action_valid_stake() {
         validate_action(
             &VMLimitConfig::test(),
-            &Action::Stake(StakeAction {
+            &Action::Stake(Box::new(StakeAction {
                 stake: 100,
                 public_key: "ed25519:KuTCtARNzxZQ3YvXDeLjx83FDqxv2SdQTSbiq876zR7".parse().unwrap(),
-            }),
+            })),
             PROTOCOL_VERSION,
         )
         .expect("valid action");
@@ -1761,10 +1775,10 @@ mod tests {
         assert_eq!(
             validate_action(
                 &VMLimitConfig::test(),
-                &Action::Stake(StakeAction {
+                &Action::Stake(Box::new(StakeAction {
                     stake: 100,
                     public_key: PublicKey::empty(KeyType::ED25519),
-                }),
+                })),
                 PROTOCOL_VERSION,
             )
             .expect_err("Expected an error"),
@@ -1778,10 +1792,10 @@ mod tests {
     fn test_validate_action_valid_add_key_full_permission() {
         validate_action(
             &VMLimitConfig::test(),
-            &Action::AddKey(AddKeyAction {
+            &Action::AddKey(Box::new(AddKeyAction {
                 public_key: PublicKey::empty(KeyType::ED25519),
                 access_key: AccessKey::full_access(),
-            }),
+            })),
             PROTOCOL_VERSION,
         )
         .expect("valid action");
@@ -1791,7 +1805,7 @@ mod tests {
     fn test_validate_action_valid_add_key_function_call() {
         validate_action(
             &VMLimitConfig::test(),
-            &Action::AddKey(AddKeyAction {
+            &Action::AddKey(Box::new(AddKeyAction {
                 public_key: PublicKey::empty(KeyType::ED25519),
                 access_key: AccessKey {
                     nonce: 0,
@@ -1801,7 +1815,7 @@ mod tests {
                         method_names: vec!["hello".to_string(), "world".to_string()],
                     }),
                 },
-            }),
+            })),
             PROTOCOL_VERSION,
         )
         .expect("valid action");
@@ -1811,7 +1825,9 @@ mod tests {
     fn test_validate_action_valid_delete_key() {
         validate_action(
             &VMLimitConfig::test(),
-            &Action::DeleteKey(DeleteKeyAction { public_key: PublicKey::empty(KeyType::ED25519) }),
+            &Action::DeleteKey(Box::new(DeleteKeyAction {
+                public_key: PublicKey::empty(KeyType::ED25519),
+            })),
             PROTOCOL_VERSION,
         )
         .expect("valid action");
@@ -1847,8 +1863,8 @@ mod tests {
             validate_actions(
                 &VMLimitConfig::test(),
                 &[
-                    Action::Delegate(signed_delegate_action.clone()),
-                    Action::Delegate(signed_delegate_action.clone()),
+                    Action::Delegate(Box::new(signed_delegate_action.clone())),
+                    Action::Delegate(Box::new(signed_delegate_action.clone())),
                 ],
                 PROTOCOL_VERSION,
             ),
@@ -1857,7 +1873,7 @@ mod tests {
         assert_eq!(
             validate_actions(
                 &&VMLimitConfig::test(),
-                &[Action::Delegate(signed_delegate_action.clone()),],
+                &[Action::Delegate(Box::new(signed_delegate_action.clone())),],
                 PROTOCOL_VERSION,
             ),
             Ok(()),
@@ -1867,7 +1883,7 @@ mod tests {
                 &VMLimitConfig::test(),
                 &[
                     Action::CreateAccount(CreateAccountAction {}),
-                    Action::Delegate(signed_delegate_action),
+                    Action::Delegate(Box::new(signed_delegate_action)),
                 ],
                 PROTOCOL_VERSION,
             ),

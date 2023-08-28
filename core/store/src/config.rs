@@ -2,7 +2,9 @@ use near_primitives::shard_layout::ShardUId;
 use std::time::Duration;
 use std::{collections::HashMap, iter::FromIterator};
 
-use crate::trie::DEFAULT_SHARD_CACHE_TOTAL_SIZE_LIMIT;
+use crate::trie::{
+    DEFAULT_SHARD_CACHE_DELETIONS_QUEUE_CAPACITY, DEFAULT_SHARD_CACHE_TOTAL_SIZE_LIMIT,
+};
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -83,15 +85,26 @@ pub struct StoreConfig {
     /// Number of threads to execute storage background migrations.
     /// Needed to create flat storage which need to happen in parallel
     /// with block processing.
+    /// TODO (#8826): remove, because creation successfully happened in 1.34.
     pub background_migration_threads: usize,
 
     /// Enables background flat storage creation.
+    /// TODO (#8826): remove, because creation successfully happened in 1.34.
     pub flat_storage_creation_enabled: bool,
 
     /// Duration to perform background flat storage creation step. Defines how
     /// frequently we check creation status and execute work related to it in
     /// main thread (scheduling and collecting state parts, catching up blocks, etc.).
+    /// TODO (#8826): remove, because creation successfully happened in 1.34.
     pub flat_storage_creation_period: Duration,
+
+    /// Enables state snapshot at the beginning of epochs.
+    /// Needed if a node wants to be able to respond to state part requests.
+    pub state_snapshot_enabled: bool,
+
+    // State Snapshot compaction usually is a good thing.
+    // It makes state snapshots tiny (10GB) over the course of an epoch.
+    pub state_snapshot_compaction_enabled: bool,
 }
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
@@ -200,6 +213,7 @@ impl Default for StoreConfig {
                     ShardUId { version: 1, shard_id: 3 },
                     3_000_000_000,
                 )]),
+                shard_cache_deletions_queue_capacity: DEFAULT_SHARD_CACHE_DELETIONS_QUEUE_CAPACITY,
             },
 
             // Use default sized caches for view calls, because they don't impact
@@ -229,6 +243,13 @@ impl Default for StoreConfig {
             // One second should be enough to save deltas on start and catch up
             // flat storage head quickly. State read work is much more expensive.
             flat_storage_creation_period: Duration::from_secs(1),
+
+            // State Snapshots involve filesystem operations and costly IO operations.
+            // Let's keep it disabled by default for now.
+            state_snapshot_enabled: false,
+
+            // Compaction involves a lot of IO and takes considerable amount of time.
+            state_snapshot_compaction_enabled: false,
         }
     }
 }
@@ -279,6 +300,9 @@ pub struct TrieCacheConfig {
     pub default_max_bytes: u64,
     /// Overwrites `default_max_bytes` for specific shards.
     pub per_shard_max_bytes: HashMap<ShardUId, u64>,
+    /// Limit the number of elements in caches deletions queue for specific
+    /// shard
+    pub shard_cache_deletions_queue_capacity: usize,
 }
 
 impl Default for TrieCacheConfig {
@@ -286,6 +310,7 @@ impl Default for TrieCacheConfig {
         Self {
             default_max_bytes: DEFAULT_SHARD_CACHE_TOTAL_SIZE_LIMIT,
             per_shard_max_bytes: Default::default(),
+            shard_cache_deletions_queue_capacity: DEFAULT_SHARD_CACHE_DELETIONS_QUEUE_CAPACITY,
         }
     }
 }

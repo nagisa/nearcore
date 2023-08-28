@@ -218,7 +218,13 @@ impl Instance {
     /// Return the indexed `VMMemoryImport`.
     fn imported_memory(&self, index: MemoryIndex) -> &VMMemoryImport {
         let index = usize::try_from(index.as_u32()).unwrap();
-        unsafe { &*self.imported_memories_ptr().add(index) }
+        let addr = unsafe { self.imported_memories_ptr().add(index) };
+        let align = std::mem::align_of::<VMMemoryImport>();
+        debug_assert!(
+            addr as usize % align == 0,
+            "VMMemoryImport addr is not aligned to {align}: {addr:p}"
+        );
+        unsafe { &*addr }
     }
 
     /// Return a pointer to the `VMMemoryImport`s.
@@ -1139,8 +1145,8 @@ impl InstanceHandle {
 /// - This function must be called with the correct `Err` type parameter: the error type is not
 ///   visible to code in `near_vm_vm`, so it's the caller's responsibility to ensure these
 ///   functions are called with the correct type.
-/// - `instance_ptr` must point to a valid `near_vm::Instance`.
-#[tracing::instrument(skip_all)]
+/// - `instance_ptr` must point to a valid `near_vm_test_api::Instance`.
+#[tracing::instrument(target = "near_vm", level = "trace", skip_all)]
 pub unsafe fn initialize_host_envs<Err: Sized>(
     handle: &std::sync::Mutex<InstanceHandle>,
     instance_ptr: *const ffi::c_void,

@@ -1,6 +1,7 @@
 use crate::metadata::DbKind;
 use crate::{DBCol, Store, StoreUpdate};
 use borsh::{BorshDeserialize, BorshSerialize};
+use near_primitives::state::FlatStateValue;
 use near_primitives::transaction::{ExecutionOutcomeWithIdAndProof, ExecutionOutcomeWithProof};
 use near_primitives::utils::get_outcome_id_block_hash;
 use std::collections::HashMap;
@@ -196,13 +197,35 @@ pub fn migrate_36_to_37(store: &Store) -> anyhow::Result<()> {
             LegacyFlatStateChanges::try_from_slice(&old_value)?
                 .0
                 .into_iter()
-                .map(|(key, value_ref)| {
-                    (key, value_ref.map(|v| crate::flat::FlatStateValue::Ref(v)))
-                })
+                .map(|(key, value_ref)| (key, value_ref.map(|v| FlatStateValue::Ref(v))))
                 .collect(),
         )
         .try_to_vec()?;
         update.set(DBCol::FlatStateChanges, &key, &new_value);
+    }
+    update.commit()?;
+    Ok(())
+}
+
+/// Migrates the database from version 37 to 38.
+///
+/// Rewrites FlatStateDeltaMetadata to add a bit to Metadata, `prev_block_with_changes`.
+/// That bit is initialized with a `None` regardless of the corresponding flat state changes.
+pub fn migrate_37_to_38(store: &Store) -> anyhow::Result<()> {
+    #[derive(borsh::BorshDeserialize)]
+    struct LegacyFlatStateDeltaMetadata {
+        block: crate::flat::BlockInfo,
+    }
+
+    let mut update = store.store_update();
+    update.delete_all(DBCol::FlatStateDeltaMetadata);
+    for result in store.iter(DBCol::FlatStateDeltaMetadata) {
+        let (key, old_value) = result?;
+        let LegacyFlatStateDeltaMetadata { block } =
+            LegacyFlatStateDeltaMetadata::try_from_slice(&old_value)?;
+        let new_value =
+            crate::flat::FlatStateDeltaMetadata { block, prev_block_with_changes: None };
+        update.set(DBCol::FlatStateDeltaMetadata, &key, &new_value.try_to_vec()?);
     }
     update.commit()?;
     Ok(())

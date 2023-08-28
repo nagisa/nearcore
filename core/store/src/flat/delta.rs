@@ -2,13 +2,12 @@ use borsh::{BorshDeserialize, BorshSerialize};
 
 use near_primitives::hash::hash;
 use near_primitives::shard_layout::ShardUId;
-use near_primitives::state::ValueRef;
-use near_primitives::types::RawStateChangesWithTrieKey;
+use near_primitives::state::{FlatStateValue, ValueRef};
+use near_primitives::types::{BlockHeight, RawStateChangesWithTrieKey};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::types::INLINE_DISK_VALUE_THRESHOLD;
-use super::{store_helper, BlockInfo, FlatStateValue};
+use super::{store_helper, BlockInfo};
 use crate::{CryptoHash, StoreUpdate};
 
 #[derive(Debug)]
@@ -17,11 +16,22 @@ pub struct FlatStateDelta {
     pub changes: FlatStateChanges,
 }
 
-#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Copy)]
-pub struct FlatStateDeltaMetadata {
-    pub block: BlockInfo,
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Copy, serde::Serialize)]
+pub struct BlockWithChangesInfo {
+    pub(crate) hash: CryptoHash,
+    pub(crate) height: BlockHeight,
 }
 
+#[derive(BorshSerialize, BorshDeserialize, Debug, Clone, Copy, serde::Serialize)]
+pub struct FlatStateDeltaMetadata {
+    pub block: BlockInfo,
+    /// `None` if the block itself has flat state changes.
+    /// `Some` if the block has no flat state changes, and contains
+    /// info of the last block with some flat state changes.
+    pub prev_block_with_changes: Option<BlockWithChangesInfo>,
+}
+
+#[derive(BorshSerialize, BorshDeserialize, Debug)]
 pub struct KeyForFlatStateDelta {
     pub shard_uid: ShardUId,
     pub block_hash: CryptoHash,
@@ -38,7 +48,7 @@ impl KeyForFlatStateDelta {
 /// Delta of the state for some shard and block, stores mapping from keys to values
 /// or None, if key was removed in this block.
 #[derive(BorshSerialize, BorshDeserialize, Clone, Default, PartialEq, Eq)]
-pub struct FlatStateChanges(pub(crate) HashMap<Vec<u8>, Option<FlatStateValue>>);
+pub struct FlatStateChanges(pub HashMap<Vec<u8>, Option<FlatStateValue>>);
 
 impl<T> From<T> for FlatStateChanges
 where
@@ -93,14 +103,17 @@ impl FlatStateChanges {
                 .last()
                 .expect("Committed entry should have at least one change")
                 .data;
-            let flat_state_value = last_change.as_ref().map(|value| {
-                if value.len() <= INLINE_DISK_VALUE_THRESHOLD {
-                    FlatStateValue::inlined(value)
-                } else {
-                    FlatStateValue::value_ref(value)
-                }
-            });
+            let flat_state_value = last_change.as_ref().map(|value| FlatStateValue::on_disk(value));
             delta.insert(key, flat_state_value);
+        }
+        Self(delta)
+    }
+
+    pub fn from_raw_key_value(entries: &[(Vec<u8>, Option<Vec<u8>>)]) -> Self {
+        let mut delta = HashMap::new();
+        for (key, raw_value) in entries {
+            let flat_state_value = raw_value.as_ref().map(|value| FlatStateValue::on_disk(value));
+            delta.insert(key.to_vec(), flat_state_value);
         }
         Self(delta)
     }
@@ -108,16 +121,17 @@ impl FlatStateChanges {
     /// Applies delta to the flat state.
     pub fn apply_to_flat_state(self, store_update: &mut StoreUpdate, shard_uid: ShardUId) {
         for (key, value) in self.0.into_iter() {
-            store_helper::set_flat_state_value(store_update, shard_uid, key, value)
-                .expect("Borsh cannot fail");
+            store_helper::set_flat_state_value(store_update, shard_uid, key, value);
         }
     }
 }
 
 /// `FlatStateChanges` which uses hash of raw `TrieKey`s instead of keys themselves.
 /// Used to reduce memory used by deltas and serves read queries.
+#[derive(Debug)]
 pub struct CachedFlatStateChanges(HashMap<CryptoHash, Option<ValueRef>>);
 
+#[derive(Debug)]
 pub struct CachedFlatStateDelta {
     pub metadata: FlatStateDeltaMetadata,
     pub changes: Arc<CachedFlatStateChanges>,
@@ -158,9 +172,8 @@ impl CachedFlatStateChanges {
 
 #[cfg(test)]
 mod tests {
-    use crate::flat::FlatStateValue;
-
     use super::FlatStateChanges;
+    use near_primitives::state::FlatStateValue;
     use near_primitives::trie_key::TrieKey;
     use near_primitives::types::{RawStateChange, RawStateChangesWithTrieKey, StateChangeCause};
 

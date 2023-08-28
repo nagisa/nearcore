@@ -614,7 +614,7 @@ impl PeerManagerActor {
         // Find peers that are not reliable (too much behind) - and make sure that we're not routing messages through them.
         let unreliable_peers = self.unreliable_peers();
         metrics::PEER_UNRELIABLE.set(unreliable_peers.len() as i64);
-        self.state.graph.set_unreliable_peers(unreliable_peers);
+        self.state.set_unreliable_peers(unreliable_peers);
 
         let new_interval = min(max_interval, interval * EXPONENTIAL_BACKOFF_RATIO);
 
@@ -644,27 +644,6 @@ impl PeerManagerActor {
                 .event_sink
                 .push(Event::ReconnectLoopSpawned(conn_info.peer_info.clone()));
         }
-    }
-
-    /// Return whether the message is sent or not.
-    fn send_message_to_account_or_peer_or_hash(
-        &mut self,
-        target: &AccountOrPeerIdOrHash,
-        msg: RoutedMessageBody,
-    ) -> bool {
-        let target = match target {
-            AccountOrPeerIdOrHash::AccountId(account_id) => {
-                return self.state.send_message_to_account(&self.clock, account_id, msg);
-            }
-            AccountOrPeerIdOrHash::PeerId(it) => PeerIdOrHash::PeerId(it.clone()),
-            AccountOrPeerIdOrHash::Hash(it) => PeerIdOrHash::Hash(*it),
-        };
-
-        self.state.send_message_to_peer(
-            &self.clock,
-            tcp::Tier::T2,
-            self.state.sign_message(&self.clock, RawRoutedMessage { target, body: msg }),
-        )
     }
 
     pub(crate) fn get_network_info(&self) -> NetworkInfo {
@@ -703,9 +682,8 @@ impl PeerManagerActor {
                 .sum(),
             known_producers: self
                 .state
-                .graph
-                .routing_table
-                .get_announce_accounts()
+                .account_announcements
+                .get_announcements()
                 .into_iter()
                 .map(|announce_account| KnownProducer {
                     account_id: announce_account.account_id,
@@ -790,9 +768,14 @@ impl PeerManagerActor {
                 }
             }
             NetworkRequests::StateRequestHeader { shard_id, sync_hash, target } => {
-                if self.send_message_to_account_or_peer_or_hash(
-                    &target,
-                    RoutedMessageBody::StateRequestHeader(shard_id, sync_hash),
+                let peer_id = match target {
+                    AccountOrPeerIdOrHash::AccountId(_) => return NetworkResponses::RouteNotFound,
+                    AccountOrPeerIdOrHash::PeerId(peer_id) => peer_id,
+                    AccountOrPeerIdOrHash::Hash(_) => return NetworkResponses::RouteNotFound,
+                };
+                if self.state.tier2.send_message(
+                    peer_id,
+                    Arc::new(PeerMessage::StateRequestHeader(shard_id, sync_hash)),
                 ) {
                     NetworkResponses::NoResponse
                 } else {
@@ -800,24 +783,14 @@ impl PeerManagerActor {
                 }
             }
             NetworkRequests::StateRequestPart { shard_id, sync_hash, part_id, target } => {
-                if self.send_message_to_account_or_peer_or_hash(
-                    &target,
-                    RoutedMessageBody::StateRequestPart(shard_id, sync_hash, part_id),
-                ) {
-                    NetworkResponses::NoResponse
-                } else {
-                    NetworkResponses::RouteNotFound
-                }
-            }
-            NetworkRequests::StateResponse { route_back, response } => {
-                let body = RoutedMessageBody::VersionedStateResponse(response);
-                if self.state.send_message_to_peer(
-                    &self.clock,
-                    tcp::Tier::T2,
-                    self.state.sign_message(
-                        &self.clock,
-                        RawRoutedMessage { target: PeerIdOrHash::Hash(route_back), body },
-                    ),
+                let peer_id = match target {
+                    AccountOrPeerIdOrHash::AccountId(_) => return NetworkResponses::RouteNotFound,
+                    AccountOrPeerIdOrHash::PeerId(peer_id) => peer_id,
+                    AccountOrPeerIdOrHash::Hash(_) => return NetworkResponses::RouteNotFound,
+                };
+                if self.state.tier2.send_message(
+                    peer_id,
+                    Arc::new(PeerMessage::StateRequestPart(shard_id, sync_hash, part_id)),
                 ) {
                     NetworkResponses::NoResponse
                 } else {
@@ -1091,6 +1064,7 @@ impl actix::Handler<GetDebugStatus> for PeerManagerActor {
                         EdgeView { peer0: key.0.clone(), peer1: key.1.clone(), nonce: edge.nonce() }
                     })
                     .collect(),
+                next_hops: (*self.state.graph.routing_table.info().next_hops).clone(),
             }),
             GetDebugStatus::RecentOutboundConnections => {
                 DebugStatus::RecentOutboundConnections(RecentOutboundConnectionsView {
@@ -1108,6 +1082,7 @@ impl actix::Handler<GetDebugStatus> for PeerManagerActor {
                         .collect::<Vec<_>>(),
                 })
             }
+            GetDebugStatus::Routes => DebugStatus::Routes(self.state.graph_v2.get_debug_view()),
         }
     }
 }

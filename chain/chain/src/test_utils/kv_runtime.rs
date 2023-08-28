@@ -4,6 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use borsh::{BorshDeserialize, BorshSerialize};
 
+use near_epoch_manager::types::BlockHeaderInfo;
 use near_epoch_manager::{EpochManagerAdapter, RngSeed};
 use near_primitives::sandbox::state_patch::SandboxStatePatch;
 use near_primitives::state_part::PartId;
@@ -11,7 +12,6 @@ use num_rational::Ratio;
 
 use near_chain_configs::{ProtocolConfig, DEFAULT_GC_NUM_EPOCHS_TO_KEEP};
 use near_chain_primitives::Error;
-use near_client_primitives::types::StateSplitApplyingStatus;
 use near_crypto::{KeyType, PublicKey, SecretKey, Signature};
 use near_pool::types::PoolIterator;
 use near_primitives::account::{AccessKey, Account};
@@ -42,17 +42,14 @@ use near_primitives::views::{
     QueryRequest, QueryResponse, QueryResponseKind, ViewStateResult,
 };
 use near_store::{
-    DBCol, PartialStorage, ShardTries, Store, StoreUpdate, Trie, TrieChanges, WrappedTrieChanges,
+    set_genesis_state_roots, DBCol, PartialStorage, ShardTries, Store, StoreUpdate, Trie,
+    TrieChanges, WrappedTrieChanges,
 };
 
-use crate::types::{
-    ApplySplitStateResult, ApplyTransactionResult, BlockHeaderInfo, RuntimeAdapter,
-};
+use crate::types::{ApplySplitStateResult, ApplyTransactionResult, RuntimeAdapter};
 use crate::BlockHeader;
 
 use near_primitives::epoch_manager::ShardConfig;
-
-use near_store::flat::{FlatStorage, FlatStorageStatus};
 
 use super::ValidatorSchedule;
 
@@ -148,7 +145,6 @@ impl MockEpochManager {
         let map_with_default_hash3 = HashMap::from([(EpochId::default(), 0)]);
 
         let mut validators = HashMap::new();
-        #[allow(unused_mut)]
         let mut validators_by_valset: Vec<EpochValidatorSet> = vs
             .block_producers
             .iter()
@@ -359,6 +355,11 @@ impl KeyValueRuntime {
         // We cannot do any reasonable validations of it in test_utils.
         let state = HashMap::from([(Trie::EMPTY_ROOT, kv_state)]);
         let state_size = HashMap::from([(Trie::EMPTY_ROOT, data_len)]);
+
+        let mut store_update = store.store_update();
+        let genesis_roots: Vec<CryptoHash> = (0..num_shards).map(|_| Trie::EMPTY_ROOT).collect();
+        set_genesis_state_roots(&mut store_update, &genesis_roots);
+        store_update.commit().expect("Store failed on genesis intialization");
 
         Arc::new(KeyValueRuntime {
             store,
@@ -743,6 +744,13 @@ impl EpochManagerAdapter for MockEpochManager {
         })
     }
 
+    fn add_validator_proposals(
+        &self,
+        _block_header_info: BlockHeaderInfo,
+    ) -> Result<StoreUpdate, EpochError> {
+        Ok(self.store.store_update())
+    }
+
     fn get_epoch_minted_amount(&self, _epoch_id: &EpochId) -> Result<Balance, EpochError> {
         Ok(0)
     }
@@ -844,7 +852,7 @@ impl EpochManagerAdapter for MockEpochManager {
         _prev_block_hash: &CryptoHash,
         _prev_block_height: BlockHeight,
         _block_height: BlockHeight,
-        _approvals: &[Option<Signature>],
+        _approvals: &[Option<Box<Signature>>],
     ) -> Result<bool, Error> {
         Ok(true)
     }
@@ -853,13 +861,13 @@ impl EpochManagerAdapter for MockEpochManager {
         &self,
         epoch_id: &EpochId,
         can_approved_block_be_produced: &dyn Fn(
-            &[Option<Signature>],
+            &[Option<Box<Signature>>],
             &[(Balance, Balance, bool)],
         ) -> bool,
         prev_block_hash: &CryptoHash,
         prev_block_height: BlockHeight,
         block_height: BlockHeight,
-        approvals: &[Option<Signature>],
+        approvals: &[Option<Box<Signature>>],
     ) -> Result<(), Error> {
         let validators = self.get_block_producers(self.get_valset_for_epoch(epoch_id)?);
         let message_to_sign = Approval::get_data_for_sig(
@@ -936,10 +944,6 @@ impl EpochManagerAdapter for MockEpochManager {
 }
 
 impl RuntimeAdapter for KeyValueRuntime {
-    fn genesis_state(&self) -> (Store, Vec<StateRoot>) {
-        (self.store.clone(), ((0..self.num_shards).map(|_| Trie::EMPTY_ROOT).collect()))
-    }
-
     fn store(&self) -> &Store {
         &self.store
     }
@@ -960,6 +964,10 @@ impl RuntimeAdapter for KeyValueRuntime {
             .get_trie_for_shard(ShardUId { version: 0, shard_id: shard_id as u32 }, state_root))
     }
 
+    fn get_flat_storage_manager(&self) -> Option<near_store::flat::FlatStorageManager> {
+        None
+    }
+
     fn get_view_trie_for_shard(
         &self,
         shard_id: ShardId,
@@ -970,35 +978,6 @@ impl RuntimeAdapter for KeyValueRuntime {
             ShardUId { version: 0, shard_id: shard_id as u32 },
             state_root,
         ))
-    }
-
-    fn get_flat_storage_for_shard(&self, _shard_uid: ShardUId) -> Option<FlatStorage> {
-        None
-    }
-
-    fn get_flat_storage_status(&self, _shard_uid: ShardUId) -> FlatStorageStatus {
-        FlatStorageStatus::Disabled
-    }
-
-    fn create_flat_storage_for_shard(&self, shard_uid: ShardUId) {
-        panic!("Flat storage state can't be created for shard {shard_uid} because KeyValueRuntime doesn't support this");
-    }
-
-    fn remove_flat_storage_for_shard(
-        &self,
-        _shard_uid: ShardUId,
-        _epoch_id: &EpochId,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-
-    fn set_flat_storage_for_genesis(
-        &self,
-        _genesis_block: &CryptoHash,
-        _genesis_block_height: BlockHeight,
-        _genesis_epoch_id: &EpochId,
-    ) -> Result<StoreUpdate, Error> {
-        Ok(self.store.store_update())
     }
 
     fn validate_tx(
@@ -1030,13 +1009,6 @@ impl RuntimeAdapter for KeyValueRuntime {
             res.push(iter.next().unwrap());
         }
         Ok(res)
-    }
-
-    fn add_validator_proposals(
-        &self,
-        _block_header_info: BlockHeaderInfo,
-    ) -> Result<StoreUpdate, Error> {
-        Ok(self.store.store_update())
     }
 
     fn apply_transactions_with_optional_storage_proof(
@@ -1423,15 +1395,5 @@ impl RuntimeAdapter for KeyValueRuntime {
         _state_changes: StateChangesForSplitStates,
     ) -> Result<Vec<ApplySplitStateResult>, Error> {
         Ok(vec![])
-    }
-
-    fn build_state_for_split_shards(
-        &self,
-        _shard_uid: ShardUId,
-        _state_root: &StateRoot,
-        _next_epoch_shard_layout: &ShardLayout,
-        _state_split_status: Arc<StateSplitApplyingStatus>,
-    ) -> Result<HashMap<ShardUId, StateRoot>, Error> {
-        Ok(HashMap::new())
     }
 }

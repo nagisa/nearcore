@@ -10,7 +10,7 @@ use crate::types::AccountId;
 pub(crate) const ACCOUNT_DATA_SEPARATOR: u8 = b',';
 
 /// Type identifiers used for DB key generation to store values in the key-value storage.
-pub(crate) mod col {
+pub mod col {
     /// This column id is used when storing `primitives::account::Account` type about a given
     /// `account_id`.
     pub const ACCOUNT: u8 = 0;
@@ -356,7 +356,6 @@ pub mod trie_key_parsers {
         Ok(TrieKey::AccessKey { account_id, public_key })
     }
 
-    #[allow(unused)]
     pub fn parse_account_id_from_raw_key(
         raw_key: &[u8],
     ) -> Result<Option<AccountId>, std::io::Error> {
@@ -375,7 +374,7 @@ pub mod trie_key_parsers {
         Ok(None)
     }
 
-    fn parse_account_id_from_trie_key_with_separator(
+    pub fn parse_account_id_from_trie_key_with_separator(
         col: u8,
         raw_key: &[u8],
         col_name: &str,

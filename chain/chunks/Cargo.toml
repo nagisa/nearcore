@@ -1,9 +1,12 @@
 [package]
 name = "near-chunks"
-version = "0.0.0"
+version.workspace = true
 authors.workspace = true
-publish = false
 edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+license.workspace = true
+publish = false
 
 [dependencies]
 actix.workspace = true
@@ -18,6 +21,8 @@ rand.workspace = true
 reed-solomon-erasure.workspace = true
 time.workspace = true
 tracing.workspace = true
+# itertools has collect_vec which is useful in quick debugging prints
+itertools.workspace = true
 
 near-async.workspace = true
 near-chain-configs.workspace = true
@@ -36,7 +41,29 @@ near-performance-metrics.workspace = true
 assert_matches.workspace = true
 
 [features]
-nightly = []
+nightly_protocol = [
+  "near-async/nightly_protocol",
+  "near-chain-configs/nightly_protocol",
+  "near-chain/nightly_protocol",
+  "near-epoch-manager/nightly_protocol",
+  "near-network/nightly_protocol",
+  "near-o11y/nightly_protocol",
+  "near-pool/nightly_protocol",
+  "near-primitives/nightly_protocol",
+  "near-store/nightly_protocol",
+]
+nightly = [
+  "nightly_protocol",
+  "near-async/nightly",
+  "near-chain-configs/nightly",
+  "near-chain/nightly",
+  "near-epoch-manager/nightly",
+  "near-network/nightly",
+  "near-o11y/nightly",
+  "near-pool/nightly",
+  "near-primitives/nightly",
+  "near-store/nightly",
+]
 byzantine_asserts = ["near-chain/byzantine_asserts"]
 expensive_tests = []
 test_features = []

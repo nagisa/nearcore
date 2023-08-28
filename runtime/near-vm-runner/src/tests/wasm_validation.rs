@@ -1,8 +1,8 @@
 use super::test_builder::test_builder;
+use crate::logic::VMConfig;
 use crate::prepare::prepare_contract;
 use crate::tests::with_vm_variants;
 use expect_test::expect;
-use near_vm_logic::VMConfig;
 
 static SIMD: &str = r#"
 (module
@@ -115,7 +115,7 @@ fn ensure_fails_verification() {
 #[test]
 fn ensure_fails_execution() {
     for (_feature_name, wat) in EXPECTED_UNSUPPORTED {
-        test_builder().wat(wat).opaque_error().opaque_outcome().expect(expect![[r#"
+        test_builder().wat(wat).opaque_error().opaque_outcome().expect(&expect![[r#"
             Err: ...
         "#]]);
     }

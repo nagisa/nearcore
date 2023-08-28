@@ -13,13 +13,18 @@ use num_rational::Ratio;
 use std::sync::Arc;
 use std::time::Instant;
 
+fn timestamp(hour: u32, min: u32, sec: u32, millis: u32) -> chrono::DateTime<chrono::Utc> {
+    chrono::Utc.with_ymd_and_hms(2020, 10, 1, hour, min, sec).single().unwrap()
+        + chrono::Duration::milliseconds(i64::from(millis))
+}
+
 #[test]
 fn build_chain() {
     init_test_logger();
     let mock_clock_guard = MockClockGuard::default();
 
-    mock_clock_guard.add_utc(chrono::Utc.ymd(2020, 10, 1).and_hms_milli(0, 0, 3, 444));
-    mock_clock_guard.add_utc(chrono::Utc.ymd(2020, 10, 1).and_hms_milli(0, 0, 0, 0)); // Client startup timestamp.
+    mock_clock_guard.add_utc(timestamp(0, 0, 3, 444));
+    mock_clock_guard.add_utc(timestamp(0, 0, 0, 0)); // Client startup timestamp.
     mock_clock_guard.add_instant(Instant::now());
 
     let (mut chain, _, _, signer) = setup();
@@ -43,17 +48,17 @@ fn build_chain() {
     //     cargo insta test --accept -p near-chain --features nightly -- tests::simple_chain::build_chain
     let hash = chain.head().unwrap().last_block_hash;
     if cfg!(feature = "nightly") {
-        insta::assert_display_snapshot!(hash, @"3Dkg6hjpnYvMuoyEdSLnEXza6Ct2ZV9xoridA37AJzSz");
+        insta::assert_display_snapshot!(hash, @"GargNTMFiuET32KH5uPLFwMSU8xXtvrk6aGqgkPbRZg8");
     } else {
-        insta::assert_display_snapshot!(hash, @"DuT1f8dmu3xYvFfsEFiAycgeLpJWQM74PZ8JtjT7SGyK");
+        insta::assert_display_snapshot!(hash, @"712T4sPbJhNWWN3bWweccECGYWbnUmGpqpKW2SJpb2k5");
     }
 
     for i in 1..5 {
         // two entries, because the clock is called 2 times per block
         // - one time for creation of the block
         // - one time for validating block header
-        mock_clock_guard.add_utc(chrono::Utc.ymd(2020, 10, 1).and_hms_milli(0, 0, 3, 444 + i));
-        mock_clock_guard.add_utc(chrono::Utc.ymd(2020, 10, 1).and_hms_milli(0, 0, 3, 444 + i));
+        mock_clock_guard.add_utc(timestamp(0, 0, 3, 444 + i));
+        mock_clock_guard.add_utc(timestamp(0, 0, 3, 444 + i));
         // Instant calls for CryptoHashTimer.
         mock_clock_guard.add_instant(Instant::now());
         mock_clock_guard.add_instant(Instant::now());
@@ -73,9 +78,9 @@ fn build_chain() {
 
     let hash = chain.head().unwrap().last_block_hash;
     if cfg!(feature = "nightly") {
-        insta::assert_display_snapshot!(hash, @"6uCZwfkpE8qV54n5MvZXqTt8RMHYDduX4eE7quNzgLNk");
+        insta::assert_display_snapshot!(hash, @"2aurKZqRfPkZ3woNjA7Kf79wq5MYz98AohTYWoBFiG7o");
     } else {
-        insta::assert_display_snapshot!(hash, @"Ce8Ehs6S2RmXUdp2WnuyQFBGs4S3Pvs5sBwuSMZW7pqS");
+        insta::assert_display_snapshot!(hash, @"GUAPgvPQQmhumyuFzPusg3BKtRkVLpCw4asTAWgdTLq6");
     }
 }
 

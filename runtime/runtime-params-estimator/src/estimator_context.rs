@@ -7,17 +7,18 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::receipt::Receipt;
 use near_primitives::runtime::config_store::RuntimeConfigStore;
 use near_primitives::runtime::migration_data::{MigrationData, MigrationFlags};
+use near_primitives::state::FlatStateValue;
 use near_primitives::test_utils::MockEpochInfoProvider;
 use near_primitives::transaction::{ExecutionStatus, SignedTransaction};
 use near_primitives::types::{Gas, MerkleHash};
 use near_primitives::version::PROTOCOL_VERSION;
 use near_store::flat::{
-    BlockInfo, FlatStateChanges, FlatStateDelta, FlatStateDeltaMetadata, FlatStateValue,
-    FlatStorage, FlatStorageManager,
+    BlockInfo, FlatStateChanges, FlatStateDelta, FlatStateDeltaMetadata, FlatStorage,
+    FlatStorageManager,
 };
 use near_store::{ShardTries, ShardUId, Store, StoreCompiledContractCache, TrieUpdate};
 use near_store::{TrieCache, TrieCachingStorage, TrieConfig};
-use near_vm_logic::{ExtCosts, VMLimitConfig};
+use near_vm_runner::logic::{ExtCosts, VMLimitConfig};
 use node_runtime::{ApplyState, Runtime};
 use std::collections::HashMap;
 use std::iter;
@@ -42,7 +43,6 @@ pub(crate) struct CachedCosts {
     pub(crate) compile_cost_base_per_byte_v2: Option<(GasCost, GasCost)>,
     pub(crate) gas_metering_cost_base_per_op: Option<(GasCost, GasCost)>,
     pub(crate) apply_block: Option<GasCost>,
-    pub(crate) touching_trie_node_read: Option<GasCost>,
     pub(crate) touching_trie_node_write: Option<GasCost>,
     pub(crate) ed25519_verify_base: Option<GasCost>,
 }
@@ -178,7 +178,7 @@ impl<'c> EstimatorContext<'c> {
             flat_storage
                 .add_delta(FlatStateDelta {
                     changes: FlatStateChanges::from(random_data),
-                    metadata: FlatStateDeltaMetadata { block },
+                    metadata: FlatStateDeltaMetadata { block, prev_block_with_changes: None },
                 })
                 .unwrap();
         }
@@ -404,7 +404,12 @@ impl Testbed<'_> {
         // will be at the same number.
         let tip_height = self.config.finality_lag;
         let tip = fs_fake_block_height_to_hash(tip_height as u64);
-        self.tries.get_trie_with_block_hash_for_shard(ShardUId::single_shard(), self.root, &tip)
+        self.tries.get_trie_with_block_hash_for_shard(
+            ShardUId::single_shard(),
+            self.root,
+            &tip,
+            false,
+        )
     }
 }
 
