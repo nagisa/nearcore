@@ -85,8 +85,6 @@ pub(crate) enum StatePartsSubCommand {
     /// Process blocks as if catching up.
     Catchup {
         #[clap(long)]
-        shard_id: ShardId,
-        #[clap(long)]
         num_blocks: BlockHeightDelta,
         /// Select an epoch to work on.
         #[clap(subcommand)]
@@ -194,7 +192,7 @@ impl StatePartsSubCommand {
                 StatePartsSubCommand::Finalize { sync_hash } => {
                     finalize_state_sync(sync_hash, shard_id, &mut chain)
                 }
-                StatePartsSubCommand::Catchup { shard_id, num_blocks, epoch_selection } => {
+                StatePartsSubCommand::Catchup { num_blocks, epoch_selection } => {
                     let me = near_config.validator_signer.map(|v| v.validator_id().clone());
                     catchup(shard_id, num_blocks, epoch_selection, store, &mut chain, &me)
                 }
