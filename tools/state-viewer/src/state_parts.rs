@@ -17,6 +17,7 @@ use near_primitives::syncing::get_num_state_parts;
 use near_primitives::types::{AccountId, EpochId, StateRoot};
 use near_primitives_core::hash::CryptoHash;
 use near_primitives_core::types::{BlockHeight, BlockHeightDelta, EpochHeight, ShardId};
+use near_store::flat::{FlatStorageReadyStatus, FlatStorageStatus};
 use near_store::{PartialStorage, Store, Trie};
 use nearcore::{NearConfig, NightshadeRuntime};
 use std::cell::RefCell;
@@ -539,12 +540,8 @@ fn catchup(
     let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
 
     let shard_uid = chain.epoch_manager.shard_id_to_uid(shard_id, &epoch_id).unwrap();
-    chain
-        .runtime_adapter
-        .get_flat_storage_manager()
-        .unwrap()
-        .create_flat_storage_for_shard(shard_uid)
-        .unwrap();
+    let flat_storage_manager = chain.runtime_adapter.get_flat_storage_manager().unwrap();
+    flat_storage_manager.create_flat_storage_for_shard(shard_uid).unwrap();
 
     // Populate BlocksToCatchup.
     // TODO: I haven't observed forks in this column.
@@ -567,7 +564,21 @@ fn catchup(
     }
     update.commit().unwrap();
 
-    let mut blocks_catch_up_state = BlocksCatchUpState::new(sync_hash, epoch_id);
+    let flat_head_height = match flat_storage_manager.get_flat_storage_status(shard_uid) {
+        FlatStorageStatus::Ready(FlatStorageReadyStatus { flat_head }) => flat_head.height,
+        _ => panic!("!"),
+    };
+    let mut first_block = None;
+    for height in flat_head_height + 1.. {
+        if let Ok(header) = chain.get_block_header_by_height(height) {
+            first_block = Some(*header.hash());
+            tracing::debug!(target: "state_parts", ?height, ?first_block, ?flat_head_height);
+            break;
+        }
+    }
+    assert!(flat_storage_manager.set_flat_state_updates_mode(false));
+
+    let mut blocks_catch_up_state = BlocksCatchUpState::new(first_block.unwrap(), epoch_id);
 
     let mut blocks_processed = 0;
     while blocks_processed < num_blocks_to_process {
