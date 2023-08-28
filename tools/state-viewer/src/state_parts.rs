@@ -549,21 +549,14 @@ fn catchup(
             })
             .unwrap();
 
-        let msg = got_msg.take();
-        if let Some(msg) = msg {
-            blocks_processed += 1;
-            tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, sync_hash = ?msg.sync_hash, block_hash = ?msg.block_hash, block_height = msg.block_height, work_len = msg.work.len());
-            let results =
-                near_chain::chain::do_apply_chunks(msg.block_hash, msg.block_height, msg.work);
-            tracing::debug!(target: "state-parts", ?results);
-            assert!(blocks_catch_up_state.scheduled_blocks.remove(&msg.block_hash));
-            assert!(blocks_catch_up_state
-                .processed_blocks
-                .insert(msg.block_hash, results)
-                .is_none());
-        } else {
-            tracing::debug!(target: "state-parts", "no BlockCatchUpRequest");
-        };
+        let msg = got_msg.take().unwrap();
+        blocks_processed += 1;
+        tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, sync_hash = ?msg.sync_hash, block_hash = ?msg.block_hash, block_height = msg.block_height, work_len = msg.work.len());
+        let results =
+            near_chain::chain::do_apply_chunks(msg.block_hash, msg.block_height, msg.work);
+        tracing::debug!(target: "state-parts", ?results);
+        assert!(blocks_catch_up_state.scheduled_blocks.remove(&msg.block_hash));
+        assert!(blocks_catch_up_state.processed_blocks.insert(msg.block_hash, results).is_none());
     }
 }
 
