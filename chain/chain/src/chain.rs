@@ -5922,8 +5922,6 @@ pub struct BlockCatchUpResponse {
 ///     have this block as previous are added to pending
 #[derive(Debug)]
 pub struct BlocksCatchUpState {
-    /// Hash of first block of an epoch
-    pub first_block_hash: CryptoHash,
     /// Epoch id
     pub epoch_id: EpochId,
     /// Collection of block hashes that are yet to be sent for processed
@@ -5940,7 +5938,6 @@ pub struct BlocksCatchUpState {
 impl BlocksCatchUpState {
     pub fn new(first_block_hash: CryptoHash, epoch_id: EpochId) -> Self {
         Self {
-            first_block_hash,
             epoch_id,
             pending_blocks: vec![first_block_hash],
             scheduled_blocks: HashSet::new(),
