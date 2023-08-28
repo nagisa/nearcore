@@ -45,8 +45,8 @@ impl SyncJobsActor {
     ) -> Result<(), near_chain_primitives::error::Error> {
         let shard_id = msg.shard_uid.shard_id as ShardId;
         let _span =
-            tracing::debug_span!(target: "sync_jobs_actor", ?shard_id, "apply_parts").entered();
-        tracing::debug!(target: "sync_jobs_actor", ?shard_id, "Applying all state parts for shard");
+            tracing::debug_span!(target: "sync_jobs_actor", "apply_parts", ?shard_id).entered();
+        tracing::debug!(target: "sync_jobs_actor", ?msg);
         let store = msg.runtime_adapter.store();
 
         for part_id in 0..msg.num_parts {
@@ -94,6 +94,7 @@ impl actix::Handler<WithSpanContext<ApplyStatePartsRequest>> for SyncJobsActor {
         _: &mut Self::Context,
     ) -> Self::Result {
         let (_span, msg) = handler_debug_span!(target: "sync_jobs_actor", msg);
+        tracing::debug!(target: "sync_jobs_actor", ?msg);
         let shard_id = msg.shard_uid.shard_id as ShardId;
         let sync_hash = msg.sync_hash;
         if let Err(err) = self.clear_flat_state(&msg) {
