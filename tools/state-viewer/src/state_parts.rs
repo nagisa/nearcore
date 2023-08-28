@@ -120,7 +120,7 @@ impl StatePartsSubCommand {
         let mut chain = Chain::new_for_view_client(
             epoch_manager,
             shard_tracker,
-            runtime.clone(),
+            runtime,
             &chain_genesis,
             DoomslugThresholdMode::TwoThirds,
             false,
