@@ -1,5 +1,6 @@
 use crate::epoch_info::iterate_and_filter;
 use borsh::BorshDeserialize;
+use near_chain::chain::{BlockCatchUpRequest, BlocksCatchUpState};
 use near_chain::{Chain, ChainGenesis, ChainStoreAccess, DoomslugThresholdMode};
 use near_client::sync::external::{
     create_bucket_readonly, create_bucket_readwrite, external_storage_location,
@@ -13,13 +14,14 @@ use near_primitives::epoch_manager::epoch_info::EpochInfo;
 use near_primitives::state_part::PartId;
 use near_primitives::state_record::StateRecord;
 use near_primitives::syncing::get_num_state_parts;
-use near_primitives::types::{EpochId, StateRoot};
+use near_primitives::types::{AccountId, EpochId, StateRoot};
 use near_primitives_core::hash::CryptoHash;
-use near_primitives_core::types::{BlockHeight, EpochHeight, ShardId};
+use near_primitives_core::types::{BlockHeight, BlockHeightDelta, EpochHeight, ShardId};
 use near_store::{PartialStorage, Store, Trie};
 use nearcore::{NearConfig, NightshadeRuntime};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -80,6 +82,14 @@ pub(crate) enum StatePartsSubCommand {
         #[clap(long)]
         sync_hash: CryptoHash,
     },
+    /// Process blocks as if catching up.
+    CatchUp {
+        #[clap(long)]
+        num_blocks: BlockHeightDelta,
+        /// Select an epoch to work on.
+        #[clap(subcommand)]
+        epoch_selection: EpochSelection,
+    },
 }
 
 impl StatePartsSubCommand {
@@ -110,7 +120,7 @@ impl StatePartsSubCommand {
         let mut chain = Chain::new_for_view_client(
             epoch_manager,
             shard_tracker,
-            runtime,
+            runtime.clone(),
             &chain_genesis,
             DoomslugThresholdMode::TwoThirds,
             false,
@@ -119,8 +129,6 @@ impl StatePartsSubCommand {
         let chain_id = &near_config.genesis.config.chain_id;
         let sys = actix::System::new();
         sys.block_on(async move {
-            let credentials_file =
-                near_config.config.s3_credentials_file.clone().map(|file| home_dir.join(file));
             match self {
                 StatePartsSubCommand::Load {
                     action,
@@ -152,6 +160,11 @@ impl StatePartsSubCommand {
                     .await
                 }
                 StatePartsSubCommand::Dump { part_from, part_to, epoch_selection } => {
+                    let credentials_file = near_config
+                        .config
+                        .s3_credentials_file
+                        .clone()
+                        .map(|file| home_dir.join(file));
                     let external = create_external_connection(
                         root_dir,
                         s3_bucket,
@@ -177,6 +190,10 @@ impl StatePartsSubCommand {
                 }
                 StatePartsSubCommand::Finalize { sync_hash } => {
                     finalize_state_sync(sync_hash, shard_id, &mut chain)
+                }
+                StatePartsSubCommand::CatchUp { num_blocks, epoch_selection } => {
+                    let me = near_config.validator_signer.map(|v| v.validator_id().clone());
+                    catchup(num_blocks, epoch_selection, store, &mut chain, &me)
                 }
             }
         });
@@ -504,6 +521,40 @@ fn read_state_header(
 
 fn finalize_state_sync(sync_hash: CryptoHash, shard_id: ShardId, chain: &mut Chain) {
     chain.set_state_finalize(shard_id, sync_hash, Ok(())).unwrap()
+}
+
+fn catchup(
+    num_blocks_to_process: BlockHeightDelta,
+    epoch_selection: EpochSelection,
+    store: Store,
+    chain: &mut Chain,
+    me: &Option<AccountId>,
+) {
+    let epoch_id = epoch_selection.to_epoch_id(store, chain);
+    let epoch = chain.epoch_manager.get_epoch_info(&epoch_id).unwrap();
+
+    let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
+    let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
+
+    let blocks_catch_up_state =
+        Rc::new(std::cell::RefCell::new(BlocksCatchUpState::new(sync_hash, epoch_id)));
+
+    for blocks_processed in 0..num_blocks_to_process {
+        let cloned_state = Rc::clone(&blocks_catch_up_state);
+        let mut state = (*cloned_state).borrow_mut();
+        tracing::debug!(target: "state-parts", blocks_processed, num_blocks_to_process, blocks_catch_up_state = ?state);
+        chain.catchup_blocks_step(me, &sync_hash,&mut state,
+                                  &|BlockCatchUpRequest{ sync_hash, block_hash, block_height, work }| {
+                                      tracing::debug!(target: "state-parts", ?sync_hash, ?block_hash, block_height, work_len = work.len());
+                                      let results = near_chain::chain::do_apply_chunks(block_hash, block_height, work);
+                                      tracing::debug!(target: "state-parts", ?results);
+                                      let cloned_state = Rc::clone(&blocks_catch_up_state);
+                                      let mut state = (*cloned_state).borrow_mut();
+                                      assert!(state.scheduled_blocks.remove(&block_hash));
+                                      assert!(state.processed_blocks.insert(block_hash, results).is_none());
+                                  }
+        ).unwrap()
+    }
 }
 
 fn get_part_ids(part_from: Option<u64>, part_to: Option<u64>, num_parts: u64) -> Range<u64> {

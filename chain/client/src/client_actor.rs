@@ -1685,6 +1685,7 @@ impl ClientActor {
                                         for hash in
                                             vec![*header.prev_hash(), *header.hash()].into_iter()
                                         {
+                                            tracing::debug!(target: "sync", ?fetch_block, ?peer_info, ?id, ?sync_hash, prev_hash = ?header.prev_hash(), ?hash);
                                             self.client.request_block(hash, id.clone());
                                         }
                                     }
@@ -1808,7 +1809,6 @@ impl Handler<WithSpanContext<ShardsManagerResponse>> for ClientActor {
         let (_span, msg) = handler_debug_span!(target: "client", msg);
         match msg {
             ShardsManagerResponse::ChunkCompleted { partial_chunk, shard_chunk } => {
-                // tracing::info!(target: "debug-me", ?partial_chunk, ?shard_chunk);
                 self.client.on_chunk_completed(
                     partial_chunk,
                     shard_chunk,
