@@ -544,20 +544,14 @@ fn catchup(
     flat_storage_manager.create_flat_storage_for_shard(shard_uid).unwrap();
 
     // Populate BlocksToCatchup.
-    // TODO: I haven't observed forks in this column.
     let sync_block_header = chain.get_block_header(&sync_hash).unwrap();
-    let target_block_header = chain
-        .get_block_header_by_height(sync_block_header.height() + num_blocks_to_process)
-        .unwrap();
-    let mut hash = *target_block_header.hash();
+    let sync_block_height = sync_block_header.height();
     let mut blocks_to_catchup = vec![];
-    while &hash != sync_block_header.hash() {
-        let header = chain.get_block_header(&hash).unwrap();
-        blocks_to_catchup.push((*header.prev_hash(), hash));
-        tracing::debug!(target: "state_parts", ?hash, prev_hash = ?header.prev_hash(), height = header.height(), "add_block_to_catchup");
-        hash = *header.prev_hash();
+    for height in sync_block_height..=sync_block_height + num_blocks_to_process {
+        if let Ok(header) = chain.get_block_header_by_height(height) {
+            blocks_to_catchup.push((*header.prev_hash(), *header.hash()));
+        }
     }
-
     let mut update = chain.mut_store().store_update();
     for (prev_hash, hash) in blocks_to_catchup {
         update.add_block_to_catchup(prev_hash, hash);
