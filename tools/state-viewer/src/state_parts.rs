@@ -85,6 +85,8 @@ pub(crate) enum StatePartsSubCommand {
     /// Process blocks as if catching up.
     Catchup {
         #[clap(long)]
+        shard_id: ShardId,
+        #[clap(long)]
         num_blocks: BlockHeightDelta,
         /// Select an epoch to work on.
         #[clap(subcommand)]
@@ -118,14 +120,15 @@ impl StatePartsSubCommand {
         );
         let chain_genesis = ChainGenesis::new(&near_config.genesis);
         let mut chain = Chain::new_for_view_client(
-            epoch_manager,
+            epoch_manager.clone(),
             shard_tracker,
-            runtime,
+            runtime.clone(),
             &chain_genesis,
             DoomslugThresholdMode::TwoThirds,
             false,
         )
         .unwrap();
+
         let chain_id = &near_config.genesis.config.chain_id;
         let sys = actix::System::new();
         sys.block_on(async move {
@@ -191,9 +194,9 @@ impl StatePartsSubCommand {
                 StatePartsSubCommand::Finalize { sync_hash } => {
                     finalize_state_sync(sync_hash, shard_id, &mut chain)
                 }
-                StatePartsSubCommand::Catchup { num_blocks, epoch_selection } => {
+                StatePartsSubCommand::Catchup { shard_id, num_blocks, epoch_selection } => {
                     let me = near_config.validator_signer.map(|v| v.validator_id().clone());
-                    catchup(num_blocks, epoch_selection, store, &mut chain, &me)
+                    catchup(shard_id, num_blocks, epoch_selection, store, &mut chain, &me)
                 }
             }
         });
@@ -524,6 +527,7 @@ fn finalize_state_sync(sync_hash: CryptoHash, shard_id: ShardId, chain: &mut Cha
 }
 
 fn catchup(
+    shard_id: ShardId,
     num_blocks_to_process: BlockHeightDelta,
     epoch_selection: EpochSelection,
     store: Store,
@@ -535,6 +539,14 @@ fn catchup(
 
     let sync_hash = get_any_block_hash_of_epoch(&epoch, chain);
     let sync_hash = StateSync::get_epoch_start_sync_hash(chain, &sync_hash).unwrap();
+
+    let shard_uid = chain.epoch_manager.shard_id_to_uid(shard_id, &epoch_id).unwrap();
+    chain
+        .runtime_adapter
+        .get_flat_storage_manager()
+        .unwrap()
+        .create_flat_storage_for_shard(shard_uid)
+        .unwrap();
 
     let mut blocks_catch_up_state = BlocksCatchUpState::new(sync_hash, epoch_id);
 
