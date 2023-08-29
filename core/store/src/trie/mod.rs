@@ -1116,6 +1116,125 @@ pub mod estimator {
     }
 }
 
+fn get_hash(node: &RawTrieNodeWithSize) -> CryptoHash {
+    let mut buffer: Vec<u8> = Vec::new();
+    node.serialize(&mut buffer).unwrap();
+    hash(&buffer)
+}
+
+fn work(
+    items: &Vec<(NibbleSlice, &ValueRef)>,
+    from: usize,
+    to: usize,
+    prefix: usize,
+) -> (CryptoHash, TrieNodeWithSize, RawTrieNodeWithSize) {
+    tracing::info!(prefix, from, to);
+    assert!(from < to);
+    assert!(to <= items.len());
+    // assert!(items[from].0[..prefix] == items[to - 1].0[..prefix]);
+    let res = if from + 1 == to {
+        let key = items[from].0.mid(prefix).encoded(true).to_vec();
+        let node = TrieNode::Leaf(key.clone(), ValueHandle::HashAndSize(items[from].1.clone()));
+        let memory_usage = node.memory_usage_direct_no_memory();
+        let node = TrieNodeWithSize { node, memory_usage };
+        let raw_node = RawTrieNode::Leaf(key.clone(), items[from].1.clone());
+        let raw_node = RawTrieNodeWithSize { node: raw_node, memory_usage };
+        let hash = get_hash(&raw_node);
+        (hash, node, raw_node)
+    } else {
+        let mut p = prefix;
+        while p < items[from].0.len() && items[from].0.at(p) == items[to - 1].0.at(p) {
+            p += 1;
+        }
+        if p == prefix {
+            // branch
+            let (mut children_from, value) = if items[from].0.len() == prefix {
+                (from + 1, Some(items[from].1.clone()))
+            } else {
+                (from, None)
+            };
+            let mut children_nodes = vec![None; 16];
+            let mut r = children_from;
+
+            for i in 0..16 as usize {
+                while r < to && items[r].0.at(prefix) == i as u8 {
+                    r += 1;
+                }
+                if children_from < r {
+                    let child_node = work(items, children_from, r, prefix + 1);
+                    children_nodes[i] = Some(child_node);
+                }
+                children_from = r;
+            }
+
+            let node = TrieNode::Branch(
+                Box::new(Children(
+                    children_nodes
+                        .iter()
+                        .map(|maybe_child_stuff| {
+                            maybe_child_stuff
+                                .as_ref()
+                                .map(|child_stuff| NodeHandle::Hash(child_stuff.0.clone()))
+                        })
+                        .collect::<Vec<_>>()
+                        .try_into()
+                        .unwrap(),
+                )),
+                value.clone().map(ValueHandle::HashAndSize),
+            );
+            let memory_usage = node.memory_usage_direct_no_memory()
+                + children_nodes
+                    .iter()
+                    .map(|maybe_child_stuff| {
+                        maybe_child_stuff
+                            .as_ref()
+                            .map_or(0, |child_stuff| child_stuff.1.memory_usage)
+                    })
+                    .sum::<u64>();
+            let node = TrieNodeWithSize { node, memory_usage };
+            let raw_children = Children(
+                children_nodes
+                    .iter()
+                    .map(|maybe_child_stuff| {
+                        maybe_child_stuff.as_ref().map(|child_stuff| child_stuff.0.clone())
+                    })
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .unwrap(),
+            );
+            let raw_node = if let Some(value) = value {
+                RawTrieNode::BranchWithValue(value, raw_children)
+            } else {
+                RawTrieNode::BranchNoValue(raw_children)
+            };
+            let raw_node = RawTrieNodeWithSize { node: raw_node, memory_usage };
+            let hash = get_hash(&raw_node);
+            (hash, node, raw_node)
+        } else {
+            let child_node = work(items, from, to, p);
+            let key = items[from].0.mid(prefix).encoded_leftmost(p - prefix, false).to_vec();
+            let node = TrieNode::Extension(key.clone(), NodeHandle::Hash(child_node.0.clone()));
+            let memory_usage = node.memory_usage_direct_no_memory() + child_node.1.memory_usage;
+            let node = TrieNodeWithSize { node, memory_usage };
+            let raw_node = RawTrieNode::Extension(key.clone(), child_node.0.clone());
+            let raw_node = RawTrieNodeWithSize { node: raw_node, memory_usage };
+            let hash = get_hash(&raw_node);
+            (hash, node, raw_node)
+        }
+    };
+    tracing::info!(prefix, from, to, hash = ?res.0, raw_node = ?res.2);
+    res
+}
+
+pub fn really_compute_state_root(items1: Vec<(Vec<u8>, ValueRef)>) -> StateRoot {
+    let items = items1.iter().map(|(k, v)| (NibbleSlice::new(k), v)).collect::<Vec<_>>();
+    if items.is_empty() {
+        return StateRoot::default();
+    }
+    let res = work(&items, 0, items.len(), 0);
+    res.0
+}
+
 #[cfg(test)]
 mod tests {
     use rand::Rng;

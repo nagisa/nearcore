@@ -14,6 +14,7 @@ use near_epoch_manager::{EpochManagerAdapter, EpochManagerHandle};
 use near_pool::types::PoolIterator;
 use near_primitives::account::{AccessKey, Account};
 use near_primitives::challenge::ChallengesResult;
+use near_primitives::config::ActionCosts;
 use near_primitives::config::ExtCosts;
 use near_primitives::contract::ContractCode;
 use near_primitives::errors::{InvalidTxError, RuntimeError, StorageError};
@@ -25,7 +26,7 @@ use near_primitives::sandbox::state_patch::SandboxStatePatch;
 use near_primitives::shard_layout::{
     account_id_to_shard_id, account_id_to_shard_uid, ShardLayout, ShardUId,
 };
-use near_primitives::state::FlatStateValue;
+use near_primitives::state::{FlatStateValue, ValueRef};
 use near_primitives::state_part::PartId;
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::trie_key::TrieKey;
@@ -41,9 +42,13 @@ use near_primitives::views::{
 };
 use near_store::flat::{FlatStorageChunkView, FlatStorageManager};
 use near_store::metadata::DbKind;
-use near_store::trie::TrieMemoryPartialStorage;
-use near_store::{ApplyStatePartResult, DBCol, PartialStorage, ShardTries, StateSnapshotConfig, Store, StoreCompiledContractCache, Trie, TrieConfig, WrappedTrieChanges, COLD_HEAD_KEY, RawTrieNodeWithSize};
-use near_vm_runner::logic::{ActionCosts, CompiledContractCache};
+use near_store::trie::{really_compute_state_root, Children, TrieNodeWithSize};
+use near_store::{
+    ApplyStatePartResult, DBCol, NibbleSlice, PartialStorage, RawTrieNode, RawTrieNodeWithSize,
+    ShardTries, StateSnapshotConfig, Store, StoreCompiledContractCache, Trie, TrieConfig,
+    WrappedTrieChanges, COLD_HEAD_KEY,
+};
+use near_vm_runner::logic::CompiledContractCache;
 use near_vm_runner::precompile_contract;
 use node_runtime::adapter::ViewRuntimeAdapter;
 use node_runtime::state_viewer::TrieViewer;
@@ -566,86 +571,30 @@ impl NightshadeRuntime {
     pub fn compute_state_root(
         &self,
         flat_storage_chunk_view: FlatStorageChunkView,
-        trie: Trie,
     ) -> anyhow::Result<StateRoot> {
         let flat_state_iter = flat_storage_chunk_view.iter_flat_state_entries(None, None);
 
         let mut num_values = 0;
-        let items = flat_state_iter.filter_map(|result| {
-            num_values += 1;
-            if num_values % 30000 == 0 {
-                tracing::info!(target: "nearcore", num_values, values_inlined, values_ref);
-            }
-            let (k, v) = result.expect("failed to read FlatState entry");
-            let v = v.to_value_ref();
-            Some((k, Some(v)))
-        });
-        /*
-        let mut values_inlined = 0;
-        let mut values_ref = 0;
-        let mut num_values = 0;
-        let items = flat_state_iter.filter_map(|result| {
-            num_values += 1;
-            if num_values % 300000 == 0 {
-                tracing::info!(target: "nearcore", num_values, values_inlined, values_ref);
-            }
-            let (k, v) = result.expect("failed to read FlatState entry");
-            match v {
-                FlatStateValue::Ref(value_ref) => {
-                    let value = trie.retrieve_value(&value_ref.hash).unwrap().to_vec();
-                    values_ref += 1;
-                    Some((k, Some(value)))
-                }
-                FlatStateValue::Inlined(value) => {
-                    values_inlined += 1;
-                    Some((k, Some(value)))
-                }
-            }
-        });
-        */
-        /*
-        let mut hashes = HashMap::new();
-        let mut value_refs = vec![];
-        let mut values_inlined = 0;
-        let mut num_values = 0;
-        let mut items = flat_state_iter
+        let items = flat_state_iter
             .filter_map(|result| {
                 num_values += 1;
-                if num_values % 300000 == 0 {
-                    tracing::info!(target: "nearcore", num_values, values_inlined);
+                if num_values % 30000 == 0 {
+                    tracing::info!(target: "nearcore", num_values);
                 }
                 let (k, v) = result.expect("failed to read FlatState entry");
-                match v {
-                    FlatStateValue::Ref(value_ref) => {
-                        value_refs.push((k, value_ref.hash));
-                        hashes.insert(value_ref.hash, None);
-                        None
-                    }
-                    FlatStateValue::Inlined(value) => {
-                        values_inlined += 1;
-                        Some((k, Some(value)))
-                    }
-                }
+                let v = v.to_value_ref();
+                Some((k, v))
             })
             .collect::<Vec<_>>();
-        tracing::info!(target: "nearcore", num_items = items.len(), num_hashes = hashes.len(), num_value_refs = value_refs.len(), values_inlined, "Iterated over flat state");
-
-        for (hash, value) in hashes.iter_mut() {
-            *value = Some(trie.retrieve_value(hash)?.to_vec());
+        tracing::info!("got value refs");
+        /*
+        for i in 1..items.len() {
+            assert!(items[i-1].0 <= items[i].0);
         }
-        tracing::info!(target: "nearcore", "Retrieved referenced values");
-
-        let items2 =
-            value_refs.iter().map(|(k, hash)| (k.clone(), hashes.get(hash).unwrap().clone()));
-
-        let items = items.into_iter().chain(items2);
+        tracing::info!("is sorted");
          */
-
-        let new_trie =
-            Trie::new(Rc::new(TrieMemoryPartialStorage::default()), StateRoot::new(), None);
-        // let root1 = new_trie.update(items.into_iter())?.new_root;
-        let root1 = new_trie.update_hashes(items.into_iter())?.new_root;
-        tracing::info!(target: "nearcore", ?root1, values_ref, values_inlined, num_values, "Iterated over flat state");
+        let root1 = really_compute_state_root(items);
+        tracing::info!(target: "nearcore", ?root1, num_values, "Iterated over flat state");
         Ok(root1)
     }
 }
