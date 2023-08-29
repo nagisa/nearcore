@@ -355,10 +355,8 @@ impl FlatStorage {
 
         tracing::debug!(target: "store", flat_head = ?guard.flat_head.hash, ?new_head, shard_id, "Moving flat head");
         let blocks = guard.get_blocks_to_head(&new_head)?;
-        println!("Blocks: {blocks:?}");
 
         for block_hash in blocks.into_iter().rev() {
-            println!("Block: {block_hash:?}");
             let mut store_update = StoreUpdate::new(guard.store.storage.clone());
             // Delta must exist because flat storage is locked and we could retrieve
             // path from old to new head. Otherwise we return internal error.
@@ -401,11 +399,9 @@ impl FlatStorage {
 
             store_update.commit().unwrap();
             debug!(target: "store", %shard_id, %block_hash, %block_height, "Moved flat storage head");
-            println!("Committed");
         }
         guard.update_delta_metrics();
 
-        println!("Ok");
         Ok(())
     }
 
