@@ -577,8 +577,13 @@ impl NightshadeRuntime {
         let mut hashes = HashMap::new();
         let mut value_refs = vec![];
         let mut values_inlined = 0;
+        let mut num_values = 0;
         let mut items = flat_state_iter
             .filter_map(|result| {
+                num_values += 1;
+                if num_values % 300000 == 0 {
+                    tracing::info!(target: "nearcore", num_values, values_inlined);
+                }
                 let (k, v) = result.expect("failed to read FlatState entry");
                 match v {
                     FlatStateValue::Ref(value_ref) => {
@@ -593,14 +598,15 @@ impl NightshadeRuntime {
                 }
             })
             .collect::<Vec<_>>();
+        tracing::info!(target: "nearcore", num_items = items.len(), num_hashes = hashes.len(), num_value_refs = value_refs.len(), values_inlined, "Iterated over flat state");
 
         for (hash, value) in hashes.iter_mut() {
             *value = Some(trie.retrieve_value(hash)?.to_vec());
         }
+        tracing::info!(target: "nearcore", "Retrieved referenced values");
 
         let items2 =
             value_refs.iter().map(|(k, hash)| (k.clone(), hashes.get(hash).unwrap().clone()));
-        tracing::info!(target: "nearcore", ?hashes, ?value_refs, values_inlined);
 
         let items = items.into_iter().chain(items2);
 
