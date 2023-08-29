@@ -573,6 +573,28 @@ impl NightshadeRuntime {
     ) -> anyhow::Result<StateRoot> {
         let flat_state_iter = flat_storage_chunk_view.iter_flat_state_entries(None, None);
 
+        let mut values_inlined = 0;
+        let mut values_ref = 0;
+        let mut num_values = 0;
+        let items = flat_state_iter.filter_map(|result| {
+            num_values += 1;
+            if num_values % 300000 == 0 {
+                tracing::info!(target: "nearcore", num_values, values_inlined, values_ref);
+            }
+            let (k, v) = result.expect("failed to read FlatState entry");
+            match v {
+                FlatStateValue::Ref(value_ref) => {
+                    let value = trie.retrieve_value(&value_ref.hash).unwrap().to_vec();
+                    values_ref += 1;
+                    Some((k, Some(value)))
+                }
+                FlatStateValue::Inlined(value) => {
+                    values_inlined += 1;
+                    Some((k, Some(value)))
+                }
+            }
+        });
+        /*
         let mut hashes = HashMap::new();
         let mut value_refs = vec![];
         let mut values_inlined = 0;
@@ -608,12 +630,12 @@ impl NightshadeRuntime {
             value_refs.iter().map(|(k, hash)| (k.clone(), hashes.get(hash).unwrap().clone()));
 
         let items = items.into_iter().chain(items2);
+         */
 
         let new_trie =
             Trie::new(Rc::new(TrieMemoryPartialStorage::default()), StateRoot::new(), None);
         let root1 = new_trie.update(items.into_iter())?.new_root;
-        tracing::info!(target: "nearcore", ?root1);
-        // TODO: Don't collect()
+        tracing::info!(target: "nearcore", ?root1, values_ref, values_inlined, num_values, "Iterated over flat state");
         Ok(root1)
     }
 }
