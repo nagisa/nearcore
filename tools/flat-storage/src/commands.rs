@@ -54,7 +54,7 @@ enum SubCommand {
 }
 
 #[derive(Parser)]
-pub struct ViewCmd{
+pub struct ViewCmd {
     #[clap(long)]
     shard_id: Option<ShardId>,
 }
@@ -417,7 +417,6 @@ impl FlatStorageCommand {
         let shard_uid = ShardUId { version: cmd.version, shard_id: cmd.shard_id as u32 };
         let flat_storage_manager = runtime.get_flat_storage_manager().unwrap();
         flat_storage_manager.create_flat_storage_for_shard(shard_uid)?;
-        let flat_storage = flat_storage_manager.get_flat_storage_for_shard(shard_uid).unwrap();
 
         let status = store.get_ser(DBCol::FlatStorageStatus, &shard_uid.to_bytes())?;
         println!("FlatStorageStatus: {status:?}");
@@ -428,7 +427,17 @@ impl FlatStorageCommand {
         };
         println!("flat head: {flat_head:?}");
 
-        let state_root = flat_storage.compute_state_root()?;
+        let flat_storage_chunk_view =
+            flat_storage_manager.chunk_view(shard_uid, flat_head.hash).unwrap();
+
+        let tip = chain_store.head()?;
+        let header = chain_store.get_block_header(&tip.last_block_hash)?;
+        let trie = runtime.get_view_trie_for_shard(
+            shard_uid.shard_id as ShardId,
+            header.prev_hash(),
+            *header.prev_state_root(),
+        )?;
+        let state_root = runtime.compute_state_root(flat_storage_chunk_view, trie)?;
         println!("Computed StateRoot: {state_root:?}");
         let chunk_extra = chain_store.get_chunk_extra(&flat_head.hash, &shard_uid)?;
         println!("ChunkExtra StateRoot: {:?}", chunk_extra.state_root());
