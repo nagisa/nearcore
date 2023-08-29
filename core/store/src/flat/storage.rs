@@ -5,7 +5,7 @@ use near_primitives::errors::StorageError;
 use near_primitives::hash::CryptoHash;
 use near_primitives::shard_layout::ShardUId;
 use near_primitives::state::FlatStateValue;
-use near_primitives::types::{BlockHeight, StateRoot};
+use near_primitives::types::BlockHeight;
 use tracing::{debug, warn};
 
 use crate::flat::delta::{BlockWithChangesInfo, CachedFlatStateChanges};
@@ -121,7 +121,6 @@ impl FlatStorageInner {
                 // Keep track of the height of the initial block.
                 first_height = Some(metadata.block.height);
             }
-
         }
         self.metrics.set_distance_to_head(
             blocks.len(),
@@ -476,10 +475,6 @@ impl FlatStorage {
         } else {
             false
         }
-    }
-
-    pub fn compute_state_root(&self) -> anyhow::Result<StateRoot> {
-        Ok(StateRoot::default())
     }
 }
 
@@ -973,7 +968,7 @@ mod tests {
                     .unwrap()
                     .unwrap();
                 assert!(
-                    !delta.0.is_empty() ,
+                    !delta.0.is_empty(),
                     "i: {i}, block_hash: {block_hash:?}, delta: {delta:?}"
                 );
             }
@@ -1022,13 +1017,13 @@ mod tests {
             // No changes.
             let changes = FlatStateChanges::default();
             // Simulates `Chain::save_flat_state_changes()`.
-            let prev_block_with_changes =
-                store_helper::get_prev_block_with_changes(
-                    &store,
-                    shard_uid,
-                    chain.get_block(i).hash,
-                    chain.get_block(i).prev_hash,
-                ).unwrap();
+            let prev_block_with_changes = store_helper::get_prev_block_with_changes(
+                &store,
+                shard_uid,
+                chain.get_block(i).hash,
+                chain.get_block(i).prev_hash,
+            )
+            .unwrap();
             let delta = FlatStateDelta {
                 changes,
                 metadata: FlatStateDeltaMetadata {
@@ -1049,13 +1044,13 @@ mod tests {
             .map(|height| (chain.get_block_hash(height), height))
             .collect::<HashMap<CryptoHash, BlockHeight>>();
 
-            let block_hash = chain.get_block_hash((num_blocks-1) as BlockHeight);
-            flat_storage.update_flat_head(&block_hash, true).unwrap();
+        let block_hash = chain.get_block_hash((num_blocks - 1) as BlockHeight);
+        flat_storage.update_flat_head(&block_hash, true).unwrap();
 
-            let flat_head_hash = flat_storage.get_head_hash();
-            let flat_head_height = hashes.get(&flat_head_hash).unwrap();
+        let flat_head_hash = flat_storage.get_head_hash();
+        let flat_head_height = hashes.get(&flat_head_hash).unwrap();
 
-        assert_eq!(*flat_head_height, (num_blocks-1) as BlockHeight);
+        assert_eq!(*flat_head_height, (num_blocks - 1) as BlockHeight);
     }
 
     #[test]

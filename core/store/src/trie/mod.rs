@@ -50,7 +50,7 @@ pub mod update;
 
 use self::accounting_cache::TrieAccountingCache;
 use self::trie_recording::TrieRecorder;
-use self::trie_storage::TrieMemoryPartialStorage;
+pub use self::trie_storage::TrieMemoryPartialStorage;
 pub use from_flat::construct_trie_from_flat;
 
 const POISONED_LOCK_ERR: &str = "The lock was poisoned.";
