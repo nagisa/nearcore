@@ -14,7 +14,6 @@ use near_epoch_manager::{EpochManagerAdapter, EpochManagerHandle};
 use near_pool::types::PoolIterator;
 use near_primitives::account::{AccessKey, Account};
 use near_primitives::challenge::ChallengesResult;
-use near_primitives::config::ActionCosts;
 use near_primitives::config::ExtCosts;
 use near_primitives::contract::ContractCode;
 use near_primitives::errors::{InvalidTxError, RuntimeError, StorageError};
@@ -43,11 +42,8 @@ use near_primitives::views::{
 use near_store::flat::{FlatStorageChunkView, FlatStorageManager};
 use near_store::metadata::DbKind;
 use near_store::trie::TrieMemoryPartialStorage;
-use near_store::{
-    ApplyStatePartResult, DBCol, PartialStorage, ShardTries, StateSnapshotConfig, Store,
-    StoreCompiledContractCache, Trie, TrieConfig, WrappedTrieChanges, COLD_HEAD_KEY,
-};
-use near_vm_runner::logic::CompiledContractCache;
+use near_store::{ApplyStatePartResult, DBCol, PartialStorage, ShardTries, StateSnapshotConfig, Store, StoreCompiledContractCache, Trie, TrieConfig, WrappedTrieChanges, COLD_HEAD_KEY, RawTrieNodeWithSize};
+use near_vm_runner::logic::{ActionCosts, CompiledContractCache};
 use near_vm_runner::precompile_contract;
 use node_runtime::adapter::ViewRuntimeAdapter;
 use node_runtime::state_viewer::TrieViewer;
@@ -574,6 +570,17 @@ impl NightshadeRuntime {
     ) -> anyhow::Result<StateRoot> {
         let flat_state_iter = flat_storage_chunk_view.iter_flat_state_entries(None, None);
 
+        let mut num_values = 0;
+        let items = flat_state_iter.filter_map(|result| {
+            num_values += 1;
+            if num_values % 30000 == 0 {
+                tracing::info!(target: "nearcore", num_values, values_inlined, values_ref);
+            }
+            let (k, v) = result.expect("failed to read FlatState entry");
+            let v = v.to_value_ref();
+            Some((k, Some(v)))
+        });
+        /*
         let mut values_inlined = 0;
         let mut values_ref = 0;
         let mut num_values = 0;
@@ -595,6 +602,7 @@ impl NightshadeRuntime {
                 }
             }
         });
+        */
         /*
         let mut hashes = HashMap::new();
         let mut value_refs = vec![];
@@ -635,7 +643,8 @@ impl NightshadeRuntime {
 
         let new_trie =
             Trie::new(Rc::new(TrieMemoryPartialStorage::default()), StateRoot::new(), None);
-        let root1 = new_trie.update(items.into_iter())?.new_root;
+        // let root1 = new_trie.update(items.into_iter())?.new_root;
+        let root1 = new_trie.update_hashes(items.into_iter())?.new_root;
         tracing::info!(target: "nearcore", ?root1, values_ref, values_inlined, num_values, "Iterated over flat state");
         Ok(root1)
     }
