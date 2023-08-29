@@ -432,12 +432,7 @@ impl FlatStorageCommand {
 
         let tip = chain_store.head()?;
         let header = chain_store.get_block_header(&tip.last_block_hash)?;
-        let trie = runtime.get_view_trie_for_shard(
-            shard_uid.shard_id as ShardId,
-            header.prev_hash(),
-            *header.prev_state_root(),
-        )?;
-        let state_root = runtime.compute_state_root(flat_storage_chunk_view, trie)?;
+        let state_root = runtime.compute_state_root(flat_storage_chunk_view)?;
         println!("Computed StateRoot: {state_root:?}");
         let chunk_extra = chain_store.get_chunk_extra(&flat_head.hash, &shard_uid)?;
         println!("ChunkExtra StateRoot: {:?}", chunk_extra.state_root());
