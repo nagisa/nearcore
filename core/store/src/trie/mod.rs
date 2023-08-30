@@ -1133,6 +1133,9 @@ fn work(
     assert!(to <= items.len());
     // assert!(items[from].0[..prefix] == items[to - 1].0[..prefix]);
     let res = if from + 1 == to {
+        if from % 100000 == 0 {
+            tracing::info!(target: "my_trie", ?prefix, ?from, ?to);
+        }
         let key = items[from].0.mid(prefix).encoded(true).to_vec();
         let node = TrieNode::Leaf(key.clone(), ValueHandle::HashAndSize(items[from].1.clone()));
         let memory_usage = node.memory_usage_direct_no_memory();
