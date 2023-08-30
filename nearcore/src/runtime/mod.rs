@@ -579,14 +579,14 @@ impl NightshadeRuntime {
             .filter_map(|result| {
                 num_values += 1;
                 if num_values % 3000000 == 0 {
-                    tracing::debug!(target: "my_trie", num_values);
+                    tracing::info!(target: "my_trie", num_values);
                 }
                 let (k, v) = result.expect("failed to read FlatState entry");
                 let v = v.to_value_ref();
                 Some((k, v))
             })
             .collect::<Vec<_>>();
-        tracing::debug!(target: "my_trie", "got value refs");
+        tracing::info!(target: "my_trie", ?num_values, "got value refs");
         let root1 = really_compute_state_root(items);
         tracing::info!(target: "my_trie", ?root1, num_values, "Iterated over flat state");
         Ok(root1)
