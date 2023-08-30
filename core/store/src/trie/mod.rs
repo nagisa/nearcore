@@ -1128,7 +1128,7 @@ fn work(
     to: usize,
     prefix: usize,
 ) -> (CryptoHash, TrieNodeWithSize, RawTrieNodeWithSize) {
-    tracing::debug!(target: "my_trie", prefix, from, to);
+    tracing::trace!(target: "my_trie", prefix, from, to);
     assert!(from < to);
     assert!(to <= items.len());
     // assert!(items[from].0[..prefix] == items[to - 1].0[..prefix]);
@@ -1222,7 +1222,7 @@ fn work(
             (hash, node, raw_node)
         }
     };
-    tracing::debug!(target: "my_trie", prefix, from, to, hash = ?res.0, raw_node = ?res.2);
+    tracing::trace!(target: "my_trie", prefix, from, to, hash = ?res.0, raw_node = ?res.2);
     res
 }
 
