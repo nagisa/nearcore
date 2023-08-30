@@ -493,6 +493,7 @@ impl ShardTries {
                         // Drop Store before deleting the underlying data.
                         *state_snapshot_lock = None;
 
+                        /*
                         // This will delete all existing snapshots from file system. If failed, will retry until success
                         let mut delete_state_snapshots_from_file_system = false;
                         let mut file_system_delete_retries = 0;
@@ -507,6 +508,7 @@ impl ShardTries {
                                 );
                             file_system_delete_retries += 1;
                         }
+                         */
 
                         // this will delete the STATE_SNAPSHOT_KEY-value pair from db. If failed, will retry until success
                         let mut delete_state_snapshot_from_db = false;
