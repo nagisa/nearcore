@@ -5826,7 +5826,7 @@ pub fn do_apply_chunks(
         .map(|task| {
             // As chunks can be processed in parallel, make sure they are all tracked as children of
             // a single span.
-            task(&parent_span)
+            Ok(task(&parent_span).unwrap())
         })
         .collect::<Vec<_>>()
 }
