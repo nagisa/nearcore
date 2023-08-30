@@ -1125,7 +1125,7 @@ fn work(
         let node = TrieNode::Leaf(key.clone(), ValueHandle::HashAndSize(items[from].1.clone()));
         let memory_usage = node.memory_usage_direct_no_memory();
         let node = TrieNodeWithSize { node, memory_usage };
-        let raw_node = RawTrieNode::Leaf(key.clone(), items[from].1.clone());
+        let raw_node = RawTrieNode::Leaf(key, items[from].1.clone());
         let raw_node = RawTrieNodeWithSize { node: raw_node, memory_usage };
         let hash = get_hash(&raw_node);
         (hash, node, raw_node)
@@ -1162,7 +1162,7 @@ fn work(
                         .map(|maybe_child_stuff| {
                             maybe_child_stuff
                                 .as_ref()
-                                .map(|child_stuff| NodeHandle::Hash(child_stuff.0.clone()))
+                                .map(|child_stuff| NodeHandle::Hash(child_stuff.0))
                         })
                         .collect::<Vec<_>>()
                         .try_into()
@@ -1184,7 +1184,7 @@ fn work(
                 children_nodes
                     .iter()
                     .map(|maybe_child_stuff| {
-                        maybe_child_stuff.as_ref().map(|child_stuff| child_stuff.0.clone())
+                        maybe_child_stuff.as_ref().map(|child_stuff| child_stuff.0)
                     })
                     .collect::<Vec<_>>()
                     .try_into()
@@ -1201,10 +1201,10 @@ fn work(
         } else {
             let child_node = work(items, from, to, p);
             let key = items[from].0.mid(prefix).encoded_leftmost(p - prefix, false).to_vec();
-            let node = TrieNode::Extension(key.clone(), NodeHandle::Hash(child_node.0.clone()));
+            let node = TrieNode::Extension(key.clone(), NodeHandle::Hash(child_node.0));
             let memory_usage = node.memory_usage_direct_no_memory() + child_node.1.memory_usage;
             let node = TrieNodeWithSize { node, memory_usage };
-            let raw_node = RawTrieNode::Extension(key.clone(), child_node.0.clone());
+            let raw_node = RawTrieNode::Extension(key, child_node.0);
             let raw_node = RawTrieNodeWithSize { node: raw_node, memory_usage };
             let hash = get_hash(&raw_node);
             (hash, node, raw_node)
