@@ -44,9 +44,8 @@ use near_store::flat::{FlatStorageChunkView, FlatStorageManager};
 use near_store::metadata::DbKind;
 use near_store::trie::{really_compute_state_root, Children, TrieNodeWithSize};
 use near_store::{
-    ApplyStatePartResult, DBCol, NibbleSlice, PartialStorage, RawTrieNode, RawTrieNodeWithSize,
-    ShardTries, StateSnapshotConfig, Store, StoreCompiledContractCache, Trie, TrieConfig,
-    WrappedTrieChanges, COLD_HEAD_KEY,
+    ApplyStatePartResult, DBCol, PartialStorage, ShardTries, StateSnapshotConfig, Store,
+    StoreCompiledContractCache, Trie, TrieConfig, WrappedTrieChanges, COLD_HEAD_KEY,
 };
 use near_vm_runner::logic::CompiledContractCache;
 use near_vm_runner::precompile_contract;
@@ -58,7 +57,6 @@ use node_runtime::{
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::{debug, error};
