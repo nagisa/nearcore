@@ -1119,7 +1119,7 @@ fn work(
     // assert!(items[from].0[..prefix] == items[to - 1].0[..prefix]);
     let res = if from + 1 == to {
         if from % 3000000 == 0 {
-            tracing::info!(target: "my_trie", ?prefix, ?from, ?to, key = ?NibbleSlice::nibbles_to_bytes(items[from].0.iter().collect::<Vec<u8>>));
+            tracing::info!(target: "my_trie", ?prefix, ?from, ?to, key = ?NibbleSlice::nibbles_to_bytes(&items[from].0.iter().collect::<Vec<u8>>()));
         }
         let key = items[from].0.mid(prefix).encoded(true).to_vec();
         let node = TrieNode::Leaf(key.clone(), ValueHandle::HashAndSize(items[from].1.clone()));
