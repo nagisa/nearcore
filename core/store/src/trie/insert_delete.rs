@@ -102,7 +102,6 @@ impl Trie {
             match node {
                 TrieNode::Empty => {
                     let value_handle = memory.store_value(value.take().unwrap());
-                    tracing::debug!(target: "memory",leaf_key=?partial.encoded(true).into_vec(),?partial, "Trie::insert Empty->Leaf");
                     let leaf_node = TrieNode::Leaf(
                         partial.encoded(true).into_vec(),
                         ValueHandle::InMemory(value_handle),
@@ -147,15 +146,12 @@ impl Trie {
                     }
                 }
                 TrieNode::Leaf(key, existing_value) => {
-                    tracing::debug!(target:"memory",?key,"Trie::insert match Leaf");
-
                     let existing_key = NibbleSlice::from_encoded(&key).0;
                     let common_prefix = partial.common_prefix(&existing_key);
                     if common_prefix == existing_key.len() && common_prefix == partial.len() {
                         // Equivalent leaf.
                         self.delete_value(memory, &existing_value)?;
                         let value_handle = memory.store_value(value.take().unwrap());
-                        tracing::debug!(target:"memory",?key,"Trie::insert match!1 Leaf");
                         let node = TrieNode::Leaf(key, ValueHandle::InMemory(value_handle));
                         let memory_usage = node.memory_usage_direct(memory);
                         memory.store_at(handle, TrieNodeWithSize { node, memory_usage });
@@ -168,7 +164,6 @@ impl Trie {
                             TrieNode::Branch(children, Some(existing_value))
                         } else {
                             let idx = existing_key.at(0);
-                            tracing::debug!(target:"memory",another_key = ?existing_key.mid(1).encoded(true).into_vec(),"Trie::insert match!2 Leaf");
                             let new_leaf = TrieNode::Leaf(
                                 existing_key.mid(1).encoded(true).into_vec(),
                                 existing_value,

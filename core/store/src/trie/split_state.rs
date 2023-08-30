@@ -141,6 +141,8 @@ impl ShardTries {
         let mut new_state_roots = state_roots.clone();
         let mut store_update = self.store_update();
         for (shard_uid, changes) in changes_by_shard {
+            unimplemented!();
+            /*
             FlatStateChanges::from_raw_key_value(&changes)
                 .apply_to_flat_state(&mut store_update, shard_uid);
             // Here we assume that state_roots contains shard_uid, the caller of this method will guarantee that.
@@ -148,6 +150,7 @@ impl ShardTries {
                 self.get_trie_for_shard(shard_uid, state_roots[&shard_uid]).update(changes)?;
             let state_root = self.apply_all(&trie_changes, shard_uid, &mut store_update);
             new_state_roots.insert(shard_uid, state_root);
+             */
         }
         Ok((store_update, new_state_roots))
     }
@@ -189,9 +192,12 @@ impl ShardTries {
         for (shard_uid, update) in updates {
             let (_, trie_changes, state_changes) = update.finalize()?;
             let state_root = self.apply_all(&trie_changes, shard_uid, &mut store_update);
+            unimplemented!();
+            /*
             FlatStateChanges::from_state_changes(&state_changes)
                 .apply_to_flat_state(&mut store_update, shard_uid);
             new_state_roots.insert(shard_uid, state_root);
+             */
         }
         Ok((store_update, new_state_roots))
     }

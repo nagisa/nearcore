@@ -79,7 +79,7 @@ impl StorageMutator {
             let state_root = self.shard_tries.apply_all(&trie_updates, shard_uid, &mut update);
             state_roots.push(state_root);
             let flat_state_changes = FlatStateChanges::from_state_changes(&raw_changes);
-            flat_state_changes.apply_to_flat_state(&mut update, shard_uid);
+            flat_state_changes.apply_to_flat_state_no_history(&mut update, shard_uid);
         }
         update.commit()?;
         Ok(state_roots)

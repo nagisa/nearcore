@@ -978,13 +978,8 @@ impl Client {
             was_requested)
         .entered();
 
-        let res = self.receive_block_impl(
-            block.clone(),
-            peer_id,
-            was_requested,
-            apply_chunks_done_callback,
-        );
-        tracing::debug!(target: "client", ?was_requested, hash = ?block.header().hash(), ?res, "receive_block");
+        let res =
+            self.receive_block_impl(block, peer_id, was_requested, apply_chunks_done_callback);
         // Log the errors here. Note that the real error handling logic is already
         // done within process_block_impl, this is just for logging.
         if let Err(err) = res {
@@ -1311,7 +1306,6 @@ impl Client {
         shard_chunk: Option<ShardChunk>,
         apply_chunks_done_callback: DoneApplyChunkCallback,
     ) {
-        tracing::info!(target: "debug-me", reciepts = ?partial_chunk.receipts(), "on_chunk_completed");
         let chunk_header = partial_chunk.cloned_header();
         self.chain.blocks_delay_tracker.mark_chunk_completed(&chunk_header, StaticClock::utc());
         self.block_production_info

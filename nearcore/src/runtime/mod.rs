@@ -26,7 +26,6 @@ use near_primitives::sandbox::state_patch::SandboxStatePatch;
 use near_primitives::shard_layout::{
     account_id_to_shard_id, account_id_to_shard_uid, ShardLayout, ShardUId,
 };
-use near_primitives::state::{FlatStateValue, ValueRef};
 use near_primitives::state_part::PartId;
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::trie_key::TrieKey;
@@ -42,7 +41,7 @@ use near_primitives::views::{
 };
 use near_store::flat::{FlatStorageChunkView, FlatStorageManager};
 use near_store::metadata::DbKind;
-use near_store::trie::{really_compute_state_root, Children, TrieNodeWithSize};
+use near_store::trie::really_compute_state_root;
 use near_store::{
     ApplyStatePartResult, DBCol, PartialStorage, ShardTries, StateSnapshotConfig, Store,
     StoreCompiledContractCache, Trie, TrieConfig, WrappedTrieChanges, COLD_HEAD_KEY,
@@ -1163,7 +1162,7 @@ impl RuntimeAdapter for NightshadeRuntime {
         debug!(target: "chain", %shard_id, "Inserting {} values to flat storage", flat_state_delta.len());
         // TODO: `apply_to_flat_state` inserts values with random writes, which can be time consuming.
         //       Optimize taking into account that flat state values always correspond to a consecutive range of keys.
-        flat_state_delta.apply_to_flat_state(&mut store_update, shard_uid);
+        flat_state_delta.apply_to_flat_state_no_history(&mut store_update, shard_uid);
         self.precompile_contracts(epoch_id, contract_codes)?;
         Ok(store_update.commit()?)
     }

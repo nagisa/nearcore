@@ -362,7 +362,12 @@ impl FlatStorage {
             // path from old to new head. Otherwise we return internal error.
             let changes = store_helper::get_delta_changes(&guard.store, shard_uid, block_hash)?
                 .ok_or_else(|| missing_delta_error(&block_hash))?;
-            changes.apply_to_flat_state(&mut store_update, guard.shard_uid);
+            changes.apply_to_flat_state(
+                &mut store_update,
+                guard.shard_uid,
+                guard.store.clone(),
+                block_hash,
+            );
             let metadata = guard
                 .deltas
                 .get(&block_hash)

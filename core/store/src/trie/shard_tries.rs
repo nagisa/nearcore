@@ -849,7 +849,7 @@ pub enum KeyForStateChangesError {
 pub struct KeyForStateChanges(Vec<u8>);
 
 impl KeyForStateChanges {
-    const PREFIX_LEN: usize = CryptoHash::LENGTH;
+    pub const PREFIX_LEN: usize = CryptoHash::LENGTH;
 
     fn new(block_hash: &CryptoHash, reserve_capacity: usize) -> Self {
         let mut key_prefix = Vec::with_capacity(block_hash.as_bytes().len() + reserve_capacity);

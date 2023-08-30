@@ -268,6 +268,9 @@ pub enum DBCol {
     /// - *Rows*: `KeyForFlatStateDelta { shard_uid, block_hash }`
     /// - *Column type*: `FlatStateDeltaMetadata`
     FlatStateDeltaMetadata,
+    HistFlatStateChanges,
+    HistFlatStatePrevValues,
+    HistFlatStateDeltaMetadata,
     /// Flat storage status for the corresponding shard.
     /// - *Rows*: `shard_uid`
     /// - *Column type*: `FlatStorageStatus`
@@ -473,6 +476,9 @@ impl DBCol {
             | DBCol::_TransactionResult
             // | DBCol::StateChangesForSplitStates
             | DBCol::CachedContractCode
+            | DBCol::HistFlatStatePrevValues
+            | DBCol::HistFlatStateChanges
+            | DBCol::HistFlatStateDeltaMetadata
             | DBCol::FlatState
             | DBCol::FlatStateChanges
             | DBCol::FlatStateDeltaMetadata
@@ -543,6 +549,11 @@ impl DBCol {
             DBCol::HeaderHashesByHeight => &[DBKeyType::BlockHeight],
             DBCol::StateChangesForSplitStates => &[DBKeyType::BlockHash, DBKeyType::ShardId],
             DBCol::TransactionResultForBlock => &[DBKeyType::OutcomeId, DBKeyType::BlockHash],
+            DBCol::HistFlatStatePrevValues => {
+                &[DBKeyType::BlockHash, DBKeyType::ShardUId, DBKeyType::TrieKey]
+            }
+            DBCol::HistFlatStateChanges => &[DBKeyType::ShardUId, DBKeyType::BlockHash],
+            DBCol::HistFlatStateDeltaMetadata => &[DBKeyType::ShardUId, DBKeyType::BlockHash],
             DBCol::FlatState => &[DBKeyType::ShardUId, DBKeyType::TrieKey],
             DBCol::FlatStateChanges => &[DBKeyType::ShardUId, DBKeyType::BlockHash],
             DBCol::FlatStateDeltaMetadata => &[DBKeyType::ShardUId, DBKeyType::BlockHash],

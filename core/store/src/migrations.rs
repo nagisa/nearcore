@@ -230,3 +230,7 @@ pub fn migrate_37_to_38(store: &Store) -> anyhow::Result<()> {
     update.commit()?;
     Ok(())
 }
+
+pub fn migrate_38_to_39(store: &Store) -> anyhow::Result<()> {
+    Ok(())
+}

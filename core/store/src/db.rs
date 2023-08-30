@@ -239,8 +239,6 @@ fn assert_no_overwrite(col: DBCol, key: &[u8], value: &[u8], old_value: &[u8]) {
 write once column overwritten
 col: {col}
 key: {key:?}
-    value: {value:?}
-old_value: {old_value:?}
 "
     )
 }

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::{store_helper, BlockInfo};
-use crate::{CryptoHash, StoreUpdate};
+use crate::{CryptoHash, DBCol, Store, StoreUpdate};
 
 #[derive(Debug)]
 pub struct FlatStateDelta {
@@ -119,8 +119,32 @@ impl FlatStateChanges {
     }
 
     /// Applies delta to the flat state.
-    pub fn apply_to_flat_state(self, store_update: &mut StoreUpdate, shard_uid: ShardUId) {
+    pub fn apply_to_flat_state_no_history(
+        self,
+        store_update: &mut StoreUpdate,
+        shard_uid: ShardUId,
+    ) {
         for (key, value) in self.0.into_iter() {
+            store_helper::set_flat_state_value(store_update, shard_uid, key, value);
+        }
+    }
+
+    pub fn apply_to_flat_state(
+        self,
+        store_update: &mut StoreUpdate,
+        shard_uid: ShardUId,
+        store: Store,
+        block_hash: CryptoHash,
+    ) {
+        for (key, value) in self.0.into_iter() {
+            let orig_value = store_helper::get_flat_state_value(&store, shard_uid, &key).unwrap();
+            store_helper::set_hist_flat_state_value(
+                store_update,
+                shard_uid.clone(),
+                key.clone(),
+                value.clone(),
+                block_hash,
+            );
             store_helper::set_flat_state_value(store_update, shard_uid, key, value);
         }
     }

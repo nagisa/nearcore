@@ -13,14 +13,15 @@ use near_primitives::syncing::{
     ShardStateSyncResponseHeader, StateHeaderKey, StatePartKey, StateSyncDumpProgress,
 };
 use near_primitives::transaction::{ExecutionOutcomeWithProof, SignedTransaction};
+use near_primitives::trie_key::TrieKey;
 use near_primitives::types::chunk_extra::ChunkExtra;
-use near_primitives::types::{EpochId, StateRoot};
+use near_primitives::types::{EpochId, RawStateChangesWithTrieKey, StateRoot};
 use near_primitives::utils::{get_block_shard_id_rev, get_outcome_id_block_hash_rev};
 use near_primitives_core::hash::CryptoHash;
 use near_primitives_core::types::BlockHeight;
 use near_store::flat::delta::KeyForFlatStateDelta;
 use near_store::flat::{FlatStateChanges, FlatStateDeltaMetadata};
-use near_store::{DBCol, NibbleSlice, RawTrieNodeWithSize, Store, TrieChanges};
+use near_store::{DBCol, KeyForStateChanges, NibbleSlice, RawTrieNodeWithSize, Store, TrieChanges};
 use std::collections::HashSet;
 use std::fmt::Debug;
 use strum::IntoEnumIterator;
@@ -162,6 +163,28 @@ fn format_key_and_value<'a>(
             Box::new(BlockHeight::try_from_slice(key).unwrap()),
             Box::new(HashSet::<CryptoHash>::try_from_slice(value).unwrap()),
         ),
+        DBCol::HistFlatStateChanges => (
+            // TODO: Format keys as nibbles.
+            Box::new(KeyForFlatStateDelta::try_from_slice(key).unwrap()),
+            Box::new(FlatStateChanges::try_from_slice(value).unwrap()),
+        ),
+        DBCol::HistFlatStateDeltaMetadata => (
+            // TODO: Format keys as nibbles.
+            Box::new(KeyForFlatStateDelta::try_from_slice(key).unwrap()),
+            Box::new(FlatStateDeltaMetadata::try_from_slice(value).unwrap()),
+        ),
+        DBCol::HistFlatStatePrevValues => {
+            let block_hash: CryptoHash = CryptoHash::try_from_slice(&key[..32]).unwrap();
+            let (shard_uid, entry_key) =
+                near_store::flat::store_helper::decode_flat_state_db_key(&key[32..]).unwrap();
+            let nibbles = NibbleSlice::nibbles_to_string(
+                &NibbleSlice::new(&entry_key).iter().collect::<Vec<u8>>(),
+            );
+            (
+                Box::new((block_hash, shard_uid, nibbles)),
+                Box::new(FlatStateValue::try_from_slice(value).unwrap()),
+            )
+        }
         DBCol::IncomingReceipts => (
             Box::new(get_block_shard_id_rev(key).unwrap()),
             Box::new(Vec::<ReceiptProof>::try_from_slice(value).unwrap()),
@@ -194,6 +217,21 @@ fn format_key_and_value<'a>(
                 format!("Value: {value:?}")
             };
             (Box::new((s, h)), Box::new(res))
+        }
+        DBCol::StateChanges => {
+            let block_hash: CryptoHash =
+                CryptoHash::try_from_slice(&key[..KeyForStateChanges::PREFIX_LEN]).unwrap();
+            let raw_trie_key = &key[KeyForStateChanges::PREFIX_LEN..];
+            let maybe_trie_key = TrieKey::try_from_slice(&raw_trie_key);
+            let other_key: Box<dyn Debug + 'a> = if maybe_trie_key.is_ok() {
+                Box::new(maybe_trie_key.unwrap())
+            } else {
+                Box::new(raw_trie_key.to_vec())
+            };
+            (
+                Box::new((block_hash, other_key)),
+                Box::new(RawStateChangesWithTrieKey::try_from_slice(value).unwrap()),
+            )
         }
         DBCol::StateDlInfos => (
             Box::new(CryptoHash::try_from(key).unwrap()),

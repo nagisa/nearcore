@@ -606,17 +606,21 @@ impl ShardsManager {
             },
         );
 
-        if !mark_only {
-            let fetch_from_archival = chunk_needs_to_be_fetched_from_archival(
+        if mark_only {
+            debug!(target: "chunks", height, shard_id, ?chunk_hash, "Marked the chunk as being requested but did not send the request yet.");
+            return;
+        }
+
+        let fetch_from_archival = chunk_needs_to_be_fetched_from_archival(
                 &ancestor_hash, &self.chain_header_head.last_block_hash,
             self.epoch_manager.as_ref()).unwrap_or_else(|err| {
                 error!(target: "chunks", "Error during requesting partial encoded chunk. Cannot determine whether to request from an archival node, defaulting to not: {}", err);
                 false
             });
-            let old_block = self.chain_header_head.last_block_hash != prev_block_hash
-                && self.chain_header_head.prev_block_hash != prev_block_hash;
+        let old_block = self.chain_header_head.last_block_hash != prev_block_hash
+            && self.chain_header_head.prev_block_hash != prev_block_hash;
 
-            let should_wait_for_chunk_forwarding =
+        let should_wait_for_chunk_forwarding =
                 self.should_wait_for_chunk_forwarding(&ancestor_hash, chunk_header.shard_id(), chunk_header.height_created()+1).unwrap_or_else(|_| {
                     // ancestor_hash must be accepted because we don't request missing chunks through this
                     // this function for orphans
@@ -625,30 +629,27 @@ impl ShardsManager {
                     false
                 });
 
-            // If chunks forwarding is enabled,
-            // we purposely do not send chunk request messages right away for new blocks. Such requests
-            // will eventually be sent because of the `resend_chunk_requests` loop. However,
-            // we want to give some time for any `PartialEncodedChunkForward` messages to arrive
-            // before we send requests.
-            if !should_wait_for_chunk_forwarding || fetch_from_archival || old_block {
-                debug!(target: "chunks", height, shard_id, ?chunk_hash, "Requesting.");
-                let request_result = self.request_partial_encoded_chunk(
-                    height,
-                    &ancestor_hash,
-                    shard_id,
-                    &chunk_hash,
-                    false,
-                    old_block,
-                    fetch_from_archival,
-                );
-                if let Err(err) = request_result {
-                    error!(target: "chunks", "Error during requesting partial encoded chunk: {}", err);
-                }
-            } else {
-                debug!(target: "chunks",should_wait_for_chunk_forwarding, fetch_from_archival, old_block,  "Delaying the chunk request.");
+        // If chunks forwarding is enabled,
+        // we purposely do not send chunk request messages right away for new blocks. Such requests
+        // will eventually be sent because of the `resend_chunk_requests` loop. However,
+        // we want to give some time for any `PartialEncodedChunkForward` messages to arrive
+        // before we send requests.
+        if !should_wait_for_chunk_forwarding || fetch_from_archival || old_block {
+            debug!(target: "chunks", height, shard_id, ?chunk_hash, "Requesting.");
+            let request_result = self.request_partial_encoded_chunk(
+                height,
+                &ancestor_hash,
+                shard_id,
+                &chunk_hash,
+                false,
+                old_block,
+                fetch_from_archival,
+            );
+            if let Err(err) = request_result {
+                error!(target: "chunks", "Error during requesting partial encoded chunk: {}", err);
             }
         } else {
-            debug!(target: "chunks", height, shard_id, ?chunk_hash, "Marked the chunk as being requested but did not send the request yet.");
+            debug!(target: "chunks",should_wait_for_chunk_forwarding, fetch_from_archival, old_block,  "Delaying the chunk request.");
         }
     }
 
@@ -798,22 +799,9 @@ impl ShardsManager {
         request: PartialEncodedChunkRequestMsg,
     ) -> (PartialEncodedChunkResponseSource, PartialEncodedChunkResponseMsg) {
         let (src, mut response_msg) = self.prepare_partial_encoded_chunk_response_unsorted(request);
-        let before = response_msg
-            .receipts
-            .clone()
-            .into_iter()
-            .map(|ReceiptProof(_, shard_proof)| shard_proof);
-        response_msg.receipts.sort_by_key(
-            |ReceiptProof(_receipt, ShardProof { from_shard_id, to_shard_id, proof: _proof })| {
-                (*from_shard_id, *to_shard_id)
-            },
-        );
-        let after = response_msg
-            .receipts
-            .clone()
-            .into_iter()
-            .map(|ReceiptProof(_, shard_proof)| shard_proof);
-        tracing::info!(target: "debug-me", ?before, ?after);
+        // Note that the PartialChunks column is a write-once column, and needs
+        // the values to be deterministic.
+        response_msg.receipts.sort();
         (src, response_msg)
     }
 
@@ -1447,7 +1435,7 @@ impl ShardsManager {
             }
         }
 
-        // 2. Consider it valid; mergeparts and receipts included in the partial encoded chunk
+        // 2. Consider it valid; merge parts and receipts included in the partial encoded chunk
         // into chunk cache
         let new_part_ords =
             self.encoded_chunks.merge_in_partial_encoded_chunk(partial_encoded_chunk);
@@ -1502,7 +1490,6 @@ impl ShardsManager {
         &mut self,
         response: PartialEncodedChunkResponseMsg,
     ) -> Result<(), Error> {
-        tracing::info!(target: "debug-me", receipts = ?response.receipts, "process_partial_encoded_chunk_response");
         let header = self.get_partial_encoded_chunk_header(&response.chunk_hash)?;
         let partial_chunk = PartialEncodedChunk::new(header, response.parts, response.receipts);
         // We already know the header signature is valid because we read it from the
@@ -1595,7 +1582,6 @@ impl ShardsManager {
         }
         // we can safely unwrap here because we already checked that chunk_hash exist in encoded_chunks
         let entry = self.encoded_chunks.get(&chunk_hash).unwrap();
-        tracing::debug!(target: "debug-me", entry_receipts = ?entry.receipts, ?can_reconstruct, ?have_all_parts, "try_process_chunk_parts_and_receipts");
 
         let cares_about_shard = cares_about_shard_this_or_next_epoch(
             self.me.as_ref(),
@@ -1617,7 +1603,6 @@ impl ShardsManager {
                 &self.shard_tracker,
             );
 
-            tracing::info!(target: "debug-me", receipts=?partial_chunk.receipts(), "!cares_about_shard -- complete_chunk0");
             self.complete_chunk(partial_chunk, None);
             return Ok(ProcessPartialEncodedChunkResult::HaveAllPartsAndReceipts);
         }
@@ -1645,10 +1630,8 @@ impl ShardsManager {
             // Don't persist if we don't care about the shard, even if we accidentally got enough
             // parts to reconstruct the full shard.
             if cares_about_shard {
-                tracing::info!(target: "debug-me", receipts=?partial_chunk.receipts(), "can_reconstruct complete_chunk1");
                 self.complete_chunk(partial_chunk, Some(shard_chunk));
             } else {
-                tracing::info!(target: "debug-me", receipts=?partial_chunk.receipts(), "can_reconstruct complete_chunk2");
                 self.complete_chunk(partial_chunk, None);
             }
             return Ok(ProcessPartialEncodedChunkResult::HaveAllPartsAndReceipts);
@@ -1666,7 +1649,7 @@ impl ShardsManager {
         self.encoded_chunks.mark_entry_complete(&chunk_hash);
         self.encoded_chunks.remove_from_cache_if_outside_horizon(&chunk_hash);
         self.requested_partial_encoded_chunks.remove(&chunk_hash);
-        tracing::debug!(target: "chunks", partial_chunk_receipts = ?partial_chunk.receipts(), backtrace = ?std::backtrace::Backtrace::force_capture(), "Completed chunk {:?}", chunk_hash);
+        debug!(target: "chunks", "Completed chunk {:?}", chunk_hash);
         self.client_adapter
             .send(ShardsManagerResponse::ChunkCompleted { partial_chunk, shard_chunk });
     }

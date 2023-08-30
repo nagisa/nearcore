@@ -2725,6 +2725,9 @@ impl<'a> ChainStoreUpdate<'a> {
             | DBCol::FlatStateChanges
             | DBCol::FlatStateDeltaMetadata
             | DBCol::FlatStorageStatus
+            | DBCol::HistFlatStatePrevValues
+            | DBCol::HistFlatStateDeltaMetadata
+            | DBCol::HistFlatStateChanges
             | DBCol::Misc
             => unreachable!(),
             #[cfg(feature = "new_epoch_sync")]

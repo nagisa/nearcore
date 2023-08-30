@@ -356,6 +356,8 @@ impl FlatStorageShardCreator {
                     let height = flat_head_block_header.height();
                     debug!(target: "chain", %shard_id, %old_flat_head, %old_height, %flat_head, %height, "Catching up flat head");
                     self.metrics.set_flat_head_height(height);
+                    unimplemented!();
+                    /*
                     merged_changes.apply_to_flat_state(&mut store_update, shard_uid);
                     store_helper::set_flat_storage_status(
                         &mut store_update,
@@ -365,6 +367,8 @@ impl FlatStorageShardCreator {
                         )),
                     );
                     store_update.commit()?;
+
+                     */
 
                     // If we reached chain final head, we can finish catchup and finally create flat storage.
                     if flat_head == chain_final_head.last_block_hash {

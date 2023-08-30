@@ -103,6 +103,12 @@ pub fn set_delta(store_update: &mut StoreUpdate, shard_uid: ShardUId, delta: &Fl
     store_update
         .set_ser(DBCol::FlatStateDeltaMetadata, &key, &delta.metadata)
         .expect("Borsh should not have failed here");
+    store_update
+        .set_ser(DBCol::HistFlatStateChanges, &key, &delta.changes)
+        .expect("Borsh should not have failed here");
+    store_update
+        .set_ser(DBCol::HistFlatStateDeltaMetadata, &key, &delta.metadata)
+        .expect("Borsh should not have failed here");
 }
 
 pub fn remove_delta(store_update: &mut StoreUpdate, shard_uid: ShardUId, block_hash: CryptoHash) {
@@ -200,6 +206,26 @@ pub fn set_flat_state_value(
     match value {
         Some(value) => store_update
             .set_ser(DBCol::FlatState, &db_key, &value)
+            .expect("Borsh should not have failed here"),
+        None => store_update.delete(DBCol::FlatState, &db_key),
+    }
+}
+
+pub fn set_hist_flat_state_value(
+    store_update: &mut StoreUpdate,
+    shard_uid: ShardUId,
+    key: Vec<u8>,
+    value: Option<FlatStateValue>,
+    block_hash: CryptoHash,
+) {
+    let mut buffer = vec![];
+    buffer.extend_from_slice(&block_hash.as_ref());
+    buffer.extend_from_slice(&shard_uid.to_bytes());
+    buffer.extend_from_slice(&key);
+    let db_key = buffer;
+    match value {
+        Some(value) => store_update
+            .set_ser(DBCol::HistFlatStatePrevValues, &db_key, &value)
             .expect("Borsh should not have failed here"),
         None => store_update.delete(DBCol::FlatState, &db_key),
     }
