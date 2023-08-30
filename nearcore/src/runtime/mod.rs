@@ -578,7 +578,7 @@ impl NightshadeRuntime {
         let items = flat_state_iter
             .filter_map(|result| {
                 num_values += 1;
-                if num_values % 30000 == 0 {
+                if num_values % 3000000 == 0 {
                     tracing::info!(target: "nearcore", num_values);
                 }
                 let (k, v) = result.expect("failed to read FlatState entry");
