@@ -12,6 +12,7 @@ use near_store::flat::{
     inline_flat_state_values, store_helper, FlatStateDelta, FlatStateDeltaMetadata,
     FlatStorageManager, FlatStorageReadyStatus, FlatStorageStatus,
 };
+use near_store::trie::really_compute_state_root;
 use near_store::{DBCol, Mode, NodeStorage, ShardUId, Store, StoreOpener};
 use nearcore::{load_config, NearConfig, NightshadeRuntime};
 use std::sync::atomic::AtomicBool;
@@ -176,8 +177,7 @@ impl FlatStorageCommand {
         near_config: &NearConfig,
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
-        let (.., hot_store) =
-            Self::get_db(&opener, home_dir, &near_config, near_store::Mode::ReadOnly);
+        let (.., hot_store) = Self::get_db(&opener, home_dir, &near_config, Mode::ReadOnly);
         println!("DB version: {:?}", hot_store.get_db_version()?);
         for item in hot_store.iter(DBCol::FlatStorageStatus) {
             let (bytes_shard_uid, status) = item?;
@@ -210,7 +210,7 @@ impl FlatStorageCommand {
         cmd: &SetStoreVersionCmd,
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
-        let rw_storage = opener.open_in_mode(near_store::Mode::ReadWriteExisting)?;
+        let rw_storage = opener.open_in_mode(Mode::ReadWriteExisting)?;
         let rw_store = rw_storage.get_hot_store();
         println!("Setting storage DB version to: {:?}", cmd.version);
         rw_store.set_db_version(cmd.version)?;
@@ -225,7 +225,7 @@ impl FlatStorageCommand {
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
         let (_, epoch_manager, rw_hot_runtime, rw_chain_store, _) =
-            Self::get_db(&opener, home_dir, &near_config, near_store::Mode::ReadWriteExisting);
+            Self::get_db(&opener, home_dir, &near_config, Mode::ReadWriteExisting);
         let tip = rw_chain_store.final_head()?;
 
         // TODO: there should be a method that 'loads' the current flat storage state based on Storage.
@@ -244,7 +244,7 @@ impl FlatStorageCommand {
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
         let (_, epoch_manager, rw_hot_runtime, rw_chain_store, rw_hot_store) =
-            Self::get_db(&opener, home_dir, &near_config, near_store::Mode::ReadWriteExisting);
+            Self::get_db(&opener, home_dir, &near_config, Mode::ReadWriteExisting);
 
         let tip = rw_chain_store.final_head()?;
         let shard_uid = epoch_manager.shard_id_to_uid(cmd.shard_id, &tip.epoch_id)?;
@@ -275,7 +275,7 @@ impl FlatStorageCommand {
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
         let (_, epoch_manager, hot_runtime, chain_store, hot_store) =
-            Self::get_db(&opener, home_dir, &near_config, near_store::Mode::ReadOnly);
+            Self::get_db(&opener, home_dir, &near_config, Mode::ReadOnly);
         let tip = chain_store.final_head()?;
         let shard_uid = epoch_manager.shard_id_to_uid(cmd.shard_id, &tip.epoch_id)?;
 
@@ -369,8 +369,7 @@ impl FlatStorageCommand {
         near_config: &NearConfig,
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
-        let store =
-            Self::get_db(&opener, home_dir, &near_config, near_store::Mode::ReadWriteExisting).4;
+        let store = Self::get_db(&opener, home_dir, &near_config, Mode::ReadWriteExisting).4;
         let flat_storage_manager = FlatStorageManager::new(store.clone());
         inline_flat_state_values(
             store,
@@ -390,7 +389,7 @@ impl FlatStorageCommand {
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
         let (_, epoch_manager, _, chain_store, store) =
-            Self::get_db(&opener, home_dir, &near_config, near_store::Mode::ReadWriteExisting);
+            Self::get_db(&opener, home_dir, &near_config, Mode::ReadWriteExisting);
 
         let write_opener =
             NodeStorage::opener(&cmd.write_store_path, false, &near_config.config.store, None);
@@ -407,15 +406,14 @@ impl FlatStorageCommand {
     fn compute_state_root(
         &self,
         cmd: &ComputeStateRootCmd,
-        home_dir: &PathBuf,
-        near_config: &NearConfig,
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
-        let (_, _, runtime, chain_store, store) =
-            Self::get_db(&opener, home_dir, &near_config, near_store::Mode::ReadOnly);
+        let node_storage = opener.open_in_mode(Mode::ReadOnly).unwrap();
+        let chain_store = ChainStore::new(node_storage.get_hot_store(), 0, false);
+        let store = node_storage.get_hot_store();
+        let flat_storage_manager = FlatStorageManager::new(store.clone());
 
         let shard_uid = ShardUId { version: cmd.version, shard_id: cmd.shard_id as u32 };
-        let flat_storage_manager = runtime.get_flat_storage_manager().unwrap();
         flat_storage_manager.create_flat_storage_for_shard(shard_uid)?;
 
         let status = store.get_ser(DBCol::FlatStorageStatus, &shard_uid.to_bytes())?;
@@ -430,8 +428,24 @@ impl FlatStorageCommand {
         let flat_storage_chunk_view =
             flat_storage_manager.chunk_view(shard_uid, flat_head.hash).unwrap();
 
-        let state_root = runtime.compute_state_root(flat_storage_chunk_view)?;
-        println!("Computed StateRoot: {state_root:?}");
+        let flat_state_iter = flat_storage_chunk_view.iter_flat_state_entries(None, None);
+
+        let mut num_values = 0;
+        let items = flat_state_iter
+            .filter_map(|result| {
+                num_values += 1;
+                if num_values % 3000000 == 0 {
+                    tracing::info!(target: "my_trie", num_values);
+                }
+                let (k, v) = result.expect("failed to read FlatState entry");
+                let v = v.to_value_ref();
+                Some((k, v))
+            })
+            .collect::<Vec<_>>();
+        tracing::info!(target: "my_trie", ?num_values, "got value refs");
+        let computed_state_root = really_compute_state_root(items);
+        tracing::info!(target: "my_trie", ?computed_state_root, num_values, "Iterated over flat state");
+        println!("Computed StateRoot: {computed_state_root:?}");
         let chunk_extra = chain_store.get_chunk_extra(&flat_head.hash, &shard_uid)?;
         println!("ChunkExtra StateRoot: {:?}", chunk_extra.state_root());
         Ok(())
@@ -445,7 +459,7 @@ impl FlatStorageCommand {
         opener: StoreOpener,
     ) -> anyhow::Result<()> {
         let (_, _, runtime, chain_store, _) =
-            Self::get_db(&opener, home_dir, &near_config, near_store::Mode::ReadWriteExisting);
+            Self::get_db(&opener, home_dir, &near_config, Mode::ReadWriteExisting);
 
         let shard_uid = ShardUId { version: cmd.version, shard_id: cmd.shard_id as u32 };
         let flat_storage_manager = runtime.get_flat_storage_manager().unwrap();
@@ -482,9 +496,7 @@ impl FlatStorageCommand {
             SubCommand::ConstructTrieFromFlat(cmd) => {
                 self.construct_trie_from_flat(cmd, home_dir, &near_config, opener)
             }
-            SubCommand::ComputeStateRoot(cmd) => {
-                self.compute_state_root(cmd, home_dir, &near_config, opener)
-            }
+            SubCommand::ComputeStateRoot(cmd) => self.compute_state_root(cmd, opener),
             SubCommand::MoveFlatHead(cmd) => {
                 self.move_flat_head(cmd, home_dir, &near_config, opener)
             }
