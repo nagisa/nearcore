@@ -47,7 +47,7 @@ impl KeyForFlatStateDelta {
 }
 /// Delta of the state for some shard and block, stores mapping from keys to values
 /// or None, if key was removed in this block.
-#[derive(BorshSerialize, BorshDeserialize, Clone, Default, PartialEq, Eq)]
+#[derive(BorshSerialize, BorshDeserialize, Clone, Default, PartialEq, Eq, Debug)]
 pub struct FlatStateChanges(pub HashMap<Vec<u8>, Option<FlatStateValue>>);
 
 impl<T> From<T> for FlatStateChanges
@@ -59,6 +59,7 @@ where
     }
 }
 
+/*
 impl std::fmt::Debug for FlatStateChanges {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FlatStateChanges")
@@ -66,6 +67,8 @@ impl std::fmt::Debug for FlatStateChanges {
             .finish()
     }
 }
+
+ */
 
 impl FlatStateChanges {
     /// Returns `Some(Option<FlatStateValue>)` from delta for the given key. If key is not present, returns None.
