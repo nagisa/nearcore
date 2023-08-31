@@ -69,9 +69,7 @@ impl SyncJobsActor {
         msg: &ApplyStatePartsRequest,
     ) -> Result<(), near_chain_primitives::error::Error> {
         let _span = tracing::debug_span!(target: "client", "clear_flat_state").entered();
-        if let Some(flat_storage_manager) = msg.runtime_adapter.get_flat_storage_manager() {
-            flat_storage_manager.remove_flat_storage_for_shard(msg.shard_uid)?
-        }
+        msg.runtime_adapter.get_flat_storage_manager().unwrap().remove_flat_storage_for_shard(msg.shard_uid)?;
         Ok(())
     }
 }
@@ -91,6 +89,7 @@ impl actix::Handler<WithSpanContext<ApplyStatePartsRequest>> for SyncJobsActor {
         let (_span, msg) = handler_debug_span!(target: "client", msg);
         let shard_id = msg.shard_uid.shard_id as ShardId;
         if let Err(err) = self.clear_flat_state(&msg) {
+            tracing::error!(target: "sync_jobs_actor", ?shard_id, ?err, "Failed to reset FlatStorage");
             self.client_addr.do_send(
                 ApplyStatePartsResponse {
                     apply_result: Err(err),

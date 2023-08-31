@@ -441,6 +441,7 @@ impl FlatStorage {
     /// Clears all State key-value pairs from flat storage.
     pub fn clear_state(&self) -> Result<(), StorageError> {
         let guard = self.0.write().expect(super::POISONED_LOCK_ERR);
+        tracing::debug!(target: "store", shard_uid = ?guard.shard_uid, "clear_state");
 
         let mut store_update = guard.store.store_update();
         store_helper::remove_all_flat_state_values(&mut store_update, guard.shard_uid);
@@ -451,6 +452,7 @@ impl FlatStorage {
             guard.shard_uid,
             FlatStorageStatus::Empty,
         );
+        tracing::debug!(target: "store", shard_uid = ?guard.shard_uid, ?store_update, "clear_state transaction");
         store_update.commit().map_err(|_| StorageError::StorageInternalError)?;
         guard.update_delta_metrics();
 

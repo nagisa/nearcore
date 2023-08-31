@@ -229,10 +229,13 @@ impl FlatStorageManager {
 
     pub fn remove_flat_storage_for_shard(&self, shard_uid: ShardUId) -> Result<(), StorageError> {
         let mut flat_storages = self.0.flat_storages.lock().expect(POISONED_LOCK_ERR);
+        tracing::debug!(target: "store", ?shard_uid, "Remove FlatStorage");
 
         if let Some(flat_store) = flat_storages.remove(&shard_uid) {
             flat_store.clear_state()?;
-            tracing::debug!(target: "store", ?shard_uid, "Reset FlatStorage state");
+            tracing::debug!(target: "store", ?shard_uid, "Successfully reset FlatStorage state");
+        } else {
+            tracing::warn!(target: "store", ?shard_uid, "Reset requested, but no FlatStorage present");
         }
 
         Ok(())
