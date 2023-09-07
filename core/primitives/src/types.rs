@@ -64,6 +64,7 @@ pub struct AccountInfo {
     derive_more::Into,
     BorshSerialize,
     BorshDeserialize,
+    std::hash::Hash,
 )]
 #[serde(transparent)]
 pub struct StoreKey(#[serde_as(as = "Base64")] Vec<u8>);
@@ -154,7 +155,7 @@ impl StateChangesKinds {
 }
 
 /// A structure used to index state changes due to transaction/receipt processing and other things.
-#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize, PartialEq, Eq, std::hash::Hash)]
 pub enum StateChangeCause {
     /// A type of update that does not get finalized. Used for verification and execution of
     /// immutable smart contract methods. Attempt fo finalize a `TrieUpdate` containing such

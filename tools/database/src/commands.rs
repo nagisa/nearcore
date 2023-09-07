@@ -6,6 +6,7 @@ use crate::run_migrations::RunMigrationsCommand;
 use crate::state_perf::StatePerfCommand;
 use clap::Parser;
 use std::path::PathBuf;
+use crate::analyse_state_changes::AnalyseStateChangesCommand;
 
 #[derive(Parser)]
 pub struct DatabaseCommand {
@@ -34,6 +35,8 @@ enum SubCommand {
     /// Run performance test for State column reads.
     /// Uses RocksDB data specified via --home argument.
     StatePerf(StatePerfCommand),
+
+    AnalyseStateChanges(AnalyseStateChangesCommand),
 }
 
 impl DatabaseCommand {
@@ -52,6 +55,7 @@ impl DatabaseCommand {
             }
             SubCommand::RunMigrations(cmd) => cmd.run(home),
             SubCommand::StatePerf(cmd) => cmd.run(home),
+            SubCommand::AnalyseStateChanges(cmd) => cmd.run(home),
         }
     }
 }
