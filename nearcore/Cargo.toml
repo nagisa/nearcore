@@ -119,7 +119,8 @@ protocol_feature_simple_nightshade_v2 = [
     "near-primitives/protocol_feature_simple_nightshade_v2",
 ]
 new_epoch_sync = [
-  "near-client/new_epoch_sync"
+  "near-client/new_epoch_sync",
+  "near-chain-configs/new_epoch_sync",
 ]
 
 serialize_all_state_changes = ["near-store/serialize_all_state_changes"]

@@ -1,5 +1,6 @@
 //! Chain Client Configuration
 use crate::MutableConfigValue;
+use near_primitives::network::PeerId;
 use near_primitives::types::{
     AccountId, BlockHeight, BlockHeightDelta, Gas, NumBlocks, NumSeats, ShardId,
 };
@@ -269,6 +270,8 @@ pub struct ClientConfig {
     pub transaction_pool_size_limit: Option<u64>,
     // Allows more detailed logging, for example a list of orphaned blocks.
     pub enable_multiline_logging: bool,
+    #[cfg(feature = "new_epoch_sync")]
+    pub epoch_sync_peers: Vec<PeerId>,
 }
 
 impl ClientConfig {
@@ -344,6 +347,8 @@ impl ClientConfig {
             state_snapshot_every_n_blocks: None,
             transaction_pool_size_limit: None,
             enable_multiline_logging: false,
+            #[cfg(feature = "new_epoch_sync")]
+            epoch_sync_peers: vec![],
         }
     }
 }

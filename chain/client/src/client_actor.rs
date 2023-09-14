@@ -1651,7 +1651,7 @@ impl ClientActor {
                         &mut self.client.sync_status,
                         &mut self.client.chain,
                         highest_height,
-                        &self.network_info.highest_height_peers
+                        &self.client.config.epoch_sync_peers,
                     ));
                     !unwrap_and_report!(self.client.epoch_sync.should_continue(
                         &mut self.client.sync_status,

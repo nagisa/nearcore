@@ -74,7 +74,9 @@ pub fn migrate_38_to_39(store: &Store, config: &crate::config::NearConfig) -> an
             let mut first_block_hash = last_header.hash().clone();
             // Descend until the finish of the previous epoch
             // Second condition is important because epoch_id of first two epoch is CryptoHash::default
-            while *cur_header.epoch_id() == epoch_id && cur_header.height() != config.genesis.config.genesis_height {
+            while *cur_header.epoch_id() == epoch_id
+                && cur_header.height() != config.genesis.config.genesis_height
+            {
                 tracing::debug!("Small loop height {:?}", cur_header.height());
                 first_block_hash = cur_hash.clone();
                 cur_hash = cur_header.prev_hash().clone();
@@ -83,16 +85,18 @@ pub fn migrate_38_to_39(store: &Store, config: &crate::config::NearConfig) -> an
 
             tracing::debug!("Creating EpochSyncInfo from block {:?}", last_header);
 
-            let last_range =
-                chain_store.get_last_header_pairs(&last_header, &first_block_hash)?;
+            let last_range = chain_store.get_last_header_pairs(&last_header, &first_block_hash)?;
             let prev_last = chain_store.get_header_pair(last_header.prev_hash())?;
             let first = chain_store.get_header_pair(&first_block_hash)?;
             let cur_epoch_info = store
-                .get_ser::<EpochInfo>(DBCol::EpochInfo, last_header.epoch_id().as_ref())?.expect("Should have current EpochInfo");
-            let next_epoch_info =
-                store.get_ser::<EpochInfo>(DBCol::EpochInfo, cur_hash.as_ref())?.expect("Should have next EpochInfo");
-            let next_next_epoch_info =
-                store.get_ser::<EpochInfo>(DBCol::EpochInfo, last_header.hash().as_ref())?.expect("Should have next next EpochInfo");
+                .get_ser::<EpochInfo>(DBCol::EpochInfo, last_header.epoch_id().as_ref())?
+                .expect("Should have current EpochInfo");
+            let next_epoch_info = store
+                .get_ser::<EpochInfo>(DBCol::EpochInfo, cur_hash.as_ref())?
+                .expect("Should have next EpochInfo");
+            let next_next_epoch_info = store
+                .get_ser::<EpochInfo>(DBCol::EpochInfo, last_header.hash().as_ref())?
+                .expect("Should have next next EpochInfo");
 
             let epoch_sync_info = EpochSyncInfo {
                 last_range,
@@ -103,14 +107,14 @@ pub fn migrate_38_to_39(store: &Store, config: &crate::config::NearConfig) -> an
                 next_next_epoch_info,
             };
 
-            assert_eq!(epoch_sync_info,  store
-                .get_ser::<EpochSyncInfo>(DBCol::EpochSyncInfo, epoch_id.as_ref())?.expect("Should have current EpochSyncInfo"));
+            assert_eq!(
+                epoch_sync_info,
+                store
+                    .get_ser::<EpochSyncInfo>(DBCol::EpochSyncInfo, epoch_id.as_ref())?
+                    .expect("Should have current EpochSyncInfo")
+            );
 
-            update.set_ser(
-                DBCol::EpochSyncInfo,
-                epoch_id.as_ref(),
-                &epoch_sync_info,
-            )?;
+            update.set_ser(DBCol::EpochSyncInfo, epoch_id.as_ref(), &epoch_sync_info)?;
         } else {
             cur_hash = cur_header.prev_hash().clone();
             cur_header = chain_store.get_block_header(&cur_hash)?;

@@ -352,6 +352,8 @@ pub struct Config {
     pub transaction_pool_size_limit: Option<u64>,
     /// If a node needs to upload state parts to S3
     pub s3_credentials_file: Option<String>,
+    #[cfg(feature = "new_epoch_sync")]
+    pub epoch_sync_peers: String,
 }
 
 fn is_false(value: &bool) -> bool {
@@ -393,6 +395,8 @@ impl Default for Config {
             transaction_pool_size_limit: default_transaction_pool_size_limit(),
             s3_credentials_file: None,
             enable_multiline_logging: None,
+            #[cfg(feature = "new_epoch_sync")]
+            epoch_sync_peers: "".to_string(),
         }
     }
 }
@@ -710,6 +714,16 @@ impl NearConfig {
                 state_snapshot_every_n_blocks: None,
                 transaction_pool_size_limit: config.transaction_pool_size_limit,
                 enable_multiline_logging: config.enable_multiline_logging.unwrap_or(true),
+                #[cfg(feature = "new_epoch_sync")]
+                epoch_sync_peers: config
+                    .epoch_sync_peers
+                    .split(',')
+                    .map(|chunk| chunk.parse::<near_network::types::PeerInfo>())
+                    .collect::<Result<Vec<near_network::types::PeerInfo>, _>>()
+                    .context("epoch_sync_peers")?
+                    .into_iter()
+                    .map(|peer_info: near_network::types::PeerInfo| peer_info.id)
+                    .collect::<Vec<near_primitives::network::PeerId>>(),
             },
             network_config: NetworkConfig::new(
                 config.network,

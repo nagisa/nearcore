@@ -5364,11 +5364,7 @@ impl<'a> ChainUpdate<'a> {
         {
             // BlockInfo should be already recorded in epoch_manager cache
             let block_info = self.epoch_manager.get_block_info(block.hash())?;
-            self.save_epoch_sync_info(
-                block.header().epoch_id(),
-                block.header(),
-                &block_info,
-            )?;
+            self.save_epoch_sync_info(block.header().epoch_id(), block.header(), &block_info)?;
         }
 
         // Add validated block to the db, even if it's not the canonical fork.

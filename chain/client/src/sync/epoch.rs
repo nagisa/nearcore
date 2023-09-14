@@ -115,7 +115,7 @@ impl EpochSync {
         sync_status: &mut SyncStatus,
         chain: &Chain,
         highest_height: BlockHeight,
-        highest_height_peers: &[HighestHeightPeerInfo],
+        highest_height_peers: &[PeerId],
     ) -> Result<(), near_chain::Error> {
         let _span = tracing::debug_span!(target: "sync", "run", sync = "EpochSync").entered();
         if !self.epoch_sync_due(sync_status, chain, highest_height)? {
@@ -130,20 +130,18 @@ impl EpochSync {
                 chain.epoch_manager.get_epoch_id(&header_head.last_block_hash)?
             };
         *sync_status = SyncStatus::EpochSync { epoch_id: epoch_id.clone() };
-        if let Some(peer) = highest_height_peers.choose(&mut thread_rng()).cloned() {
-            self.request_epoch(&epoch_id, peer);
+        if let Some(peer_id) = highest_height_peers.choose(&mut thread_rng()).cloned() {
+            self.request_epoch(&epoch_id, peer_id.clone());
         }
         Ok(())
     }
 
-    pub fn request_epoch(&mut self, epoch_id: &EpochId, peer: HighestHeightPeerInfo) {
-        tracing::debug!(target: "sync", "Sync: request epoch sync info: asking {} for epoch {:?}", peer.peer_info.id, epoch_id);
+    pub fn request_epoch(&mut self, epoch_id: &EpochId, peer_id: PeerId) {
+        tracing::debug!(target: "sync", "Sync: request epoch sync info: asking {} for epoch {:?}", peer_id, epoch_id);
         self.requested_epoch_id = epoch_id.clone();
+        self.last_request_peer_id = Some(peer_id.clone());
         self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
-            NetworkRequests::EpochSyncInfoRequest {
-                epoch_id: epoch_id.clone(),
-                peer_id: peer.peer_info.id.clone(),
-            },
+            NetworkRequests::EpochSyncInfoRequest { epoch_id: epoch_id.clone(), peer_id },
         ));
     }
 }
