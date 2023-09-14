@@ -13,6 +13,8 @@ use near_network::types::{
 };
 use near_primitives::block::{Approval, Block, BlockHeader};
 use near_primitives::challenge::Challenge;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::hash::CryptoHash;
 use near_primitives::network::{AnnounceAccount, PeerId};
 use near_primitives::sharding::ChunkHash;
@@ -301,5 +303,19 @@ impl near_network::client::Client for Network {
         accounts: Vec<(AnnounceAccount, Option<EpochId>)>,
     ) -> Result<Vec<AnnounceAccount>, ReasonForBan> {
         Ok(accounts.into_iter().map(|a| a.0).collect())
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_request(&self, _epoch_id: EpochId) -> Option<EpochSyncInfo> {
+        None
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_response(
+        &self,
+        _epoch_sync_info: Option<EpochSyncInfo>,
+        _peer_id: PeerId,
+    ) -> Result<(), ReasonForBan> {
+        Ok(())
     }
 }

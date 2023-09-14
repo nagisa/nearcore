@@ -24,7 +24,7 @@ use borsh::BorshSerialize;
 use chrono::Duration;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use delay_detector::DelayDetector;
-use itertools::Itertools;
+use itertools::{min, Itertools};
 use lru::LruCache;
 use near_chain_primitives::error::{BlockKnownError, Error, LogTransientStorageError};
 use near_epoch_manager::shard_tracker::ShardTracker;
@@ -37,6 +37,7 @@ use near_primitives::challenge::{
     MaybeEncodedShardChunk, PartialState, SlashedValidator,
 };
 use near_primitives::checked_feature;
+use near_primitives::epoch_manager::epoch_sync::BlockHeaderWithMerkleTree;
 #[cfg(feature = "new_epoch_sync")]
 use near_primitives::epoch_manager::{
     block_info::BlockInfo,
@@ -69,7 +70,7 @@ use near_primitives::types::{
     NumBlocks, NumShards, ShardId, StateChangesForSplitStates, StateRoot,
 };
 use near_primitives::unwrap_or_return;
-use near_primitives::utils::MaybeValidated;
+use near_primitives::utils::{index_to_bytes, MaybeValidated};
 use near_primitives::version::PROTOCOL_VERSION;
 use near_primitives::views::{
     BlockStatusView, DroppedReason, ExecutionOutcomeWithIdView, ExecutionStatusView,
@@ -475,11 +476,11 @@ pub struct Chain {
     pub(crate) requested_state_parts: StateRequestTracker,
 
     /// Lets trigger new state snapshots.
-    state_snapshot_helper: Option<StateSnapshotHelper>,
+    pub state_snapshot_helper: Option<StateSnapshotHelper>,
 }
 
 /// Lets trigger new state snapshots.
-struct StateSnapshotHelper {
+pub struct StateSnapshotHelper {
     /// A callback to initiate state snapshot.
     make_snapshot_callback: MakeSnapshotCallback,
 
@@ -4163,6 +4164,140 @@ impl Chain {
         }
         Ok(())
     }
+
+    /// Processes EpochSyncInfo and write everything epoch sync related to DB.
+    /// TODO(posvyatokum): in this function or earlier we should properly validate given EpochSyncInfo
+    #[cfg(feature = "new_epoch_sync")]
+    pub fn sync_epoch_sync_info(&mut self, epoch_sync_info: &EpochSyncInfo) -> Result<(), Error> {
+        let epoch_id = epoch_sync_info.first.header.header.epoch_id();
+        // TODO(posvyatokum): validate provided block_producers against any header from previous epoch.
+        // TODO(posvyatokum): validate provided headers and not save epoch_sync_info if anything is wrong
+
+        // save epoch_sync_info
+        {
+            let mut chain_update = self.chain_update();
+            let mut store_update = chain_update.chain_store_update.store().store_update();
+
+            store_update.set_ser(DBCol::EpochSyncInfo, epoch_id.as_ref(), epoch_sync_info)?;
+
+            chain_update.chain_store_update.merge(store_update);
+            chain_update.commit()?;
+        }
+
+        // save block headers
+        let mut headers = vec![
+            &epoch_sync_info.first.header,
+            &epoch_sync_info.first.last_finalised_header,
+            &epoch_sync_info.prev_last.header,
+            &epoch_sync_info.prev_last.last_finalised_header,
+        ];
+        for last in &epoch_sync_info.last_range {
+            headers.push(&last.header);
+            headers.push(&last.last_finalised_header);
+        }
+        for header_with_merkle_tree in headers {
+            let header = &header_with_merkle_tree.header;
+            // check that block is not known already
+            if check_header_known(self, header)?.is_err() {
+                continue;
+            }
+
+            let mut chain_update = self.chain_update();
+            let mut store_update = chain_update.chain_store_update.store().store_update();
+
+            store_update.insert_ser(DBCol::BlockHeader, header.hash().as_ref(), header)?;
+            store_update.set_ser(
+                DBCol::NextBlockHashes,
+                header.prev_hash().as_ref(),
+                header.hash(),
+            )?;
+            store_update.set_ser(
+                DBCol::BlockHeight,
+                &index_to_bytes(header.height()),
+                header.hash(),
+            )?;
+            store_update.set_ser(
+                DBCol::BlockOrdinal,
+                &index_to_bytes(header.block_ordinal()),
+                &header.hash(),
+            )?;
+
+            chain_update.chain_store_update.merge(store_update);
+            chain_update.chain_store_update.save_block_merkle_tree(
+                *header.hash(),
+                header_with_merkle_tree.merkle_tree.clone(),
+            );
+            chain_update.commit()?;
+        }
+
+        {
+            let mut chain_update = self.chain_update();
+            chain_update.chain_store_update.force_save_header_head(&Tip::from_header(
+                &epoch_sync_info.last_range[0].header.header,
+            ))?;
+            chain_update.chain_store_update.save_final_head(&Tip::from_header(
+                &epoch_sync_info.last_range[0].last_finalised_header.header,
+            ))?;
+            chain_update.commit()?;
+        }
+        {
+            self.epoch_manager.force_update_aggregator(
+                epoch_id,
+                &epoch_sync_info.last_range[0].last_finalised_header.header.hash(),
+            );
+        }
+
+        // TODO(posvyatokum): construct and save block_infos
+        {
+            let mut chain_update = self.chain_update();
+            let mut saved_block_infos = HashSet::new();
+            chain_update.save_block_info_from_header_pair(
+                &epoch_sync_info.first,
+                &epoch_sync_info.first.header.header,
+                &mut saved_block_infos,
+            )?;
+            for last in &epoch_sync_info.last_range {
+                chain_update.save_block_info_from_header_pair(
+                    &last,
+                    &epoch_sync_info.first.header.header,
+                    &mut saved_block_infos,
+                )?;
+            }
+            chain_update.save_block_info_from_header_pair(
+                &epoch_sync_info.prev_last,
+                &epoch_sync_info.first.header.header,
+                &mut saved_block_infos,
+            )?;
+            chain_update.commit()?;
+        }
+
+        // save EpochInfos
+        {
+            let mut chain_update = self.chain_update();
+            let mut store_update = chain_update.chain_store_update.store().store_update();
+            store_update.set_ser(
+                DBCol::EpochInfo,
+                epoch_id.as_ref(),
+                &epoch_sync_info.cur_epoch_info,
+            )?;
+            let next_epoch_id = epoch_sync_info.first.header.header.prev_hash();
+            store_update.set_ser(
+                DBCol::EpochInfo,
+                next_epoch_id.as_ref(),
+                &epoch_sync_info.next_epoch_info,
+            )?;
+            let next_next_epoch_id = epoch_sync_info.last_range[0].header.header.hash();
+            store_update.set_ser(
+                DBCol::EpochInfo,
+                next_next_epoch_id.as_ref(),
+                &epoch_sync_info.next_next_epoch_info,
+            )?;
+            chain_update.chain_store_update.merge(store_update);
+            chain_update.commit()?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Implement block merkle proof retrieval.
@@ -5229,7 +5364,11 @@ impl<'a> ChainUpdate<'a> {
         {
             // BlockInfo should be already recorded in epoch_manager cache
             let block_info = self.epoch_manager.get_block_info(block.hash())?;
-            self.save_epoch_sync_info(block.header().epoch_id(), block.header(), &block_info)?;
+            self.save_epoch_sync_info(
+                block.header().epoch_id(),
+                block.header(),
+                &block_info,
+            )?;
         }
 
         // Add validated block to the db, even if it's not the canonical fork.
@@ -5624,7 +5763,10 @@ impl<'a> ChainUpdate<'a> {
                 .set_ser(
                     DBCol::EpochSyncInfo,
                     epoch_id.as_ref(),
-                    &self.create_epoch_sync_info(last_block_header, last_block_info)?,
+                    &self.create_epoch_sync_info(
+                        last_block_header,
+                        last_block_info.epoch_first_block(),
+                    )?,
                 )
                 .map_err(EpochError::from)?;
             self.chain_store_update.merge(store_update);
@@ -5632,42 +5774,54 @@ impl<'a> ChainUpdate<'a> {
         Ok(())
     }
 
-    /// Create a pair of `BlockHeader`s necessary to create `BlockInfo` for `block_hash`
-    #[cfg(feature = "new_epoch_sync")]
-    fn get_header_pair(&self, block_hash: &CryptoHash) -> Result<BlockHeaderPair, Error> {
-        let header = self.chain_store_update.get_block_header(block_hash)?;
-        // `block_hash` can correspond to genesis block, for which there is no last final block recorded,
-        // because `last_final_block` for genesis is `CryptoHash::default()`
-        // Here we return just the same genesis block header as last known block header
-        // TODO(posvyatokum) process this case carefully in epoch sync validation
-        // TODO(pposvyatokum) process this carefully in saving the parts of epoch sync data
-        let last_finalised_header = {
-            if *header.last_final_block() == CryptoHash::default() {
-                header.clone()
-            } else {
-                self.chain_store_update.get_block_header(header.last_final_block())?
-            }
-        };
-        Ok(BlockHeaderPair { header, last_finalised_header })
-    }
-
     /// Data that is necessary to prove Epoch in new Epoch Sync.
     #[cfg(feature = "new_epoch_sync")]
     fn create_epoch_sync_info(
         &self,
         last_block_header: &BlockHeader,
-        last_block_info: &BlockInfo,
+        epoch_first_block: &CryptoHash,
     ) -> Result<EpochSyncInfo, Error> {
-        let last = self.get_header_pair(last_block_header.hash())?;
-        let prev_last = self.get_header_pair(last_block_header.prev_hash())?;
-        let first = self.get_header_pair(last_block_info.epoch_first_block())?;
-        let epoch_info = self.epoch_manager.get_epoch_info(last_block_info.epoch_id())?;
+        tracing::debug!(target: "chain", ?epoch_first_block, ?last_block_header);
+        let last_range =
+            self.chain_store_update.get_last_header_pairs(last_block_header, epoch_first_block)?;
+        let prev_last = self.chain_store_update.get_header_pair(last_block_header.prev_hash())?;
+        let first = self.chain_store_update.get_header_pair(epoch_first_block)?;
+        let cur_epoch_info = self.epoch_manager.get_epoch_info(last_block_header.epoch_id())?;
+        let next_epoch_info = self
+            .epoch_manager
+            .get_epoch_info(&self.epoch_manager.get_next_epoch_id(last_block_header.hash())?)?;
+        let next_next_epoch_info =
+            self.epoch_manager.get_epoch_info(&EpochId(*last_block_header.hash()))?;
         Ok(EpochSyncInfo {
-            last,
+            last_range,
             prev_last,
             first,
-            block_producers: epoch_info.validators_iter().collect(),
+            cur_epoch_info: (*cur_epoch_info).clone(),
+            next_epoch_info: (*next_epoch_info).clone(),
+            next_next_epoch_info: (*next_next_epoch_info).clone(),
         })
+    }
+
+    /// Create and write BlockInfo from BlockHeaderPair
+    #[cfg(feature = "new_epoch_sync")]
+    fn save_block_info_from_header_pair(
+        &mut self,
+        header_pair: &BlockHeaderPair,
+        epoch_first_header: &BlockHeader,
+        saved_block_infos: &mut HashSet<CryptoHash>,
+    ) -> Result<(), Error> {
+        if saved_block_infos.contains(header_pair.header.header.hash()) {
+            return Ok(());
+        }
+        let block_info = header_pair.get_block_info(epoch_first_header);
+
+        let mut store_update = self.chain_store_update.store().store_update();
+        store_update.insert_ser(DBCol::BlockInfo, block_info.hash().as_ref(), &block_info)?;
+        self.chain_store_update.merge(store_update);
+
+        saved_block_infos.insert(block_info.hash().clone());
+
+        Ok(())
     }
 }
 

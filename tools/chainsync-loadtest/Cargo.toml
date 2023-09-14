@@ -33,3 +33,6 @@ near-store.workspace = true
 nearcore.workspace = true
 near-network.workspace = true
 near-o11y.workspace = true
+
+[features]
+new_epoch_sync = ["nearcore/new_epoch_sync", "near-store/new_epoch_sync", "near-network/new_epoch_sync", "near-primitives/new_epoch_sync"]

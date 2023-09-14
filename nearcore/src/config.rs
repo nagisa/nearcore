@@ -520,6 +520,7 @@ impl Genesis {
         num_validator_seats: NumSeats,
         num_validator_seats_per_shard: Vec<NumSeats>,
         shard_layout: ShardLayout,
+        genesis_height: Option<BlockHeight>,
     ) -> Self {
         let mut validators = vec![];
         let mut records = vec![];
@@ -568,6 +569,7 @@ impl Genesis {
             fishermen_threshold: FISHERMEN_THRESHOLD,
             min_gas_price: MIN_GAS_PRICE,
             shard_layout,
+            genesis_height: genesis_height.unwrap_or_default(),
             ..Default::default()
         };
         Genesis::new(config, records.into()).unwrap()
@@ -579,6 +581,7 @@ impl Genesis {
             num_validator_seats,
             vec![num_validator_seats],
             ShardLayout::v0_single_shard(),
+            None,
         )
     }
 
@@ -593,6 +596,7 @@ impl Genesis {
             num_validator_seats,
             num_validator_seats_per_shard,
             ShardLayout::v0(num_shards, 0),
+            None,
         )
     }
 
@@ -607,6 +611,22 @@ impl Genesis {
             num_validator_seats,
             num_validator_seats_per_shard,
             ShardLayout::v0(num_shards, 1),
+            None,
+        )
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    pub fn test_with_genesis_height(
+        accounts: Vec<AccountId>,
+        num_validator_seats: NumSeats,
+        genesis_height: BlockHeight,
+    ) -> Self {
+        Self::test_with_seeds(
+            accounts,
+            num_validator_seats,
+            vec![num_validator_seats],
+            ShardLayout::v0_single_shard(),
+            Some(genesis_height),
         )
     }
 }
@@ -1183,6 +1203,7 @@ pub fn create_testnet_configs_from_seeds(
         num_validator_seats,
         get_num_seats_per_shard(num_shards, num_validator_seats),
         shard_layout,
+        None,
     );
     let mut configs = vec![];
     let first_node_addr = tcp::ListenerAddr::reserve_for_test();

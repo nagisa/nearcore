@@ -937,6 +937,18 @@ impl PeerManagerActor {
                 self.state.tier2.broadcast_message(Arc::new(PeerMessage::Challenge(challenge)));
                 NetworkResponses::NoResponse
             }
+            #[cfg(feature = "new_epoch_sync")]
+            NetworkRequests::EpochSyncInfoRequest { epoch_id, peer_id } => {
+                if self
+                    .state
+                    .tier2
+                    .send_message(peer_id, Arc::new(PeerMessage::EpochSyncInfoRequest(epoch_id)))
+                {
+                    NetworkResponses::NoResponse
+                } else {
+                    NetworkResponses::RouteNotFound
+                }
+            }
         }
     }
 

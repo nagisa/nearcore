@@ -1060,6 +1060,15 @@ impl PeerActor {
                     network_state.client.state_response(info).await;
                     None
                 }
+                #[cfg(feature = "new_epoch_sync")]
+                PeerMessage::EpochSyncInfoRequest(epoch_id) => {
+                    Some(PeerMessage::EpochSyncInfoResponse(network_state.client.epoch_sync_info_request(epoch_id).await))
+                }
+                #[cfg(feature = "new_epoch_sync")]
+                PeerMessage::EpochSyncInfoResponse(epoch_sync_info) => {
+                    network_state.client.epoch_sync_info_response(epoch_sync_info, peer_id).await?;
+                    None
+                }
                 msg => {
                     tracing::error!(target: "network", "Peer received unexpected type: {:?}", msg);
                     None

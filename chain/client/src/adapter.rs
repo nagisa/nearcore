@@ -7,6 +7,8 @@ use near_network::types::{
 use near_o11y::WithSpanContextExt;
 use near_primitives::block::{Approval, Block, BlockHeader};
 use near_primitives::challenge::Challenge;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::errors::InvalidTxError;
 use near_primitives::hash::CryptoHash;
 use near_primitives::network::{AnnounceAccount, PeerId};
@@ -134,6 +136,18 @@ pub enum ProcessTxResponse {
     /// response.
     DoesNotTrackShard,
 }
+
+/// Request EpochSyncInfo.
+#[cfg(feature = "new_epoch_sync")]
+#[derive(actix::Message, Debug)]
+#[rtype(result = "Option<EpochSyncInfo>")]
+pub(crate) struct EpochSyncInfoRequest(pub EpochId);
+
+/// EpochSyncInfo response.
+#[cfg(feature = "new_epoch_sync")]
+#[derive(actix::Message, Debug)]
+#[rtype(result = "Result<(),ReasonForBan>")]
+pub(crate) struct EpochSyncInfoResponse(pub Option<EpochSyncInfo>, pub PeerId);
 
 pub struct Adapter {
     /// Address of the client actor.
@@ -338,6 +352,36 @@ impl near_network::client::Client for Adapter {
             Err(err) => {
                 tracing::error!("mailbox error: {err}");
                 Ok(vec![])
+            }
+        }
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_request(&self, epoch_id: EpochId) -> Option<EpochSyncInfo> {
+        match self.view_client_addr.send(EpochSyncInfoRequest(epoch_id).with_span_context()).await {
+            Ok(epoch_sync_info) => epoch_sync_info,
+            Err(err) => {
+                tracing::error!("mailbox error: {err}");
+                None
+            }
+        }
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_response(
+        &self,
+        epoch_sync_info: Option<EpochSyncInfo>,
+        peer_id: PeerId,
+    ) -> Result<(), ReasonForBan> {
+        match self
+            .client_addr
+            .send(EpochSyncInfoResponse(epoch_sync_info, peer_id).with_span_context())
+            .await
+        {
+            Ok(res) => res,
+            Err(err) => {
+                tracing::error!("mailbox error: {err}");
+                Ok(())
             }
         }
     }

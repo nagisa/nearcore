@@ -5,6 +5,8 @@
 //! Unfortunately, this is not the case today. We are in the process of refactoring ClientActor
 //! https://github.com/near/nearcore/issues/7899
 
+#[cfg(feature = "new_epoch_sync")]
+use crate::adapter::EpochSyncInfoResponse;
 use crate::adapter::{
     BlockApproval, BlockHeadersResponse, BlockResponse, ProcessTxRequest, ProcessTxResponse,
     RecvChallenge, SetNetworkInfo, StateResponse,
@@ -56,11 +58,15 @@ use near_performance_metrics;
 use near_performance_metrics_macros::perf;
 use near_primitives::block::Tip;
 use near_primitives::block_header::ApprovalType;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::epoch_manager::RngSeed;
 use near_primitives::hash::CryptoHash;
 use near_primitives::network::{AnnounceAccount, PeerId};
 use near_primitives::static_clock::StaticClock;
 use near_primitives::types::BlockHeight;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::types::EpochId;
 use near_primitives::unwrap_or_return;
 use near_primitives::utils::{from_timestamp, MaybeValidated};
 use near_primitives::validator_signer::ValidatorSigner;
@@ -514,6 +520,32 @@ impl Handler<WithSpanContext<BlockApproval>> for ClientActor {
             let BlockApproval(approval, peer_id) = msg;
             debug!(target: "client", "Receive approval {:?} from peer {:?}", approval, peer_id);
             this.client.collect_block_approval(&approval, ApprovalType::PeerApproval(peer_id));
+        })
+    }
+}
+
+#[cfg(feature = "new_epoch_sync")]
+impl Handler<WithSpanContext<EpochSyncInfoResponse>> for ClientActor {
+    type Result = Result<(), ReasonForBan>;
+
+    fn handle(
+        &mut self,
+        msg: WithSpanContext<EpochSyncInfoResponse>,
+        ctx: &mut Context<Self>,
+    ) -> Self::Result {
+        self.wrap(msg, ctx, "EpochSyncInfoResponse", |this, msg| {
+            let EpochSyncInfoResponse(epoch_sync_info_option, peer_id) = msg;
+            if let Some(epoch_sync_info) = epoch_sync_info_option {
+                if this.receive_epoch_sync_info(epoch_sync_info, peer_id) {
+                    Ok(())
+                } else {
+                    warn!(target: "client", "Banning node for sending invalid epoch_sync_info");
+                    Err(ReasonForBan::BadBlockHeader)
+                }
+            } else {
+                this.client.epoch_sync.done = true;
+                Ok(())
+            }
         })
     }
 }
@@ -1614,28 +1646,51 @@ impl ClientActor {
                     );
                 }
                 // Run each step of syncing separately.
-                unwrap_and_report!(self.client.header_sync.run(
-                    &mut self.client.sync_status,
-                    &mut self.client.chain,
-                    highest_height,
-                    &self.network_info.highest_height_peers
-                ));
+                let sync_headers = if self.client.config.epoch_sync_enabled {
+                    unwrap_and_report!(self.client.epoch_sync.run(
+                        &mut self.client.sync_status,
+                        &mut self.client.chain,
+                        highest_height,
+                        &self.network_info.highest_height_peers
+                    ));
+                    !unwrap_and_report!(self.client.epoch_sync.should_continue(
+                        &mut self.client.sync_status,
+                        &mut self.client.chain,
+                        highest_height
+                    ))
+                } else {
+                    true
+                };
+
+                if sync_headers {
+                    unwrap_and_report!(self.client.header_sync.run(
+                        &mut self.client.sync_status,
+                        &mut self.client.chain,
+                        highest_height,
+                        &self.network_info.highest_height_peers
+                    ));
+                }
                 // Only body / state sync if header height is close to the latest.
                 let header_head = unwrap_and_report!(self.client.chain.header_head());
 
                 // Sync state if already running sync state or if block sync is too far.
                 let sync_state = match self.client.sync_status {
+                    SyncStatus::EpochSync { .. } => false,
                     SyncStatus::StateSync(_) => true,
                     _ if header_head.height
                         >= highest_height
                             .saturating_sub(self.client.config.block_header_fetch_horizon) =>
                     {
-                        unwrap_and_report!(self.client.block_sync.run(
-                            &mut self.client.sync_status,
-                            &self.client.chain,
-                            highest_height,
-                            &self.network_info.highest_height_peers
-                        ))
+                        if self.client.config.epoch_sync_enabled {
+                            self.client.synced_epoch_since_last_state_sync
+                        } else {
+                            unwrap_and_report!(self.client.block_sync.run(
+                                &mut self.client.sync_status,
+                                &self.client.chain,
+                                highest_height,
+                                &self.network_info.highest_height_peers
+                            ))
+                        }
                     }
                     _ => false,
                 };
@@ -1718,6 +1773,8 @@ impl ClientActor {
                         StateSyncResult::Completed => {
                             info!(target: "sync", "State sync: all shards are done");
 
+                            self.client.synced_epoch_since_last_state_sync = false;
+
                             let mut block_processing_artifacts = BlockProcessingArtifact::default();
 
                             unwrap_and_report!(self.client.chain.reset_heads_post_state_sync(
@@ -1752,6 +1809,26 @@ impl ClientActor {
             &self.network_info,
             &self.config_updater,
         )
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn receive_epoch_sync_info(&mut self, epoch_sync_info: EpochSyncInfo, peer_id: PeerId) -> bool {
+        let received_epoch_id = epoch_sync_info.first.header.header.epoch_id();
+        info!(target: "client", "Requested EpochSyncInfo for epoch {:?} from {:?}", self.client.epoch_sync.requested_epoch_id, self.client.epoch_sync.last_request_peer_id);
+        info!(target: "client", "Received EpochSyncInfo for epoch {:?} from {}", received_epoch_id, peer_id);
+        if *received_epoch_id != self.client.epoch_sync.requested_epoch_id
+            || (self.client.epoch_sync.last_request_peer_id.is_some()
+                && Some(peer_id) != self.client.epoch_sync.last_request_peer_id)
+        {
+            return false;
+        }
+        match self.client.sync_epoch_sync_info(&epoch_sync_info) {
+            Ok(_) => true,
+            Err(err) => {
+                error!(target: "client", "Error processing epoch_sync_info: {}", err);
+                false
+            }
+        }
     }
 }
 

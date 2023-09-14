@@ -11,11 +11,15 @@ use near_async::time;
 use near_crypto::PublicKey;
 use near_primitives::block::{ApprovalMessage, Block, GenesisId};
 use near_primitives::challenge::Challenge;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::hash::CryptoHash;
 use near_primitives::network::{AnnounceAccount, PeerId};
 use near_primitives::sharding::PartialEncodedChunkWithArcReceipts;
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::types::BlockHeight;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::types::EpochId;
 use near_primitives::types::{AccountId, ShardId};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -259,6 +263,9 @@ pub enum NetworkRequests {
     TxStatus(AccountId, AccountId, CryptoHash),
     /// A challenge to invalidate a block.
     Challenge(Challenge),
+    /// Request epoch sync info for a given epoch
+    #[cfg(feature = "new_epoch_sync")]
+    EpochSyncInfoRequest { epoch_id: EpochId, peer_id: PeerId },
 }
 
 /// Combines peer address info, chain.

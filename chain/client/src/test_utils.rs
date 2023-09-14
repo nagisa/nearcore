@@ -86,6 +86,8 @@ use crate::adapter::{
     AnnounceAccountRequest, BlockApproval, BlockHeadersRequest, BlockHeadersResponse, BlockRequest,
     BlockResponse, ProcessTxResponse, SetNetworkInfo, StateRequestHeader, StateRequestPart,
 };
+#[cfg(feature = "new_epoch_sync")]
+use crate::adapter::{EpochSyncInfoRequest, EpochSyncInfoResponse};
 
 pub struct PeerManagerMock {
     handle: Box<
@@ -1055,6 +1057,31 @@ pub fn setup_mock_all_validators(
                                     );
                                 }
                             };
+                        }
+                        #[cfg(feature = "new_epoch_sync")]
+                        NetworkRequests::EpochSyncInfoRequest { epoch_id, peer_id } => {
+                            for (i, peer_info) in key_pairs.iter().enumerate() {
+                                let peer_id = peer_id.clone();
+                                if peer_info.id == peer_id {
+                                    let me = connectors1[my_ord].client_actor.clone();
+                                    actix::spawn(
+                                        connectors1[i]
+                                            .view_client_actor
+                                            .send(
+                                                EpochSyncInfoRequest(epoch_id.clone())
+                                                    .with_span_context(),
+                                            )
+                                            .then(move |response| {
+                                                let response = response.unwrap();
+                                                me.do_send(
+                                                    EpochSyncInfoResponse(response, peer_id)
+                                                        .with_span_context(),
+                                                );
+                                                future::ready(())
+                                            }),
+                                    );
+                                }
+                            }
                         }
                         NetworkRequests::ForwardTx(_, _)
                         | NetworkRequests::BanPeer { .. }

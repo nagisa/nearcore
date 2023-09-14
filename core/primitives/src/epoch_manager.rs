@@ -1004,22 +1004,59 @@ pub enum SlashState {
 #[cfg(feature = "new_epoch_sync")]
 pub mod epoch_sync {
     use crate::block_header::BlockHeader;
-    use crate::types::validator_stake::ValidatorStake;
+    use crate::epoch_manager::block_info::BlockInfo;
+    use crate::epoch_manager::epoch_info::EpochInfo;
+    use crate::merkle::PartialMerkleTree;
     use borsh::{BorshDeserialize, BorshSerialize};
+    use near_primitives_core::hash::CryptoHash;
 
-    #[derive(BorshSerialize, BorshDeserialize)]
-    pub struct BlockHeaderPair {
+    #[derive(BorshSerialize, BorshDeserialize, Debug, PartialEq, Eq, Clone)]
+    pub struct BlockHeaderWithMerkleTree {
         pub header: BlockHeader,
-        pub last_finalised_header: BlockHeader,
+        pub merkle_tree: PartialMerkleTree,
+    }
+
+    #[derive(BorshSerialize, BorshDeserialize, Debug, PartialEq, Eq, Clone)]
+    pub struct BlockHeaderPair {
+        pub header: BlockHeaderWithMerkleTree,
+        pub last_finalised_header: BlockHeaderWithMerkleTree,
     }
 
     /// Struct to keep all the info that is transferred for one epoch during Epoch Sync.
-    #[derive(BorshSerialize, BorshDeserialize)]
+    #[derive(BorshSerialize, BorshDeserialize, Debug, PartialEq, Eq, Clone)]
     pub struct EpochSyncInfo {
-        /// None is only used for corner case of the first epoch
         pub first: BlockHeaderPair,
-        pub last: BlockHeaderPair,
         pub prev_last: BlockHeaderPair,
-        pub block_producers: Vec<ValidatorStake>,
+        /// headers from last_finalized block for last block to last block
+        pub last_range: Vec<BlockHeaderPair>,
+        pub cur_epoch_info: EpochInfo,
+        pub next_epoch_info: EpochInfo,
+        pub next_next_epoch_info: EpochInfo,
+    }
+
+    impl BlockHeaderPair {
+        pub fn get_block_info(&self, epoch_first_header: &BlockHeader) -> BlockInfo {
+            // TODO: research and add comment
+            let mut last_finalized_height = self.last_finalised_header.header.height();
+            if *self.header.header.last_final_block() == CryptoHash::default() {
+                last_finalized_height = 0;
+            }
+            let mut block_info = BlockInfo::new(
+                self.header.header.hash().clone(),
+                self.header.header.height().clone(),
+                last_finalized_height,
+                self.header.header.last_final_block().clone(),
+                self.header.header.prev_hash().clone(),
+                self.header.header.validator_proposals().collect(),
+                self.header.header.chunk_mask().to_vec(),
+                vec![],
+                self.header.header.total_supply().clone(),
+                self.header.header.latest_protocol_version().clone(),
+                self.header.header.raw_timestamp().clone(),
+            );
+            *block_info.epoch_id_mut() = epoch_first_header.epoch_id().clone();
+            *block_info.epoch_first_block_mut() = epoch_first_header.hash().clone();
+            block_info
+        }
     }
 }

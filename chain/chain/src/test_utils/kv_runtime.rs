@@ -19,6 +19,8 @@ use near_primitives::block_header::{Approval, ApprovalInner};
 use near_primitives::challenge::ChallengesResult;
 use near_primitives::epoch_manager::block_info::BlockInfo;
 use near_primitives::epoch_manager::epoch_info::EpochInfo;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::epoch_manager::EpochConfig;
 use near_primitives::epoch_manager::ValidatorSelectionConfig;
 use near_primitives::errors::{EpochError, InvalidTxError};
@@ -33,8 +35,9 @@ use near_primitives::transaction::{
 };
 use near_primitives::types::validator_stake::{ValidatorStake, ValidatorStakeIter};
 use near_primitives::types::{
-    AccountId, ApprovalStake, Balance, BlockHeight, EpochHeight, EpochId, Gas, Nonce, NumShards,
-    ShardId, StateChangesForSplitStates, StateRoot, StateRootNode, ValidatorInfoIdentifier,
+    AccountId, ApprovalStake, Balance, BlockHeight, BlockHeightDelta, EpochHeight, EpochId, Gas,
+    Nonce, NumShards, ShardId, StateChangesForSplitStates, StateRoot, StateRootNode,
+    ValidatorInfoIdentifier,
 };
 use near_primitives::version::{ProtocolVersion, PROTOCOL_VERSION};
 use near_primitives::views::{
@@ -940,6 +943,20 @@ impl EpochManagerAdapter for MockEpochManager {
         let shard_layout = self.get_shard_layout(&epoch_id)?;
         let next_shard_layout = self.get_shard_layout(&next_epoch_id)?;
         Ok(shard_layout != next_shard_layout)
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn force_update_aggregator(&self, _epoch_id: &EpochId, _hash: &CryptoHash) {}
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_estimated_epoch_length(&self, _epoch_id: &EpochId) -> Result<u64, EpochError> {
+        Ok(self.epoch_length)
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_epoch_sync_info(&self, epoch_id: &EpochId) -> Result<EpochSyncInfo, EpochError> {
+        unreachable!("get_epoch_sync_info is not implemented for kv runtime");
+        Err(EpochError::EpochOutOfBounds(epoch_id.clone()))
     }
 }
 

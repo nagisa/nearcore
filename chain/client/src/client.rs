@@ -49,6 +49,7 @@ use near_pool::InsertTransactionResult;
 use near_primitives::block::{Approval, ApprovalInner, ApprovalMessage, Block, BlockHeader, Tip};
 use near_primitives::block_header::ApprovalType;
 use near_primitives::challenge::{Challenge, ChallengeBody};
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::epoch_manager::RngSeed;
 use near_primitives::errors::EpochError;
 use near_primitives::hash::CryptoHash;
@@ -161,6 +162,9 @@ pub struct Client {
     tier1_accounts_cache: Option<(EpochId, Arc<AccountKeys>)>,
     /// Used when it is needed to create flat storage in background for some shards.
     flat_storage_creator: Option<FlatStorageCreator>,
+
+    #[cfg(feature = "new_epoch_sync")]
+    pub(crate) synced_epoch_since_last_state_sync: bool,
 }
 
 impl Client {
@@ -330,6 +334,9 @@ impl Client {
             chunk_production_info: lru::LruCache::new(PRODUCTION_TIMES_CACHE_SIZE),
             tier1_accounts_cache: None,
             flat_storage_creator,
+            // TODO(posvyatokum): initialise this properly through DB read.
+            #[cfg(feature = "new_epoch_sync")]
+            synced_epoch_since_last_state_sync: false,
         })
     }
 
@@ -2329,6 +2336,16 @@ impl Client {
         // An archival node with legacy storage or in the midst of migration to split
         // storage should do the legacy clear_archive_data.
         self.chain.clear_archive_data(self.config.gc.gc_blocks_limit)
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    pub fn sync_epoch_sync_info(
+        &mut self,
+        epoch_sync_info: &EpochSyncInfo,
+    ) -> Result<(), near_chain::Error> {
+        self.chain.sync_epoch_sync_info(epoch_sync_info)?;
+        self.synced_epoch_since_last_state_sync = true;
+        Ok(())
     }
 }
 

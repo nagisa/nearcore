@@ -202,6 +202,14 @@ impl TryFrom<&net::PeerMessage> for mem::PeerMessage {
             net::PeerMessage::VersionedStateResponse(sri) => {
                 mem::PeerMessage::VersionedStateResponse(sri)
             }
+            #[cfg(feature = "new_epoch_sync")]
+            net::PeerMessage::EpochSyncInfoRequest(epoch_id) => {
+                mem::PeerMessage::EpochSyncInfoRequest(epoch_id)
+            }
+            #[cfg(feature = "new_epoch_sync")]
+            net::PeerMessage::EpochSyncInfoResponse(epoch_sync_info) => {
+                mem::PeerMessage::EpochSyncInfoResponse(*epoch_sync_info)
+            }
         })
     }
 }
@@ -250,6 +258,14 @@ impl From<&mem::PeerMessage> for net::PeerMessage {
             }
             mem::PeerMessage::VersionedStateResponse(sri) => {
                 net::PeerMessage::VersionedStateResponse(sri)
+            }
+            #[cfg(feature = "new_epoch_sync")]
+            mem::PeerMessage::EpochSyncInfoRequest(epoch_id) => {
+                net::PeerMessage::EpochSyncInfoRequest(epoch_id)
+            }
+            #[cfg(feature = "new_epoch_sync")]
+            mem::PeerMessage::EpochSyncInfoResponse(epoch_sync_info) => {
+                net::PeerMessage::EpochSyncInfoResponse(Box::new(epoch_sync_info))
             }
         }
     }

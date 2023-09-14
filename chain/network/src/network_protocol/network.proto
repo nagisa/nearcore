@@ -111,6 +111,11 @@ message StateResponseInfo {
   bytes borsh = 1;
 }
 
+// Wrapper of the borsh-encoded EpochSyncInfo.
+message EpochSyncInfo {
+  bytes borsh = 1;
+}
+
 // Unique identifier of the NEAR chain.
 message GenesisId {
   // Name of the chain (for example "mainnet").
@@ -429,6 +434,14 @@ message StateResponse {
   StateResponseInfo state_response_info = 1;
 }
 
+message EpochSyncInfoRequest {
+    CryptoHash epoch_id = 1;
+}
+
+message EpochSyncInfoResponse {
+    optional EpochSyncInfo epoch_sync_info = 1;
+}
+
 // PeerMessage is a wrapper of all message types exchanged between NEAR nodes.
 // The wire format of a single message M consists of len(M)+4 bytes:
 // <len(M)> : 4 bytes : little endian uint32
@@ -484,5 +497,8 @@ message PeerMessage {
     StateRequestHeader state_request_header = 29;
     StateRequestPart state_request_part = 30;
     StateResponse state_response = 31;
+
+    EpochSyncInfoRequest epoch_sync_info_request = 32;
+    EpochSyncInfoResponse epoch_sync_info_response = 33;
   }
 }

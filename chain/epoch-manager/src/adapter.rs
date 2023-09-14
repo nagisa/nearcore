@@ -1,10 +1,11 @@
 use crate::types::BlockHeaderInfo;
-use crate::EpochManagerHandle;
+use crate::{EpochInfoAggregator, EpochManagerHandle};
 use near_chain_primitives::Error;
 use near_crypto::Signature;
 use near_primitives::block_header::{Approval, ApprovalInner, BlockHeader};
 use near_primitives::epoch_manager::block_info::BlockInfo;
 use near_primitives::epoch_manager::epoch_info::EpochInfo;
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::epoch_manager::EpochConfig;
 use near_primitives::epoch_manager::ShardConfig;
 use near_primitives::errors::EpochError;
@@ -13,8 +14,8 @@ use near_primitives::shard_layout::{account_id_to_shard_id, ShardLayout, ShardLa
 use near_primitives::sharding::{ChunkHash, ShardChunkHeader};
 use near_primitives::types::validator_stake::ValidatorStake;
 use near_primitives::types::{
-    AccountId, ApprovalStake, Balance, BlockHeight, EpochHeight, EpochId, NumShards, ShardId,
-    ValidatorInfoIdentifier,
+    AccountId, ApprovalStake, Balance, BlockHeight, BlockHeightDelta, EpochHeight, EpochId,
+    NumShards, ShardId, ValidatorInfoIdentifier,
 };
 use near_primitives::version::ProtocolVersion;
 use near_primitives::views::EpochValidatorInfo;
@@ -376,6 +377,16 @@ pub trait EpochManagerAdapter: Send + Sync {
     ) -> Result<bool, EpochError>;
 
     fn will_shard_layout_change(&self, parent_hash: &CryptoHash) -> Result<bool, EpochError>;
+
+    /// Should only be used during epoch-sync
+    #[cfg(feature = "new_epoch_sync")]
+    fn force_update_aggregator(&self, epoch_id: &EpochId, hash: &CryptoHash);
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_estimated_epoch_length(&self, epoch_id: &EpochId) -> Result<u64, EpochError>;
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_epoch_sync_info(&self, epoch_id: &EpochId) -> Result<EpochSyncInfo, EpochError>;
 }
 
 impl EpochManagerAdapter for EpochManagerHandle {
@@ -943,5 +954,23 @@ impl EpochManagerAdapter for EpochManagerHandle {
     fn will_shard_layout_change(&self, parent_hash: &CryptoHash) -> Result<bool, EpochError> {
         let epoch_manager = self.read();
         epoch_manager.will_shard_layout_change(parent_hash)
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn force_update_aggregator(&self, epoch_id: &EpochId, hash: &CryptoHash) {
+        let mut epoch_manager = self.write();
+        epoch_manager.epoch_info_aggregator = EpochInfoAggregator::new(epoch_id.clone(), *hash);
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_estimated_epoch_length(&self, epoch_id: &EpochId) -> Result<u64, EpochError> {
+        let epoch_manager = self.read();
+        epoch_manager.get_estimated_epoch_length(epoch_id)
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_epoch_sync_info(&self, epoch_id: &EpochId) -> Result<EpochSyncInfo, EpochError> {
+        let epoch_manager = self.read();
+        epoch_manager.get_epoch_sync_info(epoch_id)
     }
 }

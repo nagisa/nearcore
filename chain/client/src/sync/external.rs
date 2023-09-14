@@ -8,7 +8,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 /// Connection to the external storage.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ExternalConnection {
     S3 {
         bucket: Arc<s3::Bucket>,

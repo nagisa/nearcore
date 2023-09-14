@@ -446,6 +446,7 @@ fn test_flat_storage_iter() {
         1,
         vec![1; num_shards],
         shard_layout.clone(),
+        None,
     );
 
     let store = create_test_store();

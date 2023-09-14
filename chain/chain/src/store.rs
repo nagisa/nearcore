@@ -53,6 +53,7 @@ use near_store::{
 use crate::byzantine_assert;
 use crate::chunks_store::ReadOnlyChunksStore;
 use crate::types::{Block, BlockHeader, LatestKnown};
+use near_primitives::epoch_manager::epoch_sync::{BlockHeaderPair, BlockHeaderWithMerkleTree};
 use near_store::db::{StoreStatistics, STATE_SYNC_DUMP_KEY};
 use near_store::flat::store_helper;
 use std::sync::Arc;
@@ -315,6 +316,18 @@ pub trait ChainStoreAccess {
             shard_id = epoch_manager.get_prev_shard_ids(&candidate_hash, vec![shard_id])?[0];
         }
     }
+
+    /// Create a pair of `BlockHeader`s necessary to create `BlockInfo` for `block_hash`
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_header_pair(&self, block_hash: &CryptoHash) -> Result<BlockHeaderPair, Error>;
+
+    /// Get last N header pairs of an epoch relevant to epoch sync
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_last_header_pairs(
+        &self,
+        last_block_header: &BlockHeader,
+        epoch_first_block: &CryptoHash,
+    ) -> Result<Vec<BlockHeaderPair>, Error>;
 }
 
 /// All chain-related database operations.
@@ -1312,6 +1325,76 @@ impl ChainStoreAccess for ChainStore {
         .map(|r| r.is_some())
         .map_err(|e| e.into())
     }
+
+    /// Create a pair of `BlockHeader`s necessary to create `BlockInfo` for `block_hash`
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_header_pair(&self, block_hash: &CryptoHash) -> Result<BlockHeaderPair, Error> {
+        let header = self.get_block_header(block_hash)?;
+        let merkle_tree = self.get_block_merkle_tree(block_hash)?;
+        // `block_hash` can correspond to genesis block, for which there is no last final block recorded,
+        // because `last_final_block` for genesis is `CryptoHash::default()`
+        // Here we return just the same genesis block header as last known block header
+        // TODO(posvyatokum) process this case carefully in epoch sync validation
+        // TODO(posvyatokum) process this carefully in saving the parts of epoch sync data
+        let (last_finalised_header, last_finalised_merkle_tree) = {
+            if *header.last_final_block() == CryptoHash::default() {
+                (header.clone(), merkle_tree.clone())
+            } else {
+                (
+                    self.get_block_header(header.last_final_block())?,
+                    self.get_block_merkle_tree(header.last_final_block())?,
+                )
+            }
+        };
+        Ok(BlockHeaderPair {
+            header: BlockHeaderWithMerkleTree { header, merkle_tree: (*merkle_tree).clone() },
+            last_finalised_header: BlockHeaderWithMerkleTree {
+                header: last_finalised_header,
+                merkle_tree: (*last_finalised_merkle_tree).clone(),
+            },
+        })
+    }
+
+    /// Get last N header pairs of an epoch relevant to epoch sync
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_last_header_pairs(
+        &self,
+        last_block_header: &BlockHeader,
+        epoch_first_block: &CryptoHash,
+    ) -> Result<Vec<BlockHeaderPair>, Error> {
+        let mut header = last_block_header.clone();
+        let mut last_range = vec![self.get_header_pair(last_block_header.hash())?];
+        let mut found_last_finalised_header =
+            header.hash() == last_range[0].last_finalised_header.header.hash();
+        let mut not_found_shard_ids = (0..header.chunk_mask().len()).collect::<HashSet<usize>>();
+
+        for (shard_id, included) in header.chunk_mask().iter().enumerate() {
+            if *included {
+                not_found_shard_ids.remove(&shard_id);
+            }
+        }
+
+        while !found_last_finalised_header || !not_found_shard_ids.is_empty() {
+            header = self.get_block_header(header.prev_hash())?;
+            last_range.push(self.get_header_pair(header.hash())?);
+            if header.hash() == last_range[0].last_finalised_header.header.hash() {
+                found_last_finalised_header = true;
+            }
+            for (shard_id, included) in header.chunk_mask().iter().enumerate() {
+                if *included {
+                    not_found_shard_ids.remove(&shard_id);
+                }
+            }
+            if header.hash() == epoch_first_block {
+                break; // reached the start of an epoch
+            }
+        }
+        // add one more header just in case
+        if header.hash() != epoch_first_block {
+            last_range.push(self.get_header_pair(header.prev_hash())?);
+        }
+        Ok(last_range)
+    }
 }
 
 /// Cache update for ChainStore
@@ -1708,6 +1791,22 @@ impl<'a> ChainStoreAccess for ChainStoreUpdate<'a> {
         } else {
             self.chain_store.is_height_processed(height)
         }
+    }
+
+    /// Create a pair of `BlockHeader`s necessary to create `BlockInfo` for `block_hash`
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_header_pair(&self, block_hash: &CryptoHash) -> Result<BlockHeaderPair, Error> {
+        self.chain_store.get_header_pair(block_hash)
+    }
+
+    /// Get last N header pairs of an epoch relevant to epoch sync
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_last_header_pairs(
+        &self,
+        last_block_header: &BlockHeader,
+        epoch_first_block: &CryptoHash,
+    ) -> Result<Vec<BlockHeaderPair>, Error> {
+        self.chain_store.get_last_header_pairs(last_block_header, epoch_first_block)
     }
 }
 

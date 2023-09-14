@@ -4,6 +4,7 @@ use crate::types::{NetworkInfo, ReasonForBan};
 
 use near_primitives::block::{Approval, Block, BlockHeader};
 use near_primitives::challenge::Challenge;
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::hash::CryptoHash;
 use near_primitives::network::{AnnounceAccount, PeerId};
 use near_primitives::transaction::SignedTransaction;
@@ -62,6 +63,16 @@ pub trait Client: Send + Sync + 'static {
         &self,
         accounts: Vec<(AnnounceAccount, Option<EpochId>)>,
     ) -> Result<Vec<AnnounceAccount>, ReasonForBan>;
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_request(&self, epoch_id: EpochId) -> Option<EpochSyncInfo>;
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_response(
+        &self,
+        epoch_sync_info: Option<EpochSyncInfo>,
+        peer_id: PeerId,
+    ) -> Result<(), ReasonForBan>;
 }
 
 /// Implementation of Client which doesn't do anything and never returns errors.
@@ -128,5 +139,19 @@ impl Client for Noop {
         _accounts: Vec<(AnnounceAccount, Option<EpochId>)>,
     ) -> Result<Vec<AnnounceAccount>, ReasonForBan> {
         Ok(vec![])
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_request(&self, _epoch_id: EpochId) -> Option<EpochSyncInfo> {
+        None
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_response(
+        &self,
+        _epoch_sync_info: Option<EpochSyncInfo>,
+        _peer_id: PeerId,
+    ) -> Result<(), ReasonForBan> {
+        Ok(())
     }
 }

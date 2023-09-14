@@ -278,9 +278,7 @@ pub enum SyncStatus {
     /// Not syncing / Done syncing.
     NoSync,
     /// Syncing using light-client headers to a recent epoch
-    // TODO #3488
-    // Bowen: why do we use epoch ordinal instead of epoch id?
-    EpochSync { epoch_ord: u64 },
+    EpochSync { epoch_id: EpochId },
     /// Downloading block headers for fast sync.
     HeaderSync {
         start_height: BlockHeight,
@@ -314,7 +312,7 @@ impl SyncStatus {
             // Represent NoSync as 0 because it is the state of a normal well-behaving node.
             SyncStatus::NoSync => 0,
             SyncStatus::AwaitingPeers => 1,
-            SyncStatus::EpochSync { epoch_ord: _ } => 2,
+            SyncStatus::EpochSync { epoch_id: _ } => 2,
             SyncStatus::HeaderSync { start_height: _, current_height: _, highest_height: _ } => 3,
             SyncStatus::StateSync(_) => 4,
             SyncStatus::StateSyncDone => 5,
@@ -336,7 +334,7 @@ impl From<SyncStatus> for SyncStatusView {
         match status {
             SyncStatus::AwaitingPeers => SyncStatusView::AwaitingPeers,
             SyncStatus::NoSync => SyncStatusView::NoSync,
-            SyncStatus::EpochSync { epoch_ord } => SyncStatusView::EpochSync { epoch_ord },
+            SyncStatus::EpochSync { epoch_id } => SyncStatusView::EpochSync { epoch_id },
             SyncStatus::HeaderSync { start_height, current_height, highest_height } => {
                 SyncStatusView::HeaderSync { start_height, current_height, highest_height }
             }

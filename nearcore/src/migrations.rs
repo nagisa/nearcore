@@ -1,4 +1,6 @@
 use near_chain::{ChainStore, ChainStoreAccess};
+use near_primitives::epoch_manager::epoch_info::EpochInfo;
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::receipt::ReceiptResult;
 use near_primitives::runtime::migration_data::MigrationData;
 use near_primitives::types::Gas;
@@ -48,6 +50,74 @@ pub fn do_migrate_30_to_31(
     }
     println!("total inconsistency count: {}", count);
     store_update.finish()?;
+    Ok(())
+}
+
+/// Migrated the database from version 38 to 39
+///
+/// Populates the column `EpochSyncInfo` for all finished epochs.
+#[cfg(feature = "new_epoch_sync")]
+pub fn migrate_38_to_39(store: &Store, config: &crate::config::NearConfig) -> anyhow::Result<()> {
+    let mut update = store.store_update();
+
+    let chain_store = ChainStore::new(store.clone(), config.genesis.config.genesis_height, false);
+    let header_head_hash = chain_store.header_head()?.last_block_hash;
+
+    let mut cur_hash = header_head_hash;
+    let mut cur_header = chain_store.get_block_header(&cur_hash)?;
+    while cur_header.height() != config.genesis.config.genesis_height {
+        tracing::debug!("Big loop height {:?}", cur_header.height());
+        // ha-ha-hacky way to check if the current block is the end of some epoch
+        if store.get(DBCol::EpochInfo, cur_hash.as_ref())?.is_some() {
+            let last_header = cur_header.clone();
+            let epoch_id = cur_header.epoch_id().clone();
+            let mut first_block_hash = last_header.hash().clone();
+            // Descend until the finish of the previous epoch
+            // Second condition is important because epoch_id of first two epoch is CryptoHash::default
+            while *cur_header.epoch_id() == epoch_id && cur_header.height() != config.genesis.config.genesis_height {
+                tracing::debug!("Small loop height {:?}", cur_header.height());
+                first_block_hash = cur_hash.clone();
+                cur_hash = cur_header.prev_hash().clone();
+                cur_header = chain_store.get_block_header(&cur_hash)?;
+            }
+
+            tracing::debug!("Creating EpochSyncInfo from block {:?}", last_header);
+
+            let last_range =
+                chain_store.get_last_header_pairs(&last_header, &first_block_hash)?;
+            let prev_last = chain_store.get_header_pair(last_header.prev_hash())?;
+            let first = chain_store.get_header_pair(&first_block_hash)?;
+            let cur_epoch_info = store
+                .get_ser::<EpochInfo>(DBCol::EpochInfo, last_header.epoch_id().as_ref())?.expect("Should have current EpochInfo");
+            let next_epoch_info =
+                store.get_ser::<EpochInfo>(DBCol::EpochInfo, cur_hash.as_ref())?.expect("Should have next EpochInfo");
+            let next_next_epoch_info =
+                store.get_ser::<EpochInfo>(DBCol::EpochInfo, last_header.hash().as_ref())?.expect("Should have next next EpochInfo");
+
+            let epoch_sync_info = EpochSyncInfo {
+                last_range,
+                prev_last,
+                first,
+                cur_epoch_info,
+                next_epoch_info,
+                next_next_epoch_info,
+            };
+
+            assert_eq!(epoch_sync_info,  store
+                .get_ser::<EpochSyncInfo>(DBCol::EpochSyncInfo, epoch_id.as_ref())?.expect("Should have current EpochSyncInfo"));
+
+            update.set_ser(
+                DBCol::EpochSyncInfo,
+                epoch_id.as_ref(),
+                &epoch_sync_info,
+            )?;
+        } else {
+            cur_hash = cur_header.prev_hash().clone();
+            cur_header = chain_store.get_block_header(&cur_hash)?;
+        }
+    }
+
+    update.commit()?;
     Ok(())
 }
 
@@ -113,6 +183,8 @@ impl<'a> near_store::StoreMigrator for Migrator<'a> {
             }
             36 => near_store::migrations::migrate_36_to_37(store),
             37 => near_store::migrations::migrate_37_to_38(store),
+            #[cfg(feature = "new_epoch_sync")]
+            38 => migrate_38_to_39(store, self.config),
             DB_VERSION.. => unreachable!(),
         }
     }

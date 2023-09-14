@@ -419,9 +419,7 @@ pub enum SyncStatusView {
     /// Not syncing / Done syncing.
     NoSync,
     /// Syncing using light-client headers to a recent epoch
-    // TODO #3488
-    // Bowen: why do we use epoch ordinal instead of epoch id?
-    EpochSync { epoch_ord: u64 },
+    EpochSync { epoch_id: EpochId },
     /// Downloading block headers for fast sync.
     HeaderSync {
         start_height: BlockHeight,

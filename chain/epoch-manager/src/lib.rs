@@ -5,6 +5,8 @@ use near_chain_configs::GenesisConfig;
 use near_primitives::checked_feature;
 use near_primitives::epoch_manager::block_info::BlockInfo;
 use near_primitives::epoch_manager::epoch_info::{EpochInfo, EpochSummary};
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::epoch_manager::{
     AllEpochConfig, EpochConfig, ShardConfig, SlashState, AGGREGATOR_KEY,
 };
@@ -13,8 +15,8 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::shard_layout::ShardLayout;
 use near_primitives::types::validator_stake::ValidatorStake;
 use near_primitives::types::{
-    AccountId, ApprovalStake, Balance, BlockChunkValidatorStats, BlockHeight, EpochId,
-    EpochInfoProvider, NumBlocks, NumSeats, ShardId, ValidatorId, ValidatorInfoIdentifier,
+    AccountId, ApprovalStake, Balance, BlockChunkValidatorStats, BlockHeight, BlockHeightDelta,
+    EpochId, EpochInfoProvider, NumBlocks, NumSeats, ShardId, ValidatorId, ValidatorInfoIdentifier,
     ValidatorKickoutReason, ValidatorStats,
 };
 use near_primitives::version::{ProtocolVersion, UPGRADABILITY_FIX_PROTOCOL_VERSION};
@@ -1804,5 +1806,18 @@ impl EpochManager {
         } else {
             Ok(None)
         }
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    pub fn get_epoch_sync_info(&self, epoch_id: &EpochId) -> Result<EpochSyncInfo, EpochError> {
+        self.store
+            .get_ser(DBCol::EpochSyncInfo, epoch_id.as_ref())?
+            .ok_or_else(|| EpochError::EpochOutOfBounds(epoch_id.clone()))
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn get_estimated_epoch_length(&self, epoch_id: &EpochId) -> Result<u64, EpochError> {
+        let protocol_version = self.get_epoch_info(epoch_id)?.protocol_version();
+        Ok(self.config.for_protocol_version(protocol_version).epoch_length)
     }
 }

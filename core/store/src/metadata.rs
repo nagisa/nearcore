@@ -2,7 +2,10 @@
 pub type DbVersion = u32;
 
 /// Current version of the database.
+#[cfg(not(feature = "new_epoch_sync"))]
 pub const DB_VERSION: DbVersion = 38;
+#[cfg(feature = "new_epoch_sync")]
+pub const DB_VERSION: DbVersion = 39;
 
 /// Database version at which point DbKind was introduced.
 const DB_VERSION_WITH_KIND: DbVersion = 34;

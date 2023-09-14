@@ -6,6 +6,8 @@ use crate::types::{NetworkInfo, ReasonForBan, StateResponseInfoV2};
 use near_async::messaging;
 use near_primitives::block::{Approval, Block, BlockHeader};
 use near_primitives::challenge::Challenge;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::hash::CryptoHash;
 use near_primitives::network::{AnnounceAccount, PeerId};
 use near_primitives::sharding::{ChunkHash, PartialEncodedChunkPart};
@@ -26,6 +28,10 @@ pub enum Event {
     Chunk(Vec<PartialEncodedChunkPart>),
     ChunkRequest(ChunkHash),
     Transaction(SignedTransaction),
+    #[cfg(feature = "new_epoch_sync")]
+    EpochSyncInfoRequest(EpochId),
+    #[cfg(feature = "new_epoch_sync")]
+    EpochSyncInfoResponse(Option<EpochSyncInfo>),
 }
 
 pub(crate) struct Fake {
@@ -116,6 +122,22 @@ impl client::Client for Fake {
     ) -> Result<Vec<AnnounceAccount>, ReasonForBan> {
         self.event_sink.push(Event::AnnounceAccount(accounts.clone()));
         Ok(accounts.into_iter().map(|a| a.0).collect())
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_request(&self, epoch_id: EpochId) -> Option<EpochSyncInfo> {
+        self.event_sink.push(Event::EpochSyncInfoRequest(epoch_id));
+        None
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    async fn epoch_sync_info_response(
+        &self,
+        epoch_sync_info: Option<EpochSyncInfo>,
+        _peer_id: PeerId,
+    ) -> Result<(), ReasonForBan> {
+        self.event_sink.push(Event::EpochSyncInfoResponse(epoch_sync_info));
+        Ok(())
     }
 }
 

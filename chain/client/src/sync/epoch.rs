@@ -1,10 +1,17 @@
 use chrono::{DateTime, Duration, Utc};
-use near_network::types::PeerManagerAdapter;
+use near_async::messaging::CanSend;
+use near_chain::Chain;
+use near_client_primitives::types::SyncStatus;
+use near_network::types::{
+    HighestHeightPeerInfo, NetworkRequests, PeerManagerAdapter, PeerManagerMessageRequest,
+};
 use near_primitives::hash::CryptoHash;
 use near_primitives::network::PeerId;
 use near_primitives::static_clock::StaticClock;
 use near_primitives::types::validator_stake::ValidatorStake;
-use near_primitives::types::EpochId;
+use near_primitives::types::{BlockHeight, EpochId};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 use std::collections::{HashMap, HashSet};
 use std::time::Duration as TimeDuration;
 
@@ -26,10 +33,10 @@ pub struct EpochSync {
     /// The block producers set to validate the light client block view for the next epoch
     next_block_producers: Vec<ValidatorStake>,
     /// The last epoch id that we have requested
-    requested_epoch_id: EpochId,
+    pub requested_epoch_id: EpochId,
     /// When and to whom was the last request made
     last_request_time: DateTime<Utc>,
-    last_request_peer_id: Option<PeerId>,
+    pub last_request_peer_id: Option<PeerId>,
 
     /// How long to wait for a response before re-requesting the same light client block view
     request_timeout: Duration,
@@ -77,5 +84,66 @@ impl EpochSync {
             sync_hash: CryptoHash::default(),
             is_just_started: true,
         }
+    }
+
+    pub fn epoch_sync_due(
+        &self,
+        sync_status: &mut SyncStatus,
+        chain: &Chain,
+        highest_height: BlockHeight,
+    ) -> Result<bool, near_chain::Error> {
+        let header_head = chain.header_head()?;
+        let epoch_id = chain.epoch_manager.get_epoch_id(&header_head.last_block_hash)?;
+        let epoch_length = chain.epoch_manager.get_estimated_epoch_length(&epoch_id)?;
+        // let is_at_epoch_end = chain.epoch_manager.is_next_block_epoch_start(&header_head.last_block_hash)?;
+
+        Ok(header_head.height + epoch_length < highest_height)
+    }
+
+    // TODO(posvyatokum): implement
+    pub fn should_continue(
+        &self,
+        sync_status: &mut SyncStatus,
+        chain: &Chain,
+        highest_height: BlockHeight,
+    ) -> Result<bool, near_chain::Error> {
+        self.epoch_sync_due(sync_status, chain, highest_height)
+    }
+
+    pub fn run(
+        &mut self,
+        sync_status: &mut SyncStatus,
+        chain: &Chain,
+        highest_height: BlockHeight,
+        highest_height_peers: &[HighestHeightPeerInfo],
+    ) -> Result<(), near_chain::Error> {
+        let _span = tracing::debug_span!(target: "sync", "run", sync = "EpochSync").entered();
+        if !self.epoch_sync_due(sync_status, chain, highest_height)? {
+            return Ok(());
+        }
+        let header_head = chain.header_head()?;
+        // Get epoch_id for which we should run sync
+        let epoch_id =
+            if chain.epoch_manager.is_next_block_epoch_start(&header_head.last_block_hash)? {
+                chain.epoch_manager.get_next_epoch_id(&header_head.last_block_hash)?
+            } else {
+                chain.epoch_manager.get_epoch_id(&header_head.last_block_hash)?
+            };
+        *sync_status = SyncStatus::EpochSync { epoch_id: epoch_id.clone() };
+        if let Some(peer) = highest_height_peers.choose(&mut thread_rng()).cloned() {
+            self.request_epoch(&epoch_id, peer);
+        }
+        Ok(())
+    }
+
+    pub fn request_epoch(&mut self, epoch_id: &EpochId, peer: HighestHeightPeerInfo) {
+        tracing::debug!(target: "sync", "Sync: request epoch sync info: asking {} for epoch {:?}", peer.peer_info.id, epoch_id);
+        self.requested_epoch_id = epoch_id.clone();
+        self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
+            NetworkRequests::EpochSyncInfoRequest {
+                epoch_id: epoch_id.clone(),
+                peer_id: peer.peer_info.id.clone(),
+            },
+        ));
     }
 }

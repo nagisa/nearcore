@@ -29,6 +29,7 @@ use near_crypto::Signature;
 use near_o11y::OpenTelemetrySpanExt;
 use near_primitives::block::{Approval, Block, BlockHeader, GenesisId};
 use near_primitives::challenge::Challenge;
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::combine_hash;
 use near_primitives::network::{AnnounceAccount, PeerId};
@@ -37,7 +38,7 @@ use near_primitives::sharding::{
 };
 use near_primitives::syncing::{ShardStateSyncResponse, ShardStateSyncResponseV1};
 use near_primitives::transaction::SignedTransaction;
-use near_primitives::types::AccountId;
+use near_primitives::types::{AccountId, EpochId};
 use near_primitives::types::{BlockHeight, ShardId};
 use near_primitives::validator_signer::ValidatorSigner;
 use near_primitives::views::FinalExecutionOutcomeView;
@@ -411,6 +412,10 @@ pub enum PeerMessage {
     StateRequestHeader(ShardId, CryptoHash),
     StateRequestPart(ShardId, CryptoHash, u64),
     VersionedStateResponse(StateResponseInfo),
+    #[cfg(feature = "new_epoch_sync")]
+    EpochSyncInfoRequest(EpochId),
+    #[cfg(feature = "new_epoch_sync")]
+    EpochSyncInfoResponse(Option<EpochSyncInfo>),
 }
 
 impl fmt::Display for PeerMessage {

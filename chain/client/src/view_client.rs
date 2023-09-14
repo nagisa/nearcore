@@ -1,6 +1,8 @@
 //! Readonly view of the chain and state of the database.
 //! Useful for querying from RPC.
 
+#[cfg(feature = "new_epoch_sync")]
+use crate::adapter::EpochSyncInfoRequest;
 use crate::adapter::{
     AnnounceAccountRequest, BlockHeadersRequest, BlockRequest, StateRequestHeader,
     StateRequestPart, StateResponse, TxStatusRequest, TxStatusResponse,
@@ -37,6 +39,8 @@ use near_o11y::{handler_debug_span, OpenTelemetrySpanExt, WithSpanContext, WithS
 use near_performance_metrics_macros::perf;
 use near_primitives::block::{Block, BlockHeader};
 use near_primitives::epoch_manager::epoch_info::EpochInfo;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::{merklize, PartialMerkleTree};
 use near_primitives::network::AnnounceAccount;
@@ -47,6 +51,8 @@ use near_primitives::syncing::{
     ShardStateSyncResponse, ShardStateSyncResponseHeader, ShardStateSyncResponseV1,
     ShardStateSyncResponseV2,
 };
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::types::EpochId;
 use near_primitives::types::{
     AccountId, BlockHeight, BlockId, BlockReference, EpochReference, Finality, MaybeBlockId,
     ShardId, SyncCheckpoint, TransactionOrReceiptId, ValidatorInfoIdentifier,
@@ -527,6 +533,11 @@ impl ViewClientActor {
         }
         cache.push_back(now);
         true
+    }
+
+    #[cfg(feature = "new_epoch_sync")]
+    fn retrieve_epoch_sync_info(&self, epoch_id: &EpochId) -> Result<EpochSyncInfo, Error> {
+        self.epoch_manager.get_epoch_sync_info(epoch_id).map_err(|e| e.into())
     }
 }
 
@@ -1453,6 +1464,30 @@ impl Handler<WithSpanContext<GetSplitStorageInfo>> for ViewClientActor {
             cold_head_height: cold_head.map(|tip| tip.height),
             hot_db_kind,
         })
+    }
+}
+
+#[cfg(feature = "new_epoch_sync")]
+impl Handler<WithSpanContext<EpochSyncInfoRequest>> for ViewClientActor {
+    type Result = Option<EpochSyncInfo>;
+
+    #[perf]
+    fn handle(
+        &mut self,
+        msg: WithSpanContext<EpochSyncInfoRequest>,
+        _ctx: &mut Self::Context,
+    ) -> Self::Result {
+        let (_span, msg) = handler_debug_span!(target: "client", msg);
+        let _timer = metrics::VIEW_CLIENT_MESSAGE_TIME
+            .with_label_values(&["EpochSyncInfoRequest"])
+            .start_timer();
+        let EpochSyncInfoRequest(epoch_id) = msg;
+
+        if let Ok(epoch_sync_info) = self.retrieve_epoch_sync_info(&epoch_id) {
+            Some(epoch_sync_info)
+        } else {
+            None
+        }
     }
 }
 

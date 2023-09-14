@@ -110,5 +110,7 @@ sandbox = [
   "near-chain/sandbox",
 ]
 new_epoch_sync = [
-  "near-chain/new_epoch_sync"
+  "near-chain/new_epoch_sync",
+  "near-network/new_epoch_sync",
+  "near-epoch-manager/new_epoch_sync",
 ]

@@ -13,7 +13,11 @@ use borsh::{BorshDeserialize as _, BorshSerialize as _};
 use near_async::time::error::ComponentRange;
 use near_primitives::block::{Block, BlockHeader};
 use near_primitives::challenge::Challenge;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::epoch_manager::epoch_sync::EpochSyncInfo;
 use near_primitives::transaction::SignedTransaction;
+#[cfg(feature = "new_epoch_sync")]
+use near_primitives::types::EpochId;
 use protobuf::MessageField as MF;
 use std::sync::Arc;
 
@@ -162,6 +166,26 @@ impl TryFrom<&proto::StateResponseInfo> for StateResponseInfo {
 
 //////////////////////////////////////////
 
+#[cfg(feature = "new_epoch_sync")]
+impl From<&EpochSyncInfo> for proto::EpochSyncInfo {
+    fn from(x: &EpochSyncInfo) -> Self {
+        Self { borsh: x.try_to_vec().unwrap(), ..Default::default() }
+    }
+}
+
+#[cfg(feature = "new_epoch_sync")]
+pub type ParseEpochSyncInfoError = borsh::maybestd::io::Error;
+
+#[cfg(feature = "new_epoch_sync")]
+impl TryFrom<&proto::EpochSyncInfo> for EpochSyncInfo {
+    type Error = ParseEpochSyncInfoError;
+    fn try_from(x: &proto::EpochSyncInfo) -> Result<Self, Self::Error> {
+        Self::try_from_slice(&x.borsh)
+    }
+}
+
+//////////////////////////////////////////
+
 impl From<&PeerMessage> for proto::PeerMessage {
     fn from(x: &PeerMessage) -> Self {
         Self {
@@ -264,6 +288,20 @@ impl From<&PeerMessage> for proto::PeerMessage {
                         ..Default::default()
                     })
                 }
+                PeerMessage::EpochSyncInfoRequest(epoch_id) => {
+                    ProtoMT::EpochSyncInfoRequest(proto::EpochSyncInfoRequest {
+                        epoch_id: MF::some((&epoch_id.0).into()),
+                        ..Default::default()
+                    })
+                }
+                PeerMessage::EpochSyncInfoResponse(epoch_sync_info) => {
+                    ProtoMT::EpochSyncInfoResponse(proto::EpochSyncInfoResponse {
+                        epoch_sync_info: MF::from_option(
+                            epoch_sync_info.clone().map(|esi| (&esi).into()),
+                        ),
+                        ..Default::default()
+                    })
+                }
             }),
             ..Default::default()
         }
@@ -317,6 +355,12 @@ pub enum ParsePeerMessageError {
     SyncAccountsData(ParseVecError<ParseSignedAccountDataError>),
     #[error("state_response: {0}")]
     StateResponse(ParseRequiredError<ParseStateInfoError>),
+    #[cfg(feature = "new_epoch_sync")]
+    #[error("epoch_sync_info_request: {0}")]
+    EpochSyncInfoRequest(ParseRequiredError<ParseCryptoHashError>),
+    #[cfg(feature = "new_epoch_sync")]
+    #[error("epoch_sync_info_response: {0}")]
+    EpochSyncInfoResponse(ParseEpochSyncInfoError),
 }
 
 impl TryFrom<&proto::PeerMessage> for PeerMessage {
@@ -414,6 +458,15 @@ impl TryFrom<&proto::PeerMessage> for PeerMessage {
             ),
             ProtoMT::StateResponse(t) => PeerMessage::VersionedStateResponse(
                 try_from_required(&t.state_response_info).map_err(Self::Error::StateResponse)?,
+            ),
+            #[cfg(feature = "new_epoch_sync")]
+            ProtoMT::EpochSyncInfoRequest(ei) => PeerMessage::EpochSyncInfoRequest(EpochId(
+                try_from_required(&ei.epoch_id).map_err(Self::Error::EpochSyncInfoRequest)?,
+            )),
+            #[cfg(feature = "new_epoch_sync")]
+            ProtoMT::EpochSyncInfoResponse(esi) => PeerMessage::EpochSyncInfoResponse(
+                try_from_optional(&esi.epoch_sync_info)
+                    .map_err(Self::Error::EpochSyncInfoResponse)?,
             ),
         })
     }
