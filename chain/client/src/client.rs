@@ -453,7 +453,6 @@ impl Client {
 
     fn should_reschedule_block(
         &self,
-        head: &Tip,
         prev_hash: &CryptoHash,
         prev_prev_hash: &CryptoHash,
         next_height: BlockHeight,
@@ -477,7 +476,7 @@ impl Client {
             }
         }
 
-        if self.epoch_manager.is_next_block_epoch_start(&head.last_block_hash)? {
+        if self.epoch_manager.is_next_block_epoch_start(&prev_hash)? {
             if !self.chain.prev_block_is_caught_up(prev_prev_hash, prev_hash)? {
                 // Currently state for the chunks we are interested in this epoch
                 // are not yet caught up (e.g. still state syncing).
@@ -545,27 +544,35 @@ impl Client {
     /// Either returns produced block (not applied) or error.
     pub fn produce_block(&mut self, next_height: BlockHeight) -> Result<Option<Block>, Error> {
         let _span = tracing::debug_span!(target: "client", "produce_block", next_height).entered();
-        let known_height = self.chain.store().get_latest_known()?.height;
 
-        let validator_signer = self
-            .validator_signer
-            .as_ref()
-            .ok_or_else(|| Error::BlockProducer("Called without block producer info.".to_string()))?
-            .clone();
         let head = self.chain.head()?;
         assert_eq!(
             head.epoch_id,
             self.epoch_manager.get_epoch_id_from_prev_block(&head.prev_block_hash).unwrap()
         );
 
+        let prev_hash = head.last_block_hash;
+        self.produce_block_on(next_height, prev_hash)
+    }
+
+    pub fn produce_block_on(
+        &mut self,
+        next_height: BlockHeight,
+        prev_hash: CryptoHash,
+    ) -> Result<Option<Block>, Error> {
+        println!("produce_block_on {next_height} prev_hash={prev_hash}");
+        let known_height = self.chain.store().get_latest_known()?.height;
+        let validator_signer = self
+            .validator_signer
+            .as_ref()
+            .ok_or_else(|| Error::BlockProducer("Called without block producer info.".to_string()))?
+            .clone();
         // Check that we are were called at the block that we are producer for.
-        let epoch_id =
-            self.epoch_manager.get_epoch_id_from_prev_block(&head.last_block_hash).unwrap();
+        let epoch_id = self.epoch_manager.get_epoch_id_from_prev_block(&prev_hash).unwrap();
         let next_block_proposer = self.epoch_manager.get_block_producer(&epoch_id, next_height)?;
 
-        let prev = self.chain.get_block_header(&head.last_block_hash)?;
-        let prev_hash = head.last_block_hash;
-        let prev_height = head.height;
+        let prev = self.chain.get_block_header(&prev_hash)?;
+        let prev_height = prev.height();
         let prev_prev_hash = *prev.prev_hash();
         let prev_epoch_id = prev.epoch_id().clone();
         let prev_next_bp_hash = *prev.next_bp_hash();
@@ -575,7 +582,6 @@ impl Client {
         let _ = self.check_and_update_doomslug_tip()?;
 
         if self.should_reschedule_block(
-            &head,
             &prev_hash,
             &prev_prev_hash,
             next_height,
@@ -587,7 +593,7 @@ impl Client {
         }
         let (validator_stake, _) = self.epoch_manager.get_validator_by_account_id(
             &epoch_id,
-            &head.last_block_hash,
+            &prev_hash,
             &next_block_proposer,
         )?;
 
