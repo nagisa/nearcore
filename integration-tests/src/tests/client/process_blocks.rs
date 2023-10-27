@@ -3170,7 +3170,7 @@ fn test_fork_receipt_ids() {
 
     // Construct two blocks that contain the same chunk and make the chunk unavailable.
     let validator_signer = create_test_signer("test0");
-    let last_height = produced_block.header().height() + 1;
+    let last_height = produced_block.header().height();
     let (encoded_chunk, _, _) = create_chunk_on_height(&mut env.clients[0], last_height + 1);
     let mut block1 = env.clients[0].produce_block(last_height + 1).unwrap().unwrap();
     let mut block2 = env.clients[0].produce_block(last_height + 2).unwrap().unwrap();
