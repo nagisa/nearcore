@@ -341,7 +341,11 @@ impl ViewClientActor {
         let tip = self.chain.head();
         println!("get_chunk_extra");
         let header = if let BlockReference::Finality(_) = block_ref {
-            self.chain.get_block_header(header.prev_hash()).unwrap()
+            if header.prev_hash() != &CryptoHash::default() {
+                self.chain.get_block_header(header.prev_hash()).unwrap()
+            } else {
+                header
+            }
         } else {
             header
         };
