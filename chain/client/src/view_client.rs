@@ -306,6 +306,7 @@ impl ViewClientActor {
 
     fn handle_query(&mut self, msg: Query) -> Result<QueryResponse, QueryError> {
         println!("handle_query {msg:?}");
+        let block_ref = msg.block_reference.clone();
         let header = self.get_block_header_by_reference(&msg.block_reference);
         println!("header={header:?}");
         let header = match header {
@@ -339,6 +340,12 @@ impl ViewClientActor {
 
         let tip = self.chain.head();
         println!("get_chunk_extra");
+        let header = if let BlockReference::Finality(_) = block_ref {
+            self.chain.get_block_header(header.prev_hash()).unwrap()
+        } else {
+            header
+        };
+        println!("back to {header:?}");
         let chunk_extra =
             self.chain.get_chunk_extra(header.hash(), &shard_uid).map_err(|err| match err {
                 near_chain::near_chain_primitives::Error::DBNotFoundErr(_) => match tip {
