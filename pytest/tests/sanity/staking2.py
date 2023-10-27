@@ -179,11 +179,14 @@ def doit(seq=[]):
             if len(all_stakes) > 1:
                 expected_stakes = get_expected_stakes()
                 logger.info("Expect  stakes: %s" % expected_stakes)
+                i = 0
                 for (cur, expected) in zip(cur_stakes, expected_stakes):
                     if cur % 1000000 == 0:
                         assert cur == expected
                     else:
                         assert expected <= cur <= expected * 1.1
+                    print(f'{i} OK')
+                    i += 1
 
             do_moar_stakes(hash_, update_expected=send_reals)
 
