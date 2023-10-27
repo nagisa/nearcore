@@ -610,7 +610,7 @@ impl Client {
 
         let new_chunks = self.get_chunk_headers_ready_for_inclusion(&epoch_id, &prev_hash);
         debug!(target: "client", "{:?} Producing block at height {}, parent {} @ {}, {} new chunks", validator_signer.validator_id(),
-               next_height, prev.height(), format_hash(head.last_block_hash), new_chunks.len());
+               next_height, prev.height(), format_hash(prev_hash), new_chunks.len());
 
         // If we are producing empty blocks and there are no transactions.
         if !self.config.produce_empty_blocks && new_chunks.is_empty() {
@@ -623,7 +623,7 @@ impl Client {
         // At this point, the previous epoch hash must be available
         let epoch_id = self
             .epoch_manager
-            .get_epoch_id_from_prev_block(&head.last_block_hash)
+            .get_epoch_id_from_prev_block(&prev_hash)
             .expect("Epoch hash should exist at this point");
         let protocol_version = self
             .epoch_manager
@@ -650,7 +650,7 @@ impl Client {
 
         let next_epoch_id = self
             .epoch_manager
-            .get_next_epoch_id_from_prev_block(&head.last_block_hash)
+            .get_next_epoch_id_from_prev_block(&prev_hash)
             .expect("Epoch hash should exist at this point");
 
         let protocol_version = self.epoch_manager.get_epoch_protocol_version(&epoch_id)?;
@@ -707,26 +707,23 @@ impl Client {
 
         let prev_header = &prev_block.header();
 
-        let next_epoch_id =
-            self.epoch_manager.get_next_epoch_id_from_prev_block(&head.last_block_hash)?;
+        let next_epoch_id = self.epoch_manager.get_next_epoch_id_from_prev_block(&prev_hash)?;
 
-        let minted_amount =
-            if self.epoch_manager.is_next_block_epoch_start(&head.last_block_hash)? {
-                Some(self.epoch_manager.get_epoch_minted_amount(&next_epoch_id)?)
-            } else {
-                None
-            };
+        let minted_amount = if self.epoch_manager.is_next_block_epoch_start(&prev_hash)? {
+            Some(self.epoch_manager.get_epoch_minted_amount(&next_epoch_id)?)
+        } else {
+            None
+        };
 
-        let epoch_sync_data_hash =
-            if self.epoch_manager.is_next_block_epoch_start(&head.last_block_hash)? {
-                Some(self.epoch_manager.get_epoch_sync_data_hash(
-                    prev_block.hash(),
-                    &epoch_id,
-                    &next_epoch_id,
-                )?)
-            } else {
-                None
-            };
+        let epoch_sync_data_hash = if self.epoch_manager.is_next_block_epoch_start(&prev_hash)? {
+            Some(self.epoch_manager.get_epoch_sync_data_hash(
+                prev_block.hash(),
+                &epoch_id,
+                &next_epoch_id,
+            )?)
+        } else {
+            None
+        };
 
         // Get all the current challenges.
         // TODO(2445): Enable challenges when they are working correctly.
