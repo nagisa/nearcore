@@ -3267,7 +3267,7 @@ fn test_fork_execution_outcome() {
     assert_eq!(canonical_chain_outcome.block_hash, *block2.hash());
 
     // make sure gc works properly
-    for i in 5..32 {
+    for i in next_height..32 {
         env.produce_block(0, i);
     }
     let transaction_execution_outcome =
