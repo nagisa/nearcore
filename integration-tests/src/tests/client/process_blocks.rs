@@ -3221,7 +3221,7 @@ fn test_fork_execution_outcome() {
     let (encoded_chunk, _, _) = create_chunk_on_height(&mut env.clients[0], next_height);
     let mut block1 = env.clients[0].produce_block(next_height).unwrap().unwrap();
     let mut block2 = env.clients[0].produce_block(next_height + 1).unwrap().unwrap();
-    let next_height = last_height + 3;
+    let mut next_height = last_height + 3;
 
     // Process two blocks on two different forks that contain the same chunk.
     for (height, block) in
