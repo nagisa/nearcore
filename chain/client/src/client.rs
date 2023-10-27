@@ -766,7 +766,8 @@ impl Client {
 
     pub fn produce_chunk(
         &mut self,
-        prev_block_hash: CryptoHash,
+        // prev_block_hash: CryptoHash,
+        prev_block: &Block,
         epoch_id: &EpochId,
         last_header: ShardChunkHeader,
         next_height: BlockHeight,
@@ -776,6 +777,28 @@ impl Client {
         let _timer =
             metrics::PRODUCE_CHUNK_TIME.with_label_values(&[&shard_id.to_string()]).start_timer();
         let _span = tracing::debug_span!(target: "client", "produce_chunk", next_height, shard_id, ?epoch_id).entered();
+
+        let prev_block_hash = *prev_block.hash();
+        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            let me = match &self.validator_signer {
+                Some(validator_signer) => Some(validator_signer.validator_id().clone()),
+                None => None,
+            };
+            // if block is genesis, there is no partial chunk
+            let incoming_receipts = if prev_block.header().prev_hash() != &CryptoHash::default() {
+                self.chain.collect_incoming_receipts_from_block(&me, prev_block).unwrap()
+            } else {
+                HashMap::from_iter([(shard_id, vec![])])
+            };
+            let result = self.chain.apply_prev_chunk_before_production(
+                &me,
+                prev_block,
+                shard_id as usize,
+                &incoming_receipts,
+            );
+            result.unwrap(); // if there is an error, it means something weird which I don't perceive yet
+        }
+
         let validator_signer = self
             .validator_signer
             .as_ref()
@@ -1829,7 +1852,7 @@ impl Client {
                 .with_label_values(&[&shard_id.to_string()])
                 .start_timer();
             let last_header = Chain::get_prev_chunk_header(epoch_manager, block, shard_id).unwrap();
-            match self.produce_chunk(*block.hash(), &epoch_id, last_header, next_height, shard_id) {
+            match self.produce_chunk(block, &epoch_id, last_header, next_height, shard_id) {
                 Ok(Some((encoded_chunk, merkle_paths, receipts))) => {
                     self.persist_and_distribute_encoded_chunk(
                         encoded_chunk,
