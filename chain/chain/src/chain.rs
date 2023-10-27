@@ -1781,6 +1781,9 @@ impl Chain {
         let height = block.header().height();
         let mut receipt_proofs_by_shard_id = HashMap::new();
 
+        for shard_id in 0..block.chunks().len() {
+            receipt_proofs_by_shard_id.insert(shard_id as ShardId, vec![]);
+        }
         for chunk_header in block.chunks().iter() {
             if chunk_header.height_included() != height {
                 continue;
@@ -2478,7 +2481,7 @@ impl Chain {
         // see if the block is already in processing or if there are too many blocks being processed
         self.blocks_in_processing.add_dry_run(block.hash())?;
 
-        debug!(target: "chain", num_approvals = header.num_approvals(), "Preprocess block");
+        debug!(target: "chain", num_approvals = header.num_approvals(), chunk_mask = header.chunk_mask(), "Preprocess block");
 
         // Check that we know the epoch of the block before we try to get the header
         // (so that a block from unknown epoch doesn't get marked as an orphan)
@@ -2604,7 +2607,6 @@ impl Chain {
         self.validate_chunk_headers(&block, &prev_block)?;
 
         self.ping_missing_chunks(me, prev_hash, block)?;
-        let incoming_receipts = self.collect_incoming_receipts_from_block(me, block)?;
 
         // Check if block can be finalized and drop it otherwise.
         self.check_if_finalizable(header)?;
