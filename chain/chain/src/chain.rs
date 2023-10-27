@@ -2481,7 +2481,7 @@ impl Chain {
         // see if the block is already in processing or if there are too many blocks being processed
         self.blocks_in_processing.add_dry_run(block.hash())?;
 
-        debug!(target: "chain", num_approvals = header.num_approvals(), chunk_mask = header.chunk_mask(), "Preprocess block");
+        debug!(target: "chain", num_approvals = header.num_approvals(), "Preprocess block, chunk mask = {:?}", header.chunk_mask());
 
         // Check that we know the epoch of the block before we try to get the header
         // (so that a block from unknown epoch doesn't get marked as an orphan)
