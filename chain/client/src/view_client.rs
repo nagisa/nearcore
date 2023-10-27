@@ -305,7 +305,9 @@ impl ViewClientActor {
     }
 
     fn handle_query(&mut self, msg: Query) -> Result<QueryResponse, QueryError> {
+        println!("handle_query {msg:?}");
         let header = self.get_block_header_by_reference(&msg.block_reference);
+        println!("header={header:?}");
         let header = match header {
             Ok(Some(header)) => Ok(header),
             Ok(None) => Err(QueryError::NoSyncedBlocks),
@@ -336,6 +338,7 @@ impl ViewClientActor {
             .map_err(|err| QueryError::InternalError { error_message: err.to_string() })?;
 
         let tip = self.chain.head();
+        println!("get_chunk_extra");
         let chunk_extra =
             self.chain.get_chunk_extra(header.hash(), &shard_uid).map_err(|err| match err {
                 near_chain::near_chain_primitives::Error::DBNotFoundErr(_) => match tip {
@@ -359,6 +362,7 @@ impl ViewClientActor {
             })?;
 
         let state_root = chunk_extra.state_root();
+        println!("query");
         match self.runtime.query(
             shard_uid,
             state_root,
@@ -615,7 +619,9 @@ impl Handler<WithSpanContext<Query>> for ViewClientActor {
         let (_span, msg) = handler_debug_span!(target: "client", msg);
         tracing::debug!(target: "client", ?msg);
         let _timer = metrics::VIEW_CLIENT_MESSAGE_TIME.with_label_values(&["Query"]).start_timer();
-        self.handle_query(msg)
+        let result = self.handle_query(msg);
+        println!("{result:?}");
+        result
     }
 }
 
