@@ -875,6 +875,7 @@ impl RuntimeAdapter for NightshadeRuntime {
         epoch_id: &EpochId,
         request: &QueryRequest,
     ) -> Result<QueryResponse, near_chain::near_chain_primitives::error::QueryError> {
+        println!("received {:?}", request);
         match request {
             QueryRequest::ViewAccount { account_id } => {
                 let account = self
@@ -1235,6 +1236,7 @@ impl node_runtime::adapter::ViewRuntimeAdapter for NightshadeRuntime {
         epoch_info_provider: &dyn EpochInfoProvider,
         current_protocol_version: ProtocolVersion,
     ) -> Result<Vec<u8>, node_runtime::state_viewer::errors::CallFunctionError> {
+        println!("calling {} {}", contract_id, method_name);
         let state_update = self.tries.new_trie_update_view(*shard_uid, state_root);
         let view_state = ViewApplyState {
             block_height: height,
