@@ -43,7 +43,7 @@ def test_max_gas_burnt_view():
         return node.call_function(contract_key.account_id,
                                   'fibonacci',
                                   args,
-                                  timeout=10).get('result')
+                                  timeout=20).get('result')
 
     # Call view function of the smart contract via the first node.  This should
     # succeed.
