@@ -127,7 +127,7 @@ pub fn create_chunk(
     let next_height = last_block.header().height() + 1;
     let (mut chunk, mut merkle_paths, receipts) = client
         .produce_chunk(
-            last_block,
+            &last_block,
             last_block.header().epoch_id(),
             last_block.chunks()[0].clone(),
             next_height,
