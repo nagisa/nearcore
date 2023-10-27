@@ -3204,7 +3204,7 @@ fn test_fork_receipt_ids() {
 
 #[test]
 fn test_fork_execution_outcome() {
-    init_test_logger();
+    // init_test_logger();
 
     let (mut env, tx_hash) = prepare_env_with_transaction();
 
@@ -3219,8 +3219,10 @@ fn test_fork_execution_outcome() {
     let validator_signer = create_test_signer("test0");
     let next_height = last_height + 1;
     let (encoded_chunk, _, _) = create_chunk_on_height(&mut env.clients[0], next_height);
-    let mut block1 = env.clients[0].produce_block(next_height).unwrap().unwrap();
-    let mut block2 = env.clients[0].produce_block(next_height + 1).unwrap().unwrap();
+    println!("produce {}", last_height + 1);
+    let mut block1 = env.clients[0].produce_block(last_height + 1).unwrap().unwrap();
+    println!("produce {}", last_height + 2);
+    let mut block2 = env.clients[0].produce_block(last_height + 2).unwrap().unwrap();
     let mut next_height = last_height + 3;
 
     // Process two blocks on two different forks that contain the same chunk.
@@ -3245,8 +3247,10 @@ fn test_fork_execution_outcome() {
     }
 
     // ensure chunk execution!
+    println!("produce {}", next_height);
     let b3 = env.clients[0].produce_block_on(next_height, block1.hash().clone()).unwrap().unwrap();
     next_height += 1;
+    println!("produce {}", next_height);
     let b4 = env.clients[0].produce_block_on(next_height, block2.hash().clone()).unwrap().unwrap();
     next_height += 1;
     env.clients[0].process_block_test(b4.clone().into(), Provenance::NONE).unwrap();
