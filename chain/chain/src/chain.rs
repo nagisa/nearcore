@@ -3887,6 +3887,8 @@ impl Chain {
         let prev_block = self.get_block(prev_hash)?;
         let maybe_job = self.get_apply_chunk_job(
             me,
+            // we are producer of next chunk
+            Some(true),
             block,
             &prev_block,
             &block.chunks()[shard_id],
@@ -3963,8 +3965,12 @@ impl Chain {
 
             // maaaaybe there will be extra validation runs
             // but it shouldn't hurt?
+
+            let next_chunk_header = &block.chunks()[shard_id as usize];
+            let see_future_chunk = next_chunk_header.height_included() == block.header().height();
             let apply_chunk_job_result = self.get_apply_chunk_job(
                 me,
+                Some(see_future_chunk),
                 prev_block,             // block,
                 &prev_prev_block,       // prev_block,
                 prev_chunk_header,      // chunk_header,
@@ -4018,6 +4024,7 @@ impl Chain {
                 HashMap::from_iter([(shard_id as u64, vec![])]);
             let apply_chunk_job_result = self.get_apply_chunk_job(
                 me,
+                None,
                 block,
                 prev_block,
                 chunk_header,
@@ -4078,6 +4085,7 @@ impl Chain {
 
                 let apply_chunk_job = self.get_apply_chunk_job(
                     me,
+                    None,
                     block,
                     prev_block,
                     chunk_header,
@@ -4107,6 +4115,8 @@ impl Chain {
     fn get_apply_chunk_job(
         &self,
         me: &Option<AccountId>,
+        // enabled only for delayed chunk execution
+        see_future_chunk: Option<bool>,
         block: &Block,
         prev_block: &Block,
         chunk_header: &ShardChunkHeader,
@@ -4151,7 +4161,11 @@ impl Chain {
         };
 
         let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, block.header().epoch_id())?;
-        let is_new_chunk = chunk_header.height_included() == block.header().height();
+        let is_new_chunk = if let Some(see_future_chunk) = see_future_chunk {
+            see_future_chunk
+        } else {
+            chunk_header.height_included() == block.header().height()
+        };
         let epoch_manager = self.epoch_manager.clone();
         let runtime = self.runtime_adapter.clone();
         if should_apply_transactions {
