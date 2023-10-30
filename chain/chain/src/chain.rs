@@ -80,7 +80,7 @@ use near_primitives::views::{
 };
 use near_store::config::StateSnapshotType;
 use near_store::flat::{store_helper, FlatStorageReadyStatus, FlatStorageStatus};
-use near_store::get_genesis_state_roots;
+use near_store::{get_genesis_state_roots, TrieChanges, WrappedTrieChanges};
 use near_store::{DBCol, ShardTries};
 use once_cell::sync::OnceCell;
 use rand::seq::SliceRandom;
@@ -4325,6 +4325,38 @@ impl Chain {
         let random_seed = *block.header().random_value();
         let height = chunk_header.height_included();
         let prev_block_hash = *chunk_header.prev_block_hash();
+
+        if prev_block_hash == CryptoHash::default() {
+            let genesis_chunk_extra = self.get_chunk_extra(self.genesis().hash(), &shard_uid)?;
+            let state_root = genesis_chunk_extra.state_root().clone();
+            let gas_limit = genesis_chunk_extra.gas_limit().clone();
+            let runtime = self.runtime_adapter.clone();
+            let block_hash = block.hash().clone();
+            return Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
+                Ok(ApplyChunkResult::SameHeight(SameHeightResult {
+                    shard_uid,
+                    gas_limit,
+                    apply_result: ApplyTransactionResult {
+                        trie_changes: WrappedTrieChanges::new(
+                            runtime.get_tries(),
+                            shard_uid,
+                            TrieChanges::empty(state_root),
+                            vec![],
+                            block_hash,
+                        ),
+                        new_root: state_root,
+                        outcomes: vec![],
+                        outgoing_receipts: vec![],
+                        validator_proposals: vec![],
+                        total_gas_burnt: 0,
+                        total_balance_burnt: 0,
+                        proof: None,
+                        processed_delayed_receipts: vec![],
+                    },
+                    apply_split_result_or_state_changes: None,
+                }))
+            })));
+        }
 
         Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let _span = tracing::debug_span!(
