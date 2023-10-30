@@ -4050,6 +4050,8 @@ impl Chain {
             // let incoming_receipts: HashMap<u64, Vec<ReceiptProof>> =
             //     HashMap::from_iter([(shard_id as u64, vec![])]);
             if see_future_chunk {
+                let block_hash = block.hash();
+                println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
                 let apply_chunk_job_result = validate_chunk_with_chunk_extra(
                     // It's safe here to use ChainStore instead of ChainStoreUpdate
                     // because we're asking prev_chunk_header for already committed block
@@ -4167,7 +4169,9 @@ impl Chain {
         state_patch: SandboxStatePatch,
     ) -> Result<Option<ApplyChunkJob>, Error> {
         let shard_id = shard_id as ShardId;
+        let block_hash = block.hash();
         let prev_hash = block.header().prev_hash();
+        println!("get_apply_chunk_job {prev_hash} -> {block_hash}");
         let cares_about_shard_this_epoch =
             self.shard_tracker.care_about_shard(me.as_ref(), prev_hash, shard_id, true);
         let cares_about_shard_next_epoch =
