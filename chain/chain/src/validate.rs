@@ -166,7 +166,7 @@ pub fn validate_chunk_with_chunk_extra(
         } else {
             chain_store.get_outgoing_receipts_for_shard(
                 epoch_manager,
-                prev_block_hash,
+                *prev_block_hash,
                 chunk_header.shard_id(),
                 prev_chunk_height_included,
             )?
