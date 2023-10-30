@@ -4279,7 +4279,7 @@ impl Chain {
         let prev_chunk_extra = self.get_chunk_extra(prev_hash, &shard_uid)?;
 
         // Validate that all next chunk information matches previous chunk extra.
-        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+        if ProtocolFeature::DelayChunkExecution.protocol_version() != 200 {
             validate_chunk_with_chunk_extra(
                 // It's safe here to use ChainStore instead of ChainStoreUpdate
                 // because we're asking prev_chunk_header for already committed block
