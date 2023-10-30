@@ -831,12 +831,14 @@ impl Client {
                 // outcomes - not needed for production
             };
 
-        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200
+            && prev_block.header().prev_hash() != &CryptoHash::default()
+        {
             let prev_height = prev_block.header().height();
             let prev_prev_hash = *prev_block.header().prev_hash();
             let mut chain_update = self.chain.chain_update();
 
-            let (outcome_root, outcome_paths) =
+            let (_, outcome_paths) =
                 ApplyTransactionResult::compute_outcomes_proof(&outcomes_with_id);
             let shard_id = shard_uid.shard_id();
 
@@ -848,13 +850,15 @@ impl Client {
             );
 
             let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
-            let store_update = flat_storage_manager.save_flat_state_changes(
-                prev_block_hash,
-                prev_prev_hash,
-                prev_height,
-                shard_uid,
-                trie_changes.state_changes(),
-            ).unwrap();
+            let store_update = flat_storage_manager
+                .save_flat_state_changes(
+                    prev_block_hash,
+                    prev_prev_hash,
+                    prev_height,
+                    shard_uid,
+                    trie_changes.state_changes(),
+                )
+                .unwrap();
             chain_update.chain_store_update.merge(store_update);
 
             // self.chain_store_update.save_trie_changes(apply_result.trie_changes);
