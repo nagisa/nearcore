@@ -3878,36 +3878,37 @@ impl Chain {
         let _span =
             tracing::debug_span!(target: "chain", "apply_prev_chunk_before_production").entered();
         // let last_chunk_included_height = block.chunks()[shard_id].height_included();
-        let last_chunk_prev_hash = block.chunks()[shard_id].prev_block_hash().clone();
+        // let last_chunk_prev_hash = block.chunks()[shard_id].prev_block_hash().clone();
         // let prev_hash = block.header().prev_hash();
 
-        let mut blocks_seq = vec![];
-        let mut current_block = block.hash().clone();
-        loop {
-            if current_block == last_chunk_prev_hash {
-                break;
-            }
-            blocks_seq.push(current_block.clone());
-            let block_header = self.get_block_header(&current_block)?;
-            current_block = block_header.prev_hash().clone();
-        }
-        blocks_seq.reverse();
+        // let mut blocks_seq = vec![];
+        // let mut current_block = block.hash().clone();
+        // loop {
+        //     if current_block == last_chunk_prev_hash {
+        //         break;
+        //     }
+        //     blocks_seq.push(current_block.clone());
+        //     let block_header = self.get_block_header(&current_block)?;
+        //     current_block = block_header.prev_hash().clone();
+        // }
+        // blocks_seq.reverse();
 
-        println!("BLOCKS SEQ: {blocks_seq:?}");
-        for (i, block_hash) in blocks_seq.into_iter().enumerate() {
-            println!("ITER {block_hash}");
-            // first should be new, others should be old
-            let block = self.get_block(&block_hash)?;
+        // println!("BLOCKS SEQ: {blocks_seq:?}");
+        // for (i, block_hash) in blocks_seq.into_iter().enumerate() {
+        //     println!("ITER {block_hash}");
+        //     // first should be new, others should be old
+        //     let block = self.get_block(&block_hash)?;
+        {
             let prev_hash = block.header().prev_hash();
             if prev_hash == &CryptoHash::default() {
                 // genesis, already applied
-                continue;
+                return Ok(()); // continue;
             }
             let prev_block = self.get_block(prev_hash)?;
             let maybe_job = self.get_apply_chunk_job(
                 me,
                 // we are producer of next chunk
-                Some(i == 0),
+                Some(true),
                 &block,
                 &prev_block,
                 &block.chunks()[shard_id],
@@ -4052,20 +4053,20 @@ impl Chain {
             if see_future_chunk {
                 let block_hash = block.hash();
                 // temporarily disabled
-                // println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
-                // let apply_chunk_job_result = validate_chunk_with_chunk_extra(
-                //     // It's safe here to use ChainStore instead of ChainStoreUpdate
-                //     // because we're asking prev_chunk_header for already committed block
-                //     self.store(),
-                //     self.epoch_manager.as_ref(),
-                //     prev_hash,
-                //     prev_chunk_extra.as_ref(),
-                //     prev_chunk_header.height_included(),
-                //     chunk_header,
-                // );
-                // if let Err(err) = apply_chunk_job_result {
-                //     apply_chunk_errors.push((shard_id, err));
-                // }
+                println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
+                let apply_chunk_job_result = validate_chunk_with_chunk_extra(
+                    // It's safe here to use ChainStore instead of ChainStoreUpdate
+                    // because we're asking prev_chunk_header for already committed block
+                    self.store(),
+                    self.epoch_manager.as_ref(),
+                    prev_hash,
+                    prev_chunk_extra.as_ref(),
+                    prev_chunk_header.height_included(),
+                    chunk_header,
+                );
+                if let Err(err) = apply_chunk_job_result {
+                    apply_chunk_errors.push((shard_id, err));
+                }
             }
             // let apply_chunk_job_result = self.get_apply_chunk_job(
             //     me,
