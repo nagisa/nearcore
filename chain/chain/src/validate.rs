@@ -112,6 +112,12 @@ pub fn validate_chunk_with_chunk_extra(
     prev_chunk_height_included: BlockHeight,
     chunk_header: &ShardChunkHeader,
 ) -> Result<(), Error> {
+    let prev_header = chain_store.get_block_header(prev_block_hash)?;
+    let prev_height = prev_header.height();
+    println!(
+        "VALIDATING CHUNK EXTRA: PREV HEIGHT {prev_height} VS HEIGHT {}",
+        chunk_header.height_created()
+    );
     if *prev_chunk_extra.state_root() != chunk_header.prev_state_root() {
         return Err(Error::InvalidStateRoot);
     }

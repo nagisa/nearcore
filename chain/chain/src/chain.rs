@@ -4231,8 +4231,8 @@ impl Chain {
     /// Returns the apply chunk job when applying a new chunk and applying transactions.
     fn get_apply_chunk_job_new_chunk(
         &self,
-        block: &Block,
-        prev_block: &Block,
+        block: &Block,      // 5
+        prev_block: &Block, // 4
         chunk_header: &ShardChunkHeader,
         prev_chunk_header: &ShardChunkHeader,
         shard_uid: ShardUId,
