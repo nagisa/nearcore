@@ -3947,7 +3947,7 @@ impl Chain {
         let will_shard_layout_change = self.epoch_manager.will_shard_layout_change(prev_hash)?;
         let prev_prev_chunk_headers =
             Chain::get_prev_chunk_headers(self.epoch_manager.as_ref(), &prev_prev_block)?;
-        let incoming_receipts = self.collect_incoming_receipts_from_block(me, prev_block)?;
+        // let incoming_receipts = self.collect_incoming_receipts_from_block(me, prev_block)?;
 
         // resharding, other shard ids, epoch boundary?!
         let mut apply_results: Vec<ApplyChunkResult> = vec![];
@@ -3978,7 +3978,7 @@ impl Chain {
                 shard_id,
                 mode,
                 will_shard_layout_change,
-                &incoming_receipts,
+                &HashMap::default(),
                 state_patch,
             );
 
@@ -4263,11 +4263,19 @@ impl Chain {
         })?;
         // we can't use hash from the current block here yet because the incoming receipts
         // for this block is not stored yet
+        // should be empty for Delayed
         let new_receipts = collect_receipts(incoming_receipts.get(&shard_id).unwrap());
+        // because receipts are already in DB
+        let receipts_block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200
+        {
+            block.hash().clone()
+        } else {
+            prev_hash.clone()
+        };
         let old_receipts = &self.store().get_incoming_receipts_for_shard(
             self.epoch_manager.as_ref(),
             shard_id,
-            *prev_hash,
+            receipts_block_hash,
             prev_chunk_height_included,
         )?;
         let old_receipts = collect_receipts_from_response(old_receipts);
