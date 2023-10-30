@@ -1446,7 +1446,7 @@ impl Client {
                         .iter()
                         .map(|c| (c.chunk_hash(), c.height_included()))
                         .collect();
-                    println!("{prev_hash} -> {block_hash} | {block_height} | CHUNKS: {}", chunks);
+                    println!("{prev_hash} -> {block_hash} | {block_height} | CHUNKS: {:?}", chunks);
                 }
             }
             self.shards_manager_adapter.send(ShardsManagerRequestFromClient::UpdateChainHeads {
