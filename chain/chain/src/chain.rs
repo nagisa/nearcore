@@ -3897,36 +3897,42 @@ impl Chain {
         blocks_seq.reverse();
 
         println!("BLOCKS SEQ: {blocks_seq:?}");
-        let prev_block = self.get_block(prev_hash)?;
-        let maybe_job = self.get_apply_chunk_job(
-            me,
-            // we are producer of next chunk
-            Some(true),
-            block,
-            &prev_block,
-            &block.chunks()[shard_id],
-            &prev_block.chunks()[shard_id],
-            shard_id,
-            ApplyChunksMode::IsCaughtUp, // if I am producer, this is the case, right?
-            false,                       // will_shard_layout_change, - I don't know
-            &HashMap::from_iter([(shard_id as u64, vec![])]),
-            SandboxStatePatch::default(),
-        )?;
+        for (i, block_hash) in blocks_seq.into_iter().enumerate() {
+            // first should be new, others should be old
+            let block = self.get_block(&block_hash)?;
+            let prev_block = self.get_block(block.prev_hash())?;
+            let maybe_job = self.get_apply_chunk_job(
+                me,
+                // we are producer of next chunk
+                Some(i == 0),
+                &block,
+                &prev_block,
+                &block.chunks()[shard_id],
+                &prev_block.chunks()[shard_id],
+                shard_id,
+                ApplyChunksMode::IsCaughtUp, // if I am producer, this is the case, right?
+                false,                       // will_shard_layout_change, - I don't know
+                &HashMap::from_iter([(shard_id as u64, vec![])]),
+                SandboxStatePatch::default(),
+            )?;
 
-        let job = match maybe_job {
-            Some(job) => job,
-            None => return Ok(()), // no chunk => no chunk extra to save
-        };
-        let apply_chunk_result = job(&_span)?;
+            let job = match maybe_job {
+                Some(job) => job,
+                None => return Ok(()), // no chunk => no chunk extra to save
+            };
+            let apply_chunk_result = job(&_span)?;
 
-        let mut chain_update = self.chain_update();
-        chain_update.apply_chunk_postprocessing(block, vec![apply_chunk_result])?;
-        let receipts_map =
-            chain_update.get_receipt_id_to_shard_id(block.hash(), shard_id as u64)?;
-        for (receipt_id, to_shard_id) in receipts_map.into_iter() {
-            chain_update.chain_store_update.save_receipt_id_to_shard_id(receipt_id, to_shard_id);
+            let mut chain_update = self.chain_update();
+            chain_update.apply_chunk_postprocessing(&block, vec![apply_chunk_result])?;
+            let receipts_map =
+                chain_update.get_receipt_id_to_shard_id(block.hash(), shard_id as u64)?;
+            for (receipt_id, to_shard_id) in receipts_map.into_iter() {
+                chain_update
+                    .chain_store_update
+                    .save_receipt_id_to_shard_id(receipt_id, to_shard_id);
+            }
+            chain_update.commit()?;
         }
-        chain_update.commit()?;
 
         Ok(())
     }
