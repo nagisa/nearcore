@@ -1436,7 +1436,7 @@ impl Client {
             let head = self.chain.head().unwrap();
             println!("CHAIN STRUCTURE:");
             for height in 0..=head.height {
-                let result_block = self.chain.get_block_by_height(0);
+                let result_block = self.chain.get_block_by_height(height);
                 if let Ok(block) = result_block {
                     let block_hash = block.hash();
                     let prev_hash = block.header().prev_hash();
