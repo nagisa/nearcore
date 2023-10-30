@@ -198,7 +198,7 @@ pub trait ChainStoreAccess {
         self.get_block_header(&hash)
     }
     /// Returns resulting receipt for given block.
-    pub fn get_outgoing_receipts(
+    fn get_outgoing_receipts(
         &self,
         hash: &CryptoHash,
         shard_id: ShardId,
