@@ -14,6 +14,7 @@ use near_primitives::sharding::{ShardChunk, ShardChunkHeader};
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::{AccountId, BlockHeight, EpochId, Nonce};
+use near_primitives::version::ProtocolFeature;
 
 use crate::types::RuntimeAdapter;
 use crate::{byzantine_assert, Chain, ChainStoreAccess};
@@ -150,12 +151,26 @@ pub fn validate_chunk_with_chunk_extra(
     let chunk_header_prev_hash = chunk_header.prev_block_hash();
 
     let outgoing_receipts_root = if chunk_header_prev_hash != &CryptoHash::default() {
-        let outgoing_receipts = chain_store.get_outgoing_receipts_for_shard(
-            epoch_manager,
-            *prev_block_hash,
-            chunk_header.shard_id(),
-            prev_chunk_height_included,
-        )?;
+        // let outgoing_receipts = chain_store.get_outgoing_receipts_for_shard(
+        //     epoch_manager,
+        //     *prev_block_hash,
+        //     chunk_header.shard_id(),
+        //     prev_chunk_height_included,
+        // )?;
+
+        let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            chain_store
+                .get_outgoing_receipts(&prev_block_hash, chunk_header.shard_id())
+                .map(|v| v.to_vec())
+                .unwrap_or_default()
+        } else {
+            chain_store.get_outgoing_receipts_for_shard(
+                prev_block_hash,
+                chunk_header.shard_id(),
+                prev_chunk_height_included,
+            )?
+        };
+
         let outgoing_receipts_hashes = {
             let shard_layout = epoch_manager.get_shard_layout_from_prev_block(prev_block_hash)?;
             Chain::build_receipts_hashes(&outgoing_receipts, &shard_layout)
