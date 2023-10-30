@@ -164,9 +164,7 @@ pub fn validate_chunk_with_chunk_extra(
         println!(
             "prev_block_hash={prev_block_hash} \
         prev_chunk_height_included={prev_chunk_height_included} \
-        outgoing_receipts={outgoing_receipts:?} \
         outgoing_receipts_root={outgoing_receipts_root} \
-        outgoing_receipts_hashes={outgoing_receipts_hashes:?} \
         chunk_header.prev_outgoing_receipts_root={}",
             chunk_header.prev_outgoing_receipts_root()
         );
