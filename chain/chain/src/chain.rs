@@ -3882,9 +3882,8 @@ impl Chain {
     {
         let _span =
             tracing::debug_span!(target: "chain", "apply_prev_chunk_before_production").entered();
-        let shard_uid = self
-            .epoch_manager
-            .shard_id_to_uid(shard_id as ShardId, block.header().epoch_id())?;
+        let shard_uid =
+            self.epoch_manager.shard_id_to_uid(shard_id as ShardId, block.header().epoch_id())?;
         let dummy_trie_changes = WrappedTrieChanges::new(
             self.runtime_adapter.get_tries(),
             shard_uid,
@@ -3917,7 +3916,7 @@ impl Chain {
             let prev_hash = block.header().prev_hash();
             if prev_hash == &CryptoHash::default() {
                 // genesis, already applied
-                
+
                 let chunk_extra =
                     ChunkExtra::clone(self.get_chunk_extra(block.hash(), &shard_uid)?.as_ref());
                 return Ok((chunk_extra, vec![], vec![], dummy_trie_changes)); // continue;

@@ -849,8 +849,8 @@ impl Client {
 
             let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
             let store_update = flat_storage_manager.save_flat_state_changes(
-                *prev_block_hash,
-                *prev_prev_hash,
+                prev_block_hash,
+                prev_prev_hash,
                 prev_height,
                 shard_uid,
                 trie_changes.state_changes(),
