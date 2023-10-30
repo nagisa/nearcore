@@ -4024,7 +4024,7 @@ impl Chain {
             let shard_uid = self
                 .epoch_manager
                 .shard_id_to_uid(shard_id as ShardId, block.header().epoch_id())?;
-            let prev_chunk_extra = self.get_chunk_extra(prev_hash, &shard_uid)?.as_ref();
+            let prev_chunk_extra = self.get_chunk_extra(prev_hash, &shard_uid)?;
             // let incoming_receipts: HashMap<u64, Vec<ReceiptProof>> =
             //     HashMap::from_iter([(shard_id as u64, vec![])]);
             if see_future_chunk {
@@ -4034,7 +4034,7 @@ impl Chain {
                     self.store(),
                     self.epoch_manager.as_ref(),
                     prev_hash,
-                    prev_chunk_extra,
+                    prev_chunk_extra.as_ref(),
                     prev_chunk_header.height_included(),
                     chunk_header,
                 );
