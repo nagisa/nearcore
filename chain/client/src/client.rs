@@ -884,11 +884,20 @@ impl Client {
         );
         let num_filtered_transactions = transactions.len();
         let (tx_root, _) = merklize(&transactions);
-        let outgoing_receipts = self.chain.get_outgoing_receipts_for_shard(
-            prev_block_hash,
-            shard_id,
-            last_header.height_included(),
-        )?;
+        // because chunk was just executed
+        let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            self.chain
+                .store()
+                .get_outgoing_receipts(&prev_block_hash, shard_id)
+                .map(|v| v.to_vec())
+                .unwrap_or_default()
+        } else {
+            self.chain.get_outgoing_receipts_for_shard(
+                prev_block_hash,
+                shard_id,
+                last_header.height_included(),
+            )?
+        };
 
         let outgoing_receipts_root = self.calculate_receipts_root(epoch_id, &outgoing_receipts)?;
         let protocol_version = self.epoch_manager.get_epoch_protocol_version(epoch_id)?;

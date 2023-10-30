@@ -1292,7 +1292,7 @@ impl ChainStoreAccess for ChainStore {
 
     /// Get outgoing receipts *generated* from shard `shard_id` in block `prev_hash`
     /// Note that this function is different from get_outgoing_receipts_for_shard, see comments there
-    fn get_outgoing_receipts(
+    pub fn get_outgoing_receipts(
         &self,
         prev_block_hash: &CryptoHash,
         shard_id: ShardId,
