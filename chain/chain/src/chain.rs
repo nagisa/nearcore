@@ -3880,10 +3880,7 @@ impl Chain {
         // let last_chunk_included_height = block.chunks()[shard_id].height_included();
         let last_chunk_prev_hash = block.chunks()[shard_id].prev_block_hash().clone();
         // let prev_hash = block.header().prev_hash();
-        // if prev_hash == &CryptoHash::default() {
-        //     // genesis, already applied
-        //     return Ok(());
-        // }
+
         let mut blocks_seq = vec![];
         let mut current_block = block.hash().clone();
         loop {
@@ -3900,7 +3897,12 @@ impl Chain {
         for (i, block_hash) in blocks_seq.into_iter().enumerate() {
             // first should be new, others should be old
             let block = self.get_block(&block_hash)?;
-            let prev_block = self.get_block(block.header().prev_hash())?;
+            let prev_hash = block.header().prev_hash();
+            if prev_hash == &CryptoHash::default() {
+                // genesis, already applied
+                continue;
+            }
+            let prev_block = self.get_block(prev_hash)?;
             let maybe_job = self.get_apply_chunk_job(
                 me,
                 // we are producer of next chunk
