@@ -136,6 +136,10 @@ impl FlatStorageManager {
         shard_uid: ShardUId,
         state_changes: &[RawStateChangesWithTrieKey],
     ) -> Result<StoreUpdate, StorageError> {
+        println!(
+            "save_flat_state_changes {prev_hash} -> {block_hash} | {height} {}",
+            shard_uid.shard_id()
+        );
         let prev_block_with_changes = if state_changes.is_empty() {
             // The current block has no flat state changes.
             // Find the last block with flat state changes by looking it up in
