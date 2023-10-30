@@ -68,6 +68,7 @@ use near_primitives::sharding::{
 };
 use near_primitives::static_clock::StaticClock;
 use near_primitives::transaction::SignedTransaction;
+use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::validator_stake::ValidatorStakeIter;
 use near_primitives::types::Gas;
 use near_primitives::types::StateRoot;
@@ -782,24 +783,41 @@ impl Client {
         let _span = tracing::debug_span!(target: "client", "produce_chunk", next_height, shard_id, ?epoch_id).entered();
 
         let prev_block_hash = *prev_block.hash();
-        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-            let me = match &self.validator_signer {
-                Some(validator_signer) => Some(validator_signer.validator_id().clone()),
-                None => None,
+        let (chunk_extra, outgoing_receipts, _) =
+            if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                let me = match &self.validator_signer {
+                    Some(validator_signer) => Some(validator_signer.validator_id().clone()),
+                    None => None,
+                };
+                // if block is genesis, there is no partial chunk
+                // let incoming_receipts = if prev_block.header().prev_hash() != &CryptoHash::default() {
+                //     self.chain.collect_incoming_receipts_from_block(&me, prev_block).unwrap()
+                // } else {
+                //     HashMap::from_iter([(shard_id, vec![])])
+                // };
+                let result = self.chain.apply_chunk_from_block_before_production(
+                    &me,
+                    prev_block,
+                    shard_id as usize,
+                );
+                result? // if there is an error, it means something weird which I don't perceive yet
+            } else {
+                let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, epoch_id)?;
+                let chunk_extra = ChunkExtra::clone(
+                    self.chain
+                        .get_chunk_extra(&prev_block_hash, &shard_uid)
+                        .map_err(|err| {
+                            Error::ChunkProducer(format!("No chunk extra available: {}", err))
+                        })?
+                        .as_ref(),
+                );
+                let outgoing_receipts = self.chain.get_outgoing_receipts_for_shard(
+                    prev_block_hash,
+                    shard_id,
+                    last_header.height_included(),
+                )?;
+                (chunk_extra, outgoing_receipts, vec![])
             };
-            // if block is genesis, there is no partial chunk
-            // let incoming_receipts = if prev_block.header().prev_hash() != &CryptoHash::default() {
-            //     self.chain.collect_incoming_receipts_from_block(&me, prev_block).unwrap()
-            // } else {
-            //     HashMap::from_iter([(shard_id, vec![])])
-            // };
-            let result = self.chain.apply_chunk_from_block_before_production(
-                &me,
-                prev_block,
-                shard_id as usize,
-            );
-            result.unwrap(); // if there is an error, it means something weird which I don't perceive yet
-        }
 
         let validator_signer = self
             .validator_signer
@@ -835,6 +853,8 @@ impl Client {
         );
 
         let ret = self.produce_pre_state_root_chunk(
+            chunk_extra,
+            outgoing_receipts,
             validator_signer.as_ref(),
             prev_block_hash,
             epoch_id,
@@ -856,6 +876,8 @@ impl Client {
 
     fn produce_pre_state_root_chunk(
         &mut self,
+        chunk_extra: ChunkExtra,
+        outgoing_receipts: Vec<Receipt>,
         validator_signer: &dyn ValidatorSigner,
         prev_block_hash: CryptoHash,
         epoch_id: &EpochId,
@@ -864,10 +886,10 @@ impl Client {
         shard_id: ShardId,
     ) -> Result<(EncodedShardChunk, Vec<MerklePath>, Vec<Receipt>), Error> {
         let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, epoch_id)?;
-        let chunk_extra = self
-            .chain
-            .get_chunk_extra(&prev_block_hash, &shard_uid)
-            .map_err(|err| Error::ChunkProducer(format!("No chunk extra available: {}", err)))?;
+        // let chunk_extra = self
+        //     .chain
+        //     .get_chunk_extra(&prev_block_hash, &shard_uid)
+        //     .map_err(|err| Error::ChunkProducer(format!("No chunk extra available: {}", err)))?;
 
         let prev_block_header = self.chain.get_block_header(&prev_block_hash)?;
         let transactions = self.prepare_transactions(
@@ -885,19 +907,19 @@ impl Client {
         let num_filtered_transactions = transactions.len();
         let (tx_root, _) = merklize(&transactions);
         // because chunk was just executed
-        let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-            self.chain
-                .store()
-                .get_outgoing_receipts(&prev_block_hash, shard_id)
-                .map(|v| v.to_vec())
-                .unwrap_or_default()
-        } else {
-            self.chain.get_outgoing_receipts_for_shard(
-                prev_block_hash,
-                shard_id,
-                last_header.height_included(),
-            )?
-        };
+        // let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+        //     self.chain
+        //         .store()
+        //         .get_outgoing_receipts(&prev_block_hash, shard_id)
+        //         .map(|v| v.to_vec())
+        //         .unwrap_or_default()
+        // } else {
+        //     self.chain.get_outgoing_receipts_for_shard(
+        //         prev_block_hash,
+        //         shard_id,
+        //         last_header.height_included(),
+        //     )?
+        // };
 
         let outgoing_receipts_root = self.calculate_receipts_root(epoch_id, &outgoing_receipts)?;
         let protocol_version = self.epoch_manager.get_epoch_protocol_version(epoch_id)?;

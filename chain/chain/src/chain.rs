@@ -63,7 +63,9 @@ use near_primitives::state_sync::{
     ShardStateSyncResponseHeader, ShardStateSyncResponseHeaderV2, StateHeaderKey, StatePartKey,
 };
 use near_primitives::static_clock::StaticClock;
-use near_primitives::transaction::{ExecutionOutcomeWithIdAndProof, SignedTransaction};
+use near_primitives::transaction::{
+    ExecutionOutcomeWithId, ExecutionOutcomeWithIdAndProof, SignedTransaction,
+};
 use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::validator_stake::ValidatorStakeIter;
 use near_primitives::types::{
@@ -3876,7 +3878,7 @@ impl Chain {
         me: &Option<AccountId>,
         block: &Block,
         shard_id: usize,
-    ) -> Result<(), Error> {
+    ) -> Result<(ChunkExtra, Vec<Receipt>, Vec<ExecutionOutcomeWithId>), Error> {
         let _span =
             tracing::debug_span!(target: "chain", "apply_prev_chunk_before_production").entered();
         // let last_chunk_included_height = block.chunks()[shard_id].height_included();
@@ -3904,7 +3906,12 @@ impl Chain {
             let prev_hash = block.header().prev_hash();
             if prev_hash == &CryptoHash::default() {
                 // genesis, already applied
-                return Ok(()); // continue;
+                let shard_uid = self
+                    .epoch_manager
+                    .shard_id_to_uid(shard_id as ShardId, block.header().epoch_id())?;
+                let chunk_extra =
+                    ChunkExtra::clone(self.get_chunk_extra(block.hash(), &shard_uid)?.as_ref());
+                return Ok((chunk_extra, vec![], vec![])); // continue;
             }
             let prev_block = self.get_block(prev_hash)?;
             let maybe_job = self.get_apply_chunk_job(
@@ -3924,12 +3931,14 @@ impl Chain {
 
             let job = match maybe_job {
                 Some(job) => job,
-                None => return Ok(()), // no chunk => no chunk extra to save
+                None => {
+                    panic!("...");
+                } // no chunk => no chunk extra to save
             };
             let apply_chunk_result = job(&_span)?;
 
             let mut chain_update = self.chain_update();
-            chain_update.apply_chunk_postprocessing(&block, vec![apply_chunk_result])?;
+            // chain_update.apply_chunk_postprocessing(&block, vec![apply_chunk_result])?;
             let receipts_map =
                 chain_update.get_receipt_id_to_shard_id(block.hash(), shard_id as u64)?;
             for (receipt_id, to_shard_id) in receipts_map.into_iter() {
@@ -3937,10 +3946,45 @@ impl Chain {
                     .chain_store_update
                     .save_receipt_id_to_shard_id(receipt_id, to_shard_id);
             }
-            chain_update.commit()?;
-        }
 
-        Ok(())
+            let result =
+                if let ApplyChunkResult::SameHeight(outer_apply_result) = apply_chunk_result {
+                    let gas_limit = outer_apply_result.gas_limit;
+                    let apply_result = outer_apply_result.apply_result;
+
+                    let (outcome_root, _) =
+                        ApplyTransactionResult::compute_outcomes_proof(&apply_result.outcomes);
+
+                    // Save state root after applying transactions.
+                    let chunk_extra = ChunkExtra::new(
+                        &apply_result.new_root,
+                        outcome_root,
+                        apply_result.validator_proposals,
+                        apply_result.total_gas_burnt,
+                        gas_limit,
+                        apply_result.total_balance_burnt,
+                    );
+
+                    // let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
+                    // let store_update = flat_storage_manager.save_flat_state_changes(
+                    //     *block_hash,
+                    //     *prev_hash,
+                    //     height,
+                    //     shard_uid,
+                    //     apply_result.trie_changes.state_changes(),
+                    // )?;
+                    // self.chain_store_update.merge(store_update);
+
+                    chain_update.chain_store_update.save_trie_changes(apply_result.trie_changes);
+
+                    (chunk_extra, apply_result.outgoing_receipts, apply_result.outcomes)
+                } else {
+                    panic!("...");
+                };
+
+            chain_update.commit()?;
+            Ok(result)
+        }
     }
 
     // Validate chunks by applying old chunks!
