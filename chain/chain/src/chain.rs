@@ -3900,7 +3900,7 @@ impl Chain {
         for (i, block_hash) in blocks_seq.into_iter().enumerate() {
             // first should be new, others should be old
             let block = self.get_block(&block_hash)?;
-            let prev_block = self.get_block(block.prev_hash())?;
+            let prev_block = self.get_block(block.header().prev_hash())?;
             let maybe_job = self.get_apply_chunk_job(
                 me,
                 // we are producer of next chunk
