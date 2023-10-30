@@ -854,7 +854,7 @@ impl Client {
                 prev_height,
                 shard_uid,
                 trie_changes.state_changes(),
-            )?;
+            ).unwrap();
             chain_update.chain_store_update.merge(store_update);
 
             // self.chain_store_update.save_trie_changes(apply_result.trie_changes);
