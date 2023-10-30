@@ -16,7 +16,7 @@ use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::{AccountId, BlockHeight, EpochId, Nonce};
 
 use crate::types::RuntimeAdapter;
-use crate::{byzantine_assert, Chain};
+use crate::{byzantine_assert, Chain, ChainStoreAccess};
 use crate::{ChainStore, Error};
 
 /// Gas limit cannot be adjusted for more than 0.1% at a time.
@@ -140,25 +140,36 @@ pub fn validate_chunk_with_chunk_extra(
         return Err(Error::InvalidBalanceBurnt);
     }
 
-    let outgoing_receipts = chain_store.get_outgoing_receipts_for_shard(
-        epoch_manager,
-        *prev_block_hash,
-        chunk_header.shard_id(),
-        prev_chunk_height_included,
-    )?;
-    let outgoing_receipts_hashes = {
-        let shard_layout = epoch_manager.get_shard_layout_from_prev_block(prev_block_hash)?;
-        Chain::build_receipts_hashes(&outgoing_receipts, &shard_layout)
+    let prev_header = chain_store.get_block_header(prev_block_hash)?;
+    let prev_prev_hash = prev_header.prev_hash();
+
+    let outgoing_receipts_root = if prev_prev_hash != &CryptoHash::default() {
+        let outgoing_receipts = chain_store.get_outgoing_receipts_for_shard(
+            epoch_manager,
+            *prev_block_hash,
+            chunk_header.shard_id(),
+            prev_chunk_height_included,
+        )?;
+        let outgoing_receipts_hashes = {
+            let shard_layout = epoch_manager.get_shard_layout_from_prev_block(prev_block_hash)?;
+            Chain::build_receipts_hashes(&outgoing_receipts, &shard_layout)
+        };
+        let (outgoing_receipts_root, _) = merklize(&outgoing_receipts_hashes);
+        outgoing_receipts_root
+    } else {
+        CryptoHash::default() // sorry, genesis_chunks impl says that
     };
-    let (outgoing_receipts_root, _) = merklize(&outgoing_receipts_hashes);
 
     if outgoing_receipts_root != chunk_header.prev_outgoing_receipts_root() {
-        println!("prev_block_hash={prev_block_hash} \
+        println!(
+            "prev_block_hash={prev_block_hash} \
         prev_chunk_height_included={prev_chunk_height_included} \
         outgoing_receipts={outgoing_receipts:?} \
         outgoing_receipts_root={outgoing_receipts_root} \
         outgoing_receipts_hashes={outgoing_receipts_hashes:?} \
-        chunk_header.prev_outgoing_receipts_root={}", chunk_header.prev_outgoing_receipts_root());
+        chunk_header.prev_outgoing_receipts_root={}",
+            chunk_header.prev_outgoing_receipts_root()
+        );
         return Err(Error::InvalidReceiptsProof);
     }
 
