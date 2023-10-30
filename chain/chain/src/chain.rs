@@ -4051,20 +4051,21 @@ impl Chain {
             //     HashMap::from_iter([(shard_id as u64, vec![])]);
             if see_future_chunk {
                 let block_hash = block.hash();
-                println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
-                let apply_chunk_job_result = validate_chunk_with_chunk_extra(
-                    // It's safe here to use ChainStore instead of ChainStoreUpdate
-                    // because we're asking prev_chunk_header for already committed block
-                    self.store(),
-                    self.epoch_manager.as_ref(),
-                    prev_hash,
-                    prev_chunk_extra.as_ref(),
-                    prev_chunk_header.height_included(),
-                    chunk_header,
-                );
-                if let Err(err) = apply_chunk_job_result {
-                    apply_chunk_errors.push((shard_id, err));
-                }
+                // temporarily disabled
+                // println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
+                // let apply_chunk_job_result = validate_chunk_with_chunk_extra(
+                //     // It's safe here to use ChainStore instead of ChainStoreUpdate
+                //     // because we're asking prev_chunk_header for already committed block
+                //     self.store(),
+                //     self.epoch_manager.as_ref(),
+                //     prev_hash,
+                //     prev_chunk_extra.as_ref(),
+                //     prev_chunk_header.height_included(),
+                //     chunk_header,
+                // );
+                // if let Err(err) = apply_chunk_job_result {
+                //     apply_chunk_errors.push((shard_id, err));
+                // }
             }
             // let apply_chunk_job_result = self.get_apply_chunk_job(
             //     me,
