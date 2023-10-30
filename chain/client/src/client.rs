@@ -871,12 +871,13 @@ impl Client {
                 outgoing_receipts.clone(),
             );
             // Save receipt and transaction results.
-            // chain_update.chain_store_update.save_outcomes_with_proofs(
-            //     &prev_block_hash,
-            //     shard_id,
-            //     outcomes_with_id,
-            //     outcome_paths,
-            // );
+            // Consider not doing it to solve issue with different outcomes for the same receipt.
+            chain_update.chain_store_update.save_outcomes_with_proofs(
+                &prev_block_hash,
+                shard_id,
+                outcomes_with_id,
+                outcome_paths,
+            );
 
             chain_update.commit()?;
         }
