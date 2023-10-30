@@ -793,12 +793,10 @@ impl Client {
             // } else {
             //     HashMap::from_iter([(shard_id, vec![])])
             // };
-            let incoming_receipts = HashMap::from_iter([(shard_id, vec![])]);
-            let result = self.chain.apply_prev_chunk_before_production(
+            let result = self.chain.apply_chunk_from_block_before_production(
                 &me,
                 prev_block,
                 shard_id as usize,
-                &incoming_receipts,
             );
             result.unwrap(); // if there is an error, it means something weird which I don't perceive yet
         }

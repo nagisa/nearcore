@@ -3869,21 +3869,34 @@ impl Chain {
             .collect()
     }
 
-    pub fn apply_prev_chunk_before_production(
+    pub fn apply_chunk_from_block_before_production(
         &mut self,
         me: &Option<AccountId>,
         block: &Block,
         shard_id: usize,
-        incoming_receipts: &HashMap<u64, Vec<ReceiptProof>>,
     ) -> Result<(), Error> {
         let _span =
             tracing::debug_span!(target: "chain", "apply_prev_chunk_before_production").entered();
+        // let last_chunk_included_height = block.chunks()[shard_id].height_included();
+        let last_chunk_prev_hash = block.chunks()[shard_id].prev_block_hash().clone();
         let prev_hash = block.header().prev_hash();
         if prev_hash == &CryptoHash::default() {
             // genesis, already applied
             return Ok(());
         }
+        let mut blocks_seq = vec![];
+        let mut current_block = block.hash().clone();
+        loop {
+            if current_block == last_chunk_prev_hash {
+                break;
+            }
+            blocks_seq.push(current_block.clone());
+            let block_header = self.get_block_header(&current_block)?;
+            current_block = block_header.prev_hash().clone();
+        }
+        blocks_seq.reverse();
 
+        println!("BLOCKS SEQ: {blocks_seq:?}");
         let prev_block = self.get_block(prev_hash)?;
         let maybe_job = self.get_apply_chunk_job(
             me,
@@ -3896,7 +3909,7 @@ impl Chain {
             shard_id,
             ApplyChunksMode::IsCaughtUp, // if I am producer, this is the case, right?
             false,                       // will_shard_layout_change, - I don't know
-            &incoming_receipts,
+            &HashMap::from_iter([(shard_id as u64, vec![])]),
             SandboxStatePatch::default(),
         )?;
 
