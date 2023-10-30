@@ -3895,6 +3895,7 @@ impl Chain {
 
         println!("BLOCKS SEQ: {blocks_seq:?}");
         for (i, block_hash) in blocks_seq.into_iter().enumerate() {
+            println!("ITER {block_hash}");
             // first should be new, others should be old
             let block = self.get_block(&block_hash)?;
             let prev_hash = block.header().prev_hash();
