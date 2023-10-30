@@ -4019,25 +4019,42 @@ impl Chain {
         // Taking a job is weird, but this seems to minimize new code.
         for shard_id in applied_chunk_ids {
             let chunk_header = &block.chunks()[shard_id];
+            let see_future_chunk = chunk_header.height_included() == block.header().height();
             let prev_chunk_header = &prev_block.chunks()[shard_id];
-            let incoming_receipts: HashMap<u64, Vec<ReceiptProof>> =
-                HashMap::from_iter([(shard_id as u64, vec![])]);
-            let apply_chunk_job_result = self.get_apply_chunk_job(
-                me,
-                None,
-                block,
-                prev_block,
-                chunk_header,
-                prev_chunk_header,
-                shard_id,
-                mode,
-                will_shard_layout_change,
-                &incoming_receipts,           // doesn't matter
-                SandboxStatePatch::default(), // doesn't matter
-            );
-            if let Err(err) = apply_chunk_job_result {
-                apply_chunk_errors.push((shard_id, err));
+            let shard_uid = self
+                .epoch_manager
+                .shard_id_to_uid(shard_id as ShardId, block.header().epoch_id())?;
+            let prev_chunk_extra = self.get_chunk_extra(prev_hash, &shard_uid)?.as_ref();
+            // let incoming_receipts: HashMap<u64, Vec<ReceiptProof>> =
+            //     HashMap::from_iter([(shard_id as u64, vec![])]);
+            if see_future_chunk {
+                let apply_chunk_job_result = validate_chunk_with_chunk_extra(
+                    // It's safe here to use ChainStore instead of ChainStoreUpdate
+                    // because we're asking prev_chunk_header for already committed block
+                    self.store(),
+                    self.epoch_manager.as_ref(),
+                    prev_hash,
+                    prev_chunk_extra,
+                    prev_chunk_header.height_included(),
+                    chunk_header,
+                );
+                if let Err(err) = apply_chunk_job_result {
+                    apply_chunk_errors.push((shard_id, err));
+                }
             }
+            // let apply_chunk_job_result = self.get_apply_chunk_job(
+            //     me,
+            //     None,
+            //     block,
+            //     prev_block,
+            //     chunk_header,
+            //     prev_chunk_header,
+            //     shard_id,
+            //     mode,
+            //     will_shard_layout_change,
+            //     &incoming_receipts,           // doesn't matter
+            //     SandboxStatePatch::default(), // doesn't matter
+            // );
         }
 
         // If there is any error, return it and mark current chunks as invalid
