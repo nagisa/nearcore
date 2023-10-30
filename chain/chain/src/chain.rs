@@ -4017,42 +4017,42 @@ impl Chain {
 
         // Just validate chunk headers against chunk extra.
         // Taking a job is weird, but this seems to minimize new code.
-        for shard_id in applied_chunk_ids {
-            let chunk_header = &block.chunks()[shard_id];
-            let prev_chunk_header = &prev_block.chunks()[shard_id];
-            let incoming_receipts: HashMap<u64, Vec<ReceiptProof>> =
-                HashMap::from_iter([(shard_id as u64, vec![])]);
-            let apply_chunk_job_result = self.get_apply_chunk_job(
-                me,
-                None,
-                block,
-                prev_block,
-                chunk_header,
-                prev_chunk_header,
-                shard_id,
-                mode,
-                will_shard_layout_change,
-                &incoming_receipts,           // doesn't matter
-                SandboxStatePatch::default(), // doesn't matter
-            );
-            if let Err(err) = apply_chunk_job_result {
-                apply_chunk_errors.push((shard_id, err));
-            }
-        }
-
-        // If there is any error, return it and mark current chunks as invalid
-        let mut first_err = None;
-        for (shard_id, err) in apply_chunk_errors.into_iter() {
-            if err.is_bad_data() {
-                invalid_chunks.push(block.chunks()[shard_id].clone());
-            }
-            if first_err.is_none() {
-                first_err = Some(err);
-            }
-        }
-        if let Some(err) = first_err {
-            return Err(err);
-        }
+        // for shard_id in applied_chunk_ids {
+        //     let chunk_header = &block.chunks()[shard_id];
+        //     let prev_chunk_header = &prev_block.chunks()[shard_id];
+        //     let incoming_receipts: HashMap<u64, Vec<ReceiptProof>> =
+        //         HashMap::from_iter([(shard_id as u64, vec![])]);
+        //     let apply_chunk_job_result = self.get_apply_chunk_job(
+        //         me,
+        //         None,
+        //         block,
+        //         prev_block,
+        //         chunk_header,
+        //         prev_chunk_header,
+        //         shard_id,
+        //         mode,
+        //         will_shard_layout_change,
+        //         &incoming_receipts,           // doesn't matter
+        //         SandboxStatePatch::default(), // doesn't matter
+        //     );
+        //     if let Err(err) = apply_chunk_job_result {
+        //         apply_chunk_errors.push((shard_id, err));
+        //     }
+        // }
+        // 
+        // // If there is any error, return it and mark current chunks as invalid
+        // let mut first_err = None;
+        // for (shard_id, err) in apply_chunk_errors.into_iter() {
+        //     if err.is_bad_data() {
+        //         invalid_chunks.push(block.chunks()[shard_id].clone());
+        //     }
+        //     if first_err.is_none() {
+        //         first_err = Some(err);
+        //     }
+        // }
+        // if let Some(err) = first_err {
+        //     return Err(err);
+        // }
 
         Ok(())
     }
