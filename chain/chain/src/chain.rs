@@ -3878,7 +3878,8 @@ impl Chain {
         me: &Option<AccountId>,
         block: &Block,
         shard_id: usize,
-    ) -> Result<(ChunkExtra, Vec<Receipt>, Vec<ExecutionOutcomeWithId>), Error> {
+    ) -> Result<(ChunkExtra, Vec<Receipt>, Vec<ExecutionOutcomeWithId>, WrappedTrieChanges), Error>
+    {
         let _span =
             tracing::debug_span!(target: "chain", "apply_prev_chunk_before_production").entered();
         // let last_chunk_included_height = block.chunks()[shard_id].height_included();
@@ -3975,9 +3976,16 @@ impl Chain {
                     // )?;
                     // self.chain_store_update.merge(store_update);
 
-                    chain_update.chain_store_update.save_trie_changes(apply_result.trie_changes);
+                    chain_update
+                        .chain_store_update
+                        .save_trie_changes(apply_result.trie_changes.clone());
 
-                    (chunk_extra, apply_result.outgoing_receipts, apply_result.outcomes)
+                    (
+                        chunk_extra,
+                        apply_result.outgoing_receipts,
+                        apply_result.outcomes,
+                        apply_result.trie_changes,
+                    )
                 } else {
                     panic!("...");
                 };
@@ -4785,7 +4793,7 @@ impl Chain {
         }
     }
 
-    fn chain_update(&mut self) -> ChainUpdate {
+    pub fn chain_update(&mut self) -> ChainUpdate {
         ChainUpdate::new(
             &mut self.store,
             self.epoch_manager.clone(),
@@ -5377,7 +5385,7 @@ pub struct ChainUpdate<'a> {
     epoch_manager: Arc<dyn EpochManagerAdapter>,
     shard_tracker: ShardTracker,
     runtime_adapter: Arc<dyn RuntimeAdapter>,
-    chain_store_update: ChainStoreUpdate<'a>,
+    pub chain_store_update: ChainStoreUpdate<'a>,
     doomslug_threshold_mode: DoomslugThresholdMode,
     #[allow(unused)]
     transaction_validity_period: BlockHeightDelta,

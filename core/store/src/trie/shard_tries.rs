@@ -360,6 +360,7 @@ impl ShardTries {
     }
 }
 
+#[derive(Clone)]
 pub struct WrappedTrieChanges {
     tries: ShardTries,
     shard_uid: ShardUId,

@@ -79,7 +79,7 @@ use near_primitives::validator_signer::ValidatorSigner;
 use near_primitives::version::{ProtocolFeature, PROTOCOL_VERSION};
 use near_primitives::views::{CatchupStatusView, DroppedReason};
 use near_store::metadata::DbKind;
-use near_store::ShardUId;
+use near_store::{ShardUId, TrieChanges, WrappedTrieChanges};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -783,7 +783,8 @@ impl Client {
         let _span = tracing::debug_span!(target: "client", "produce_chunk", next_height, shard_id, ?epoch_id).entered();
 
         let prev_block_hash = *prev_block.hash();
-        let (chunk_extra, outgoing_receipts, _) =
+        let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, epoch_id)?;
+        let (chunk_extra, outgoing_receipts, outcomes_with_id, trie_changes) =
             if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
                 let me = match &self.validator_signer {
                     Some(validator_signer) => Some(validator_signer.validator_id().clone()),
@@ -802,7 +803,6 @@ impl Client {
                 );
                 result? // if there is an error, it means something weird which I don't perceive yet
             } else {
-                let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, epoch_id)?;
                 let chunk_extra = ChunkExtra::clone(
                     self.chain
                         .get_chunk_extra(&prev_block_hash, &shard_uid)
@@ -816,8 +816,63 @@ impl Client {
                     shard_id,
                     last_header.height_included(),
                 )?;
-                (chunk_extra, outgoing_receipts, vec![])
+                (
+                    chunk_extra,
+                    outgoing_receipts,
+                    vec![],
+                    WrappedTrieChanges::new(
+                        self.runtime_adapter.get_tries(),
+                        shard_uid,
+                        TrieChanges::empty(CryptoHash::default()),
+                        vec![],
+                        prev_block_hash,
+                    ),
+                )
+                // outcomes - not needed for production
             };
+
+        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            let prev_height = prev_block.header().height();
+            let prev_prev_hash = *prev_block.header().prev_hash();
+            let mut chain_update = self.chain.chain_update();
+
+            let (outcome_root, outcome_paths) =
+                ApplyTransactionResult::compute_outcomes_proof(&outcomes_with_id);
+            let shard_id = shard_uid.shard_id();
+
+            // Save state root after applying transactions.
+            chain_update.chain_store_update.save_chunk_extra(
+                &prev_block_hash,
+                &shard_uid,
+                chunk_extra.clone(),
+            );
+
+            let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
+            let store_update = flat_storage_manager.save_flat_state_changes(
+                *prev_block_hash,
+                *prev_prev_hash,
+                prev_height,
+                shard_uid,
+                trie_changes.state_changes(),
+            )?;
+            chain_update.chain_store_update.merge(store_update);
+
+            // self.chain_store_update.save_trie_changes(apply_result.trie_changes);
+            chain_update.chain_store_update.save_outgoing_receipt(
+                &prev_block_hash,
+                shard_id,
+                outgoing_receipts.clone(),
+            );
+            // Save receipt and transaction results.
+            chain_update.chain_store_update.save_outcomes_with_proofs(
+                &prev_block_hash,
+                shard_id,
+                outcomes_with_id,
+                outcome_paths,
+            );
+
+            chain_update.commit()?;
+        }
 
         let validator_signer = self
             .validator_signer
