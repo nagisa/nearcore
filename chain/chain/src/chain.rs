@@ -3879,11 +3879,11 @@ impl Chain {
             tracing::debug_span!(target: "chain", "apply_prev_chunk_before_production").entered();
         // let last_chunk_included_height = block.chunks()[shard_id].height_included();
         let last_chunk_prev_hash = block.chunks()[shard_id].prev_block_hash().clone();
-        let prev_hash = block.header().prev_hash();
-        if prev_hash == &CryptoHash::default() {
-            // genesis, already applied
-            return Ok(());
-        }
+        // let prev_hash = block.header().prev_hash();
+        // if prev_hash == &CryptoHash::default() {
+        //     // genesis, already applied
+        //     return Ok(());
+        // }
         let mut blocks_seq = vec![];
         let mut current_block = block.hash().clone();
         loop {
