@@ -32,6 +32,7 @@ pub struct FlatStorageChunkView {
 
 impl FlatStorageChunkView {
     pub fn new(store: Store, block_hash: CryptoHash, flat_storage: FlatStorage) -> Self {
+        println!("chunk_view for {block_hash}");
         Self { store, block_hash, flat_storage }
     }
     /// Returns value reference using raw trie key, taken from the state
