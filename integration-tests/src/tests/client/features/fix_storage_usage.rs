@@ -25,6 +25,7 @@ fn process_blocks_with_storage_usage_fix(
         .real_epoch_managers(&genesis.config)
         .nightshade_runtimes(&genesis)
         .build();
+    let mut blocks = vec![];
     for i in 1..=16 {
         // We cannot just use TestEnv::produce_block as we are updating protocol version
         let mut block = env.clients[0].produce_block(i).unwrap().unwrap();
@@ -36,7 +37,15 @@ fn process_blocks_with_storage_usage_fix(
 
         let _ = env.clients[0].process_block_test(block.clone().into(), Provenance::NONE).unwrap();
         env.clients[0].finish_blocks_in_processing();
+        blocks.push(block);
+    }
 
+    let block_len = blocks.len();
+    for (index, block) in blocks.into_iter().enumerate() {
+        if index + 1 == block_len {
+            break;
+        }
+        let i = (index + 1) as u64;
         let root = *env.clients[0]
             .chain
             .get_chunk_extra(block.hash(), &ShardUId::single_shard())
