@@ -212,6 +212,17 @@ fn test_flat_storage_creation_sanity() {
     env.process_block(0, fork_block, Provenance::PRODUCED);
     env.process_block(0, next_block, Provenance::PRODUCED);
 
+    let fork_block_2 = env.clients[0]
+        .produce_block_on(START_HEIGHT + 4, fork_block_hash.clone())
+        .unwrap()
+        .unwrap();
+    let next_block_2 = env.clients[0]
+        .produce_block_on(START_HEIGHT + 5, fork_block_hash.clone())
+        .unwrap()
+        .unwrap();
+    env.process_block(0, fork_block_2, Provenance::PRODUCED);
+    env.process_block(0, next_block_2, Provenance::PRODUCED);
+
     assert_matches!(
         store_helper::get_delta_changes(&store, shard_uid, fork_block_hash),
         Ok(Some(_))
@@ -225,7 +236,7 @@ fn test_flat_storage_creation_sanity() {
     // We started the node from height `START_HEIGHT - 1`, and now final head should move to height `START_HEIGHT`.
     // Because final head height became greater than height on which node started,
     // we must start fetching the state.
-    env.produce_block(0, START_HEIGHT + 4);
+    env.produce_block(0, START_HEIGHT + 6);
     assert!(!env.clients[0].run_flat_storage_creation_step().unwrap());
     let final_block_hash = env.clients[0].chain.get_block_hash_by_height(START_HEIGHT).unwrap();
     assert_eq!(
