@@ -2713,8 +2713,7 @@ fn test_block_execution_outcomes() {
     );
 
     // Make sure the chunk outcomes contain the outcome from the delayed receipt.
-    let block_height = 3;
-    let next_block = env.clients[0].chain.get_block_by_height(block_height).unwrap();
+    let next_block = env.clients[0].chain.get_block_by_height(3).unwrap();
     let next_chunk = env.clients[0].chain.get_chunk(&next_block.chunks()[0].chunk_hash()).unwrap();
     assert!(next_chunk.transactions().is_empty());
     assert!(next_chunk.prev_outgoing_receipts().is_empty());
