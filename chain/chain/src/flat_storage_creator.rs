@@ -177,15 +177,19 @@ impl FlatStorageShardCreator {
                             chain_store.get_all_block_hashes_by_height(height)?.iter()
                         {
                             for hash in hashes {
-                                debug!(target: "store", %shard_id, %height, %hash, "Checking delta existence");
-                                assert_matches!(
-                                    store_helper::get_delta_changes(
-                                        chain_store.store(),
-                                        self.shard_uid,
-                                        *hash
-                                    ),
-                                    Ok(Some(_))
-                                );
+                                // that's not the case anymore because block can be the last one, 
+                                // thus not having processed chunks. Haha.
+                                if ProtocolFeature::DelayChunkExecution.protocol_version() != 200 {
+                                    debug!(target: "store", %shard_id, %height, %hash, "Checking delta existence");
+                                    assert_matches!(
+                                        store_helper::get_delta_changes(
+                                            chain_store.store(),
+                                            self.shard_uid,
+                                            *hash
+                                        ),
+                                        Ok(Some(_))
+                                    );
+                                }
                             }
                         }
                     }
