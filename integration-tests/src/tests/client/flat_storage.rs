@@ -24,6 +24,7 @@ use nearcore::test_utils::TestEnvNightshadeSetupExt;
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
+use near_primitives_core::version::ProtocolFeature;
 
 /// Height on which we start flat storage background creation.
 const START_HEIGHT: BlockHeight = 7;
@@ -162,13 +163,18 @@ fn test_flat_storage_creation_sanity() {
         }
 
         // Deltas for blocks until `flat_head_height` should not exist.
-        for height in 0..=flat_head_height {
+        let separator_height = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            flat_head_height + 1
+        } else {
+            flat_head_height
+        };
+        for height in 0..=separator_height {
             let block_hash = env.clients[0].chain.get_block_hash_by_height(height).unwrap();
             assert_eq!(store_helper::get_delta_changes(&store, shard_uid, block_hash), Ok(None));
         }
         // Deltas for blocks until `START_HEIGHT` should still exist,
         // because they come after flat storage head.
-        for height in flat_head_height + 1..START_HEIGHT {
+        for height in separator_height + 1..START_HEIGHT {
             let block_hash = env.clients[0].chain.get_block_hash_by_height(height).unwrap();
             assert_matches!(
                 store_helper::get_delta_changes(&store, shard_uid, block_hash),

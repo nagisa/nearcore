@@ -51,8 +51,10 @@ fn process_blocks_with_storage_usage_fix(
             .get_chunk_extra(block.hash(), &ShardUId::single_shard())
             .unwrap()
             .state_root();
-        let trie =
-            env.clients[0].runtime_adapter.get_trie_for_shard(0, block.hash(), root, false).unwrap();
+        let trie = env.clients[0]
+            .runtime_adapter
+            .get_trie_for_shard(0, block.hash(), root, false)
+            .unwrap();
         let state_update = TrieUpdate::new(trie);
         use near_primitives::account::Account;
         let mut account_near_raw = state_update
