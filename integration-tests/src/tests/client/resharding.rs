@@ -532,11 +532,9 @@ impl TestReshardingEnv {
         };
         let block_header = env.clients[0].chain.get_block_header(&block_hash).unwrap();
         let prev_hash = block_header.prev_hash();
-        
-        let shard_layout = env.clients[0]
-            .epoch_manager
-            .get_shard_layout_from_prev_block(&block_hash)
-            .unwrap();
+
+        let shard_layout =
+            env.clients[0].epoch_manager.get_shard_layout_from_prev_block(&block_hash).unwrap();
         let block = env.clients[0].chain.get_block(&block_hash).unwrap();
 
         for (shard_id, chunk_header) in block.chunks().iter().enumerate() {
@@ -547,12 +545,8 @@ impl TestReshardingEnv {
 
             for (i, me) in env.validators.iter().enumerate() {
                 let client = &mut env.clients[i];
-                let care_about_shard = client.shard_tracker.care_about_shard(
-                    Some(me),
-                    prev_hash,
-                    shard_id,
-                    true,
-                );
+                let care_about_shard =
+                    client.shard_tracker.care_about_shard(Some(me), prev_hash, shard_id, true);
                 if !care_about_shard {
                     continue;
                 }
