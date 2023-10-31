@@ -531,7 +531,7 @@ impl TestReshardingEnv {
             .iter()
             .map(|c| (c.shard_id(), c.height_included() != block.header().height()))
             .collect();
-        let new_chunk_map = HashMap::from_iter(new_chunk_data.into_iter());
+        let new_chunk_map: HashMap<ShardId, bool> = HashMap::from_iter(new_chunk_data.into_iter());
         let block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
             head.prev_block_hash
         } else {
