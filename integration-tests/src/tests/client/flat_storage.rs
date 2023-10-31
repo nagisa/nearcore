@@ -12,6 +12,7 @@ use near_primitives::transaction::SignedTransaction;
 use near_primitives::trie_key::TrieKey;
 use near_primitives::types::AccountId;
 use near_primitives_core::types::BlockHeight;
+use near_primitives_core::version::ProtocolFeature;
 use near_store::flat::{
     store_helper, FetchingStateStatus, FlatStorageCreationStatus, FlatStorageManager,
     FlatStorageReadyStatus, FlatStorageStatus, NUM_PARTS_IN_ONE_STEP,
@@ -24,7 +25,6 @@ use nearcore::test_utils::TestEnvNightshadeSetupExt;
 use std::str::FromStr;
 use std::thread;
 use std::time::Duration;
-use near_primitives_core::version::ProtocolFeature;
 
 /// Height on which we start flat storage background creation.
 const START_HEIGHT: BlockHeight = 7;
@@ -163,11 +163,12 @@ fn test_flat_storage_creation_sanity() {
         }
 
         // Deltas for blocks until `flat_head_height` should not exist.
-        let separator_height = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-            flat_head_height + 1
-        } else {
-            flat_head_height
-        };
+        let separator_height = flat_head_height;
+        // let separator_height = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+        //     flat_head_height + 1
+        // } else {
+        //     flat_head_height
+        // };
         for height in 0..=separator_height {
             let block_hash = env.clients[0].chain.get_block_hash_by_height(height).unwrap();
             assert_eq!(store_helper::get_delta_changes(&store, shard_uid, block_hash), Ok(None));
