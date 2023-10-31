@@ -19,6 +19,7 @@ use near_primitives::shard_layout::ShardUId;
 use near_primitives::state::FlatStateValue;
 use near_primitives::state_part::PartId;
 use near_primitives::types::{BlockHeight, StateRoot};
+use near_primitives::version::ProtocolFeature;
 use near_store::flat::{
     store_helper, BlockInfo, FetchingStateStatus, FlatStateChanges, FlatStorageCreationMetrics,
     FlatStorageCreationStatus, FlatStorageReadyStatus, FlatStorageStatus, NUM_PARTS_IN_ONE_STEP,
@@ -31,7 +32,6 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tracing::{debug, info};
-use near_primitives::version::ProtocolFeature;
 
 /// If we launched a node with enabled flat storage but it doesn't have flat storage data on disk, we have to create it.
 /// This struct is responsible for this process for the given shard.
@@ -180,6 +180,7 @@ impl FlatStorageShardCreator {
                             for hash in hashes {
                                 // that's not the case anymore because block can be the last one,
                                 // thus not having processed chunks. Haha.
+                                // Anyway I guess we must just drop flat storage creation tests.
                                 if ProtocolFeature::DelayChunkExecution.protocol_version() != 200 {
                                     debug!(target: "store", %shard_id, %height, %hash, "Checking delta existence");
                                     assert_matches!(
