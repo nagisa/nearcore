@@ -1692,6 +1692,7 @@ impl Chain {
         parent_hash: CryptoHash,
         block: &Block,
     ) -> Result<(), Error> {
+        println!("ping_missing_chunks START");
         if !self.care_about_any_shard_or_part(me, parent_hash)? {
             return Ok(());
         }
@@ -1736,6 +1737,7 @@ impl Chain {
         if !missing.is_empty() {
             return Err(Error::ChunksMissing(missing));
         }
+        println!("ping_missing_chunks END");
         Ok(())
     }
 
