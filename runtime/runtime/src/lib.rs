@@ -836,7 +836,7 @@ impl Runtime {
         stats: &mut ApplyStats,
         epoch_info_provider: &dyn EpochInfoProvider,
     ) -> Result<Option<ExecutionOutcomeWithId>, RuntimeError> {
-        println!("PROCESS {} | {}", receipt.receipt_id, apply_state.block_height);
+        println!("process_receipt {} | {}", receipt.receipt_id, apply_state.block_height);
         let account_id = &receipt.receiver_id;
         match receipt.receipt {
             ReceiptEnum::Data(ref data_receipt) => {

@@ -71,6 +71,7 @@ use near_primitives::views::{
 use near_primitives_core::config::{ActionCosts, ExtCosts};
 use near_primitives_core::num_rational::{Ratio, Rational32};
 use near_primitives_core::types::ShardId;
+use near_primitives_core::version::ProtocolFeature;
 use near_store::cold_storage::{update_cold_db, update_cold_head};
 use near_store::metadata::DbKind;
 use near_store::metadata::DB_VERSION;
@@ -83,7 +84,6 @@ use nearcore::test_utils::TestEnvNightshadeSetupExt;
 use nearcore::NEAR_BASE;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
-use near_primitives_core::version::ProtocolFeature;
 
 pub fn set_block_protocol_version(
     block: &mut Block,
