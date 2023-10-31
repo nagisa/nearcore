@@ -4113,7 +4113,8 @@ impl Chain {
             //     HashMap::from_iter([(shard_id as u64, vec![])]);
             if see_future_chunk {
                 let block_hash = block.hash();
-                // temporarily disabled
+
+                // in true stateless validation, it must happen before applying chunk
                 println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
                 let apply_chunk_job_result = validate_chunk_with_chunk_extra(
                     // It's safe here to use ChainStore instead of ChainStoreUpdate
@@ -4130,6 +4131,7 @@ impl Chain {
                     continue;
                 }
 
+                // some basic checks of future chunk still must happen, I think
                 let chunk = self.get_chunk_clone_from_header(&chunk_header.clone())?;
 
                 let transactions = chunk.transactions();
@@ -4168,19 +4170,6 @@ impl Chain {
                     }
                 };
             }
-            // let apply_chunk_job_result = self.get_apply_chunk_job(
-            //     me,
-            //     None,
-            //     block,
-            //     prev_block,
-            //     chunk_header,
-            //     prev_chunk_header,
-            //     shard_id,
-            //     mode,
-            //     will_shard_layout_change,
-            //     &incoming_receipts,           // doesn't matter
-            //     SandboxStatePatch::default(), // doesn't matter
-            // );
         }
 
         // If there is any error, return it and mark current chunks as invalid
