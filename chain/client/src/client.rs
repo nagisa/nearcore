@@ -1529,12 +1529,14 @@ impl Client {
                     let block_hash = block.hash();
                     let prev_hash = block.header().prev_hash();
                     let block_height = block.header().height();
+                    let epoch_id = block.header().epoch_id();
+                    let pv = self.epoch_manager.get_epoch_protocol_version(epoch_id)?;
                     let chunks: Vec<_> = block
                         .chunks()
                         .iter()
                         .map(|c| (c.chunk_hash(), c.height_included()))
                         .collect();
-                    println!("{prev_hash} -> {block_hash} | {block_height} | CHUNKS: {:?}", chunks);
+                    println!("{prev_hash} -> {block_hash} | {block_height} | {epoch_id} {pv} | CHUNKS: {:?}", chunks);
                 }
             }
             self.shards_manager_adapter.send(ShardsManagerRequestFromClient::UpdateChainHeads {
