@@ -525,6 +525,13 @@ impl TestReshardingEnv {
         let env = &mut self.env;
         let head = env.clients[0].chain.head().unwrap();
 
+        let block = env.clients[0].chain.get_block(&head.last_block_hash).unwrap();
+        let new_chunk_data: Vec<_> = block
+            .chunks()
+            .iter()
+            .map(|c| (c.shard_id(), c.height_included() != block.header().height()))
+            .collect();
+        let new_chunk_map = HashMap::from_iter(new_chunk_data.into_iter());
         let block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
             head.prev_block_hash
         } else {
@@ -538,7 +545,8 @@ impl TestReshardingEnv {
         let block = env.clients[0].chain.get_block(&block_hash).unwrap();
 
         for (shard_id, chunk_header) in block.chunks().iter().enumerate() {
-            if chunk_header.height_included() != block.header().height() {
+            let is_new_chunk = *new_chunk_map.get(&(shard_id as ShardId)).unwrap_or(false);
+            if !is_new_chunk {
                 continue;
             }
             let shard_id = shard_id as ShardId;
