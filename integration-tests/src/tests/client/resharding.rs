@@ -1259,7 +1259,7 @@ fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
     let drop_chunk_condition = DropChunkCondition::with_probability(prob);
     for i in 1..5 * epoch_length {
         println!("height {i}");
-        test_env.step_impl(&drop_chunk_condition, PROTOCOL_VERSION, None, false);
+        test_env.step_impl(&drop_chunk_condition, PROTOCOL_VERSION, None, true);
         test_env.check_receipt_id_to_shard_id();
     }
 
