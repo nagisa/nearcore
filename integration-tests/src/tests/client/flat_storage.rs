@@ -162,20 +162,18 @@ fn test_flat_storage_creation_sanity() {
             panic!("expected FlatStorageStatus::Ready status, got {status:?}");
         }
 
-        // Deltas for blocks until `flat_head_height` should not exist.
-        let separator_height = flat_head_height;
-        // let separator_height = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-        //     flat_head_height + 1
-        // } else {
-        //     flat_head_height
-        // };
-        for height in 0..=separator_height {
+        for height in 0..=flat_head_height {
             let block_hash = env.clients[0].chain.get_block_hash_by_height(height).unwrap();
             assert_eq!(store_helper::get_delta_changes(&store, shard_uid, block_hash), Ok(None));
         }
         // Deltas for blocks until `START_HEIGHT` should still exist,
         // because they come after flat storage head.
-        for height in separator_height + 1..START_HEIGHT {
+        let stop_height = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            START_HEIGHT - 2
+        } else {
+            START_HEIGHT - 1
+        };
+        for height in flat_head_height + 1..=stop_height {
             let block_hash = env.clients[0].chain.get_block_hash_by_height(height).unwrap();
             assert_matches!(
                 store_helper::get_delta_changes(&store, shard_uid, block_hash),
