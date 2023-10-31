@@ -217,7 +217,7 @@ fn test_flat_storage_creation_sanity() {
         .unwrap()
         .unwrap();
     let next_block_2 = env.clients[0]
-        .produce_block_on(START_HEIGHT + 5, fork_block_hash.clone())
+        .produce_block_on(START_HEIGHT + 5, next_block_hash.clone())
         .unwrap()
         .unwrap();
     env.process_block(0, fork_block_2, Provenance::PRODUCED);
