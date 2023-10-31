@@ -529,7 +529,7 @@ impl TestReshardingEnv {
         let new_chunk_data: Vec<_> = block
             .chunks()
             .iter()
-            .map(|c| (c.shard_id(), c.height_included() != block.header().height()))
+            .map(|c| (c.shard_id(), c.height_included() == block.header().height()))
             .collect();
         let new_chunk_map: HashMap<ShardId, bool> = HashMap::from_iter(new_chunk_data.into_iter());
         let block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
@@ -1245,7 +1245,8 @@ fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
     let new_accounts = setup_test_env_with_cross_contract_txs(&mut test_env, epoch_length);
 
     let drop_chunk_condition = DropChunkCondition::with_probability(prob);
-    for _ in 1..5 * epoch_length {
+    for i in 1..5 * epoch_length {
+        println!("height {i}");
         test_env.step_impl(&drop_chunk_condition, PROTOCOL_VERSION, None);
         test_env.check_receipt_id_to_shard_id();
     }

@@ -2386,13 +2386,14 @@ impl Client {
             let mut i = 0;
             let block_hashes = [head.last_block_hash, head.prev_block_hash];
             let state_root = loop {
-                match self.chain.get_chunk_extra(&block_hashes[i], &shard_uid) {
+                let block_hash = &block_hashes[i];
+                match self.chain.get_chunk_extra(block_hash, &shard_uid) {
                     Ok(chunk_extra) => break *chunk_extra.state_root(),
                     Err(e) => {
                         // Not being able to fetch a state root most likely implies that we haven't
                         //     caught up with the next epoch yet.
                         // - not anymore! with our changes chunk extra may be missing
-                        println!("on process_tx_internal head={head:?} error: {e}");
+                        println!("on process_tx_internal block_hash={block_hash:?} error: {e}");
                     }
                 }
                 i += 1;
