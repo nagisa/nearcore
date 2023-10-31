@@ -3474,8 +3474,11 @@ fn test_congestion_receipt_execution() {
     env.produce_block(0, 3);
     let height = 4;
     env.produce_block(0, height);
-    // env.produce_block(0, height + 1); - incorrect, breaks prev_block
     let prev_block = env.clients[0].chain.get_block_by_height(height).unwrap();
+    let mut block = env.clients[0].produce_block(height + 1).unwrap().unwrap();
+    testlib::process_blocks::set_no_chunk_in_block(&mut block, &prev_block);
+    env.process_block(0, block.clone(), Provenance::NONE);
+
     let chunk_extra =
         env.clients[0].chain.get_chunk_extra(prev_block.hash(), &ShardUId::single_shard()).unwrap();
     assert!(chunk_extra.gas_used() >= chunk_extra.gas_limit());
@@ -3486,10 +3489,7 @@ fn test_congestion_receipt_execution() {
     let delayed_indices: DelayedReceiptIndices =
         get(&state_update, &TrieKey::DelayedReceiptIndices).unwrap().unwrap();
     assert!(delayed_indices.next_available_index > 0);
-    let mut block = env.clients[0].produce_block(height + 1).unwrap().unwrap();
-    testlib::process_blocks::set_no_chunk_in_block(&mut block, &prev_block);
-    env.process_block(0, block.clone(), Provenance::NONE);
-
+    
     // let all receipts finish
     for i in height + 2..height + 7 {
         env.produce_block(0, i);
