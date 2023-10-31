@@ -117,7 +117,9 @@ fn wait_for_flat_storage_creation(
     // the final block.
     let deltas_in_metadata =
         store_helper::get_all_deltas_metadata(&store, shard_uid).unwrap().len() as u64;
-    assert_eq!(deltas_in_metadata, 2);
+    let expected_deltas =
+        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 { 1 } else { 2 };
+    assert_eq!(deltas_in_metadata, expected_deltas);
 
     next_height
 }
