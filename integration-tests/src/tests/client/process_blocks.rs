@@ -83,6 +83,7 @@ use nearcore::test_utils::TestEnvNightshadeSetupExt;
 use nearcore::NEAR_BASE;
 use rand::prelude::StdRng;
 use rand::{Rng, SeedableRng};
+use near_primitives_core::version::ProtocolFeature;
 
 pub fn set_block_protocol_version(
     block: &mut Block,
@@ -3470,11 +3471,16 @@ fn test_block_ordinal() {
 fn test_congestion_receipt_execution() {
     let (mut env, tx_hashes) = prepare_env_with_congestion(PROTOCOL_VERSION, None, 3);
 
-    // Produce block with no new chunk.
     env.produce_block(0, 3);
-    let height = 4;
+    let height = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+        env.produce_block(0, 4);
+        5
+    } else {
+        4
+    };
     env.produce_block(0, height);
     let prev_block = env.clients[0].chain.get_block_by_height(height).unwrap();
+    // Produce block with no new chunk.
     let mut block = env.clients[0].produce_block(height + 1).unwrap().unwrap();
     testlib::process_blocks::set_no_chunk_in_block(&mut block, &prev_block);
     env.process_block(0, block.clone(), Provenance::NONE);
@@ -3489,7 +3495,7 @@ fn test_congestion_receipt_execution() {
     let delayed_indices: DelayedReceiptIndices =
         get(&state_update, &TrieKey::DelayedReceiptIndices).unwrap().unwrap();
     assert!(delayed_indices.next_available_index > 0);
-    
+
     // let all receipts finish
     for i in height + 2..height + 7 {
         env.produce_block(0, i);
