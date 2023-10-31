@@ -31,6 +31,7 @@ use std::rc::Rc;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tracing::{debug, info};
+use near_primitives::version::ProtocolFeature;
 
 /// If we launched a node with enabled flat storage but it doesn't have flat storage data on disk, we have to create it.
 /// This struct is responsible for this process for the given shard.
@@ -177,7 +178,7 @@ impl FlatStorageShardCreator {
                             chain_store.get_all_block_hashes_by_height(height)?.iter()
                         {
                             for hash in hashes {
-                                // that's not the case anymore because block can be the last one, 
+                                // that's not the case anymore because block can be the last one,
                                 // thus not having processed chunks. Haha.
                                 if ProtocolFeature::DelayChunkExecution.protocol_version() != 200 {
                                     debug!(target: "store", %shard_id, %height, %hash, "Checking delta existence");
