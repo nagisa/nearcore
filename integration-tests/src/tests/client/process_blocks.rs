@@ -2675,7 +2675,7 @@ fn test_block_execution_outcomes() {
         tx_hashes.push(tx.get_hash());
         assert_eq!(env.clients[0].process_tx(tx, false, false), ProcessTxResponse::ValidTx);
     }
-    for i in 1..4 {
+    for i in 1..5 {
         env.produce_block(0, i);
     }
 
@@ -2713,7 +2713,8 @@ fn test_block_execution_outcomes() {
     );
 
     // Make sure the chunk outcomes contain the outcome from the delayed receipt.
-    let next_block = env.clients[0].chain.get_block_by_height(3).unwrap();
+    let block_height = 4;
+    let next_block = env.clients[0].chain.get_block_by_height(block_height).unwrap();
     let next_chunk = env.clients[0].chain.get_chunk(&next_block.chunks()[0].chunk_hash()).unwrap();
     assert!(next_chunk.transactions().is_empty());
     assert!(next_chunk.prev_outgoing_receipts().is_empty());
