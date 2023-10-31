@@ -1255,8 +1255,19 @@ fn non_resharding_cross_contract_calls_impl(rng_seed: u64) {
         successful_txs.iter().flat_map(|tx_hash| new_accounts.get(tx_hash)).collect();
 
     test_env.check_accounts(new_accounts);
-
     test_env.check_split_states_artifacts();
+}
+
+#[test]
+fn test_non_resharding_1() {
+    non_resharding_cross_contract_calls_impl(42);
+}
+
+// Test cross contract calls
+// This test case tests postponed receipts and delayed receipts
+#[test]
+fn test_non_resharding_2() {
+    non_resharding_cross_contract_calls_impl(43);
 }
 
 // Test cross contract calls
