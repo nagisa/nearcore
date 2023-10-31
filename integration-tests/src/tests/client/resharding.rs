@@ -48,7 +48,7 @@ const SIMPLE_NIGHTSHADE_V2_PROTOCOL_VERSION: ProtocolVersion = PROTOCOL_VERSION 
 
 const P_CATCHUP: f64 = 0.2;
 
-#[derive(Copy)]
+#[derive(Clone, Copy)]
 enum ReshardingType {
     // In the V0->V1 resharding outgoing receipts are reassigned to receiver.
     V1,
