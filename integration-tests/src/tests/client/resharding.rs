@@ -524,11 +524,20 @@ impl TestReshardingEnv {
     fn check_receipt_id_to_shard_id(&mut self) {
         let env = &mut self.env;
         let head = env.clients[0].chain.head().unwrap();
+
+        let block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            head.prev_block_hash
+        } else {
+            head.last_block_hash
+        };
+        let block_header = env.clients[0].chain.get_block_header(&block_hash).unwrap();
+        let prev_hash = block_header.prev_hash();
+        
         let shard_layout = env.clients[0]
             .epoch_manager
-            .get_shard_layout_from_prev_block(&head.last_block_hash)
+            .get_shard_layout_from_prev_block(&block_hash)
             .unwrap();
-        let block = env.clients[0].chain.get_block(&head.last_block_hash).unwrap();
+        let block = env.clients[0].chain.get_block(&block_hash).unwrap();
 
         for (shard_id, chunk_header) in block.chunks().iter().enumerate() {
             if chunk_header.height_included() != block.header().height() {
@@ -540,7 +549,7 @@ impl TestReshardingEnv {
                 let client = &mut env.clients[i];
                 let care_about_shard = client.shard_tracker.care_about_shard(
                     Some(me),
-                    &head.prev_block_hash,
+                    prev_hash,
                     shard_id,
                     true,
                 );
@@ -551,7 +560,7 @@ impl TestReshardingEnv {
                 let outgoing_receipts = client
                     .chain
                     .mut_store()
-                    .get_outgoing_receipts(&head.last_block_hash, shard_id)
+                    .get_outgoing_receipts(&block_hash, shard_id)
                     .unwrap()
                     .clone();
                 for receipt in outgoing_receipts.iter() {
