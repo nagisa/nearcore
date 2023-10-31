@@ -237,7 +237,7 @@ impl TestReshardingEnv {
         self.step_impl(
             &drop_chunk_condition,
             SIMPLE_NIGHTSHADE_PROTOCOL_VERSION,
-            &ReshardingType::V1,
+            Some(ReshardingType::V1),
         );
     }
 
@@ -251,13 +251,13 @@ impl TestReshardingEnv {
         &mut self,
         drop_chunk_condition: &DropChunkCondition,
         protocol_version: ProtocolVersion,
-        resharding_type: &ReshardingType,
+        resharding_type: Option<ReshardingType>,
     ) {
         let env = &mut self.env;
         let head = env.clients[0].chain.head().unwrap();
         let next_height = head.height + 1;
         let expected_num_shards =
-            get_expected_shards_num(self.epoch_length, next_height, resharding_type);
+            resharding_type.map(|t| get_expected_shards_num(self.epoch_length, next_height, &t));
 
         tracing::debug!(target: "test", next_height, expected_num_shards, "step");
 
@@ -340,7 +340,9 @@ impl TestReshardingEnv {
                 .get_shard_layout_from_prev_block(block.header().prev_hash())
                 .unwrap()
                 .num_shards();
-            assert_eq!(num_shards, expected_num_shards);
+            if let Some(expected_num_shards) = expected_num_shards {
+                assert_eq!(num_shards, expected_num_shards);
+            }
         }
 
         env.process_partial_encoded_chunks();
@@ -917,7 +919,7 @@ fn test_shard_layout_upgrade_simple_impl(
 
     let drop_chunk_condition = DropChunkCondition::new();
     for _ in 1..4 * epoch_length {
-        test_env.step_impl(&drop_chunk_condition, target_protocol_version, &resharding_type);
+        test_env.step_impl(&drop_chunk_condition, target_protocol_version, Some(resharding_type));
         test_env.check_receipt_id_to_shard_id();
         test_env.check_snapshot(state_snapshot_enabled);
     }
@@ -1204,7 +1206,7 @@ fn test_shard_layout_upgrade_cross_contract_calls_impl(
 
     let drop_chunk_condition = DropChunkCondition::new();
     for _ in 1..5 * epoch_length {
-        test_env.step_impl(&drop_chunk_condition, target_protocol_version, &resharding_type);
+        test_env.step_impl(&drop_chunk_condition, target_protocol_version, Some(resharding_type));
         test_env.check_receipt_id_to_shard_id();
     }
 
@@ -1230,7 +1232,7 @@ fn non_resharding_cross_contract_calls_impl(rng_seed: u64) {
 
     let drop_chunk_condition = DropChunkCondition::new();
     for _ in 1..5 * epoch_length {
-        test_env.step_impl(&drop_chunk_condition, PROTOCOL_VERSION, &resharding_type);
+        test_env.step_impl(&drop_chunk_condition, PROTOCOL_VERSION, None);
         test_env.check_receipt_id_to_shard_id();
     }
 
@@ -1304,7 +1306,7 @@ fn test_shard_layout_upgrade_incoming_receipts_impl(
     let by_height_shard_id = HashSet::from([(drop_height, drop_shard_id)]);
     let drop_chunk_condition = DropChunkCondition::with_by_height_shard_id(by_height_shard_id);
     for _ in 1..5 * epoch_length {
-        test_env.step_impl(&drop_chunk_condition, target_protocol_version, &resharding_type);
+        test_env.step_impl(&drop_chunk_condition, target_protocol_version, Some(resharding_type));
         test_env.check_receipt_id_to_shard_id();
     }
 
