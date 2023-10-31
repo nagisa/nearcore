@@ -4127,7 +4127,46 @@ impl Chain {
                 );
                 if let Err(err) = apply_chunk_job_result {
                     apply_chunk_errors.push((shard_id, err));
+                    continue;
                 }
+
+                let chunk = self.get_chunk_clone_from_header(&chunk_header.clone())?;
+
+                let transactions = chunk.transactions();
+                if !validate_transactions_order(transactions) {
+                    let merkle_paths = Block::compute_chunk_headers_root(block.chunks().iter()).1;
+                    let chunk_proof = ChunkProofs {
+                        block_header: borsh::to_vec(&block.header()).expect("Failed to serialize"),
+                        merkle_proof: merkle_paths[shard_id as usize].clone(),
+                        chunk: MaybeEncodedShardChunk::Decoded(chunk),
+                    };
+                    let err = Error::InvalidChunkProofs(Box::new(chunk_proof));
+                    apply_chunk_errors.push((shard_id, err));
+                    continue;
+                }
+
+                let protocol_version =
+                    self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
+                if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
+                    let transaction_validity_period = self.transaction_validity_period;
+                    for transaction in transactions {
+                        let error = self
+                            .store()
+                            .check_transaction_validity_period(
+                                prev_block.header(),
+                                &transaction.transaction.block_hash,
+                                transaction_validity_period,
+                            )
+                            .map_err(|_| {
+                                tracing::warn!("Invalid Transactions for mock node");
+                                Error::from(Error::InvalidTransactions)
+                            });
+                        if let Err(err) = error {
+                            apply_chunk_errors.push((shard_id, err));
+                            continue;
+                        }
+                    }
+                };
             }
             // let apply_chunk_job_result = self.get_apply_chunk_job(
             //     me,
