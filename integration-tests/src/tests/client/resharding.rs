@@ -545,7 +545,7 @@ impl TestReshardingEnv {
         let block = env.clients[0].chain.get_block(&block_hash).unwrap();
 
         for (shard_id, chunk_header) in block.chunks().iter().enumerate() {
-            let is_new_chunk = *new_chunk_map.get(&(shard_id as ShardId)).unwrap_or(false);
+            let is_new_chunk = *new_chunk_map.get(&(shard_id as ShardId)).unwrap_or(&false);
             if !is_new_chunk {
                 continue;
             }
