@@ -3881,7 +3881,8 @@ impl Chain {
     ) -> Result<(ChunkExtra, Vec<Receipt>, Vec<ExecutionOutcomeWithId>, WrappedTrieChanges), Error>
     {
         let _span =
-            tracing::debug_span!(target: "chain", "apply_prev_chunk_before_production").entered();
+            tracing::debug_span!(target: "chain", "apply_chunk_from_block_before_production")
+                .entered();
         let shard_uid =
             self.epoch_manager.shard_id_to_uid(shard_id as ShardId, block.header().epoch_id())?;
         let dummy_trie_changes = WrappedTrieChanges::new(
@@ -3891,27 +3892,7 @@ impl Chain {
             vec![],
             *block.hash(),
         );
-        // let last_chunk_included_height = block.chunks()[shard_id].height_included();
-        // let last_chunk_prev_hash = block.chunks()[shard_id].prev_block_hash().clone();
-        // let prev_hash = block.header().prev_hash();
 
-        // let mut blocks_seq = vec![];
-        // let mut current_block = block.hash().clone();
-        // loop {
-        //     if current_block == last_chunk_prev_hash {
-        //         break;
-        //     }
-        //     blocks_seq.push(current_block.clone());
-        //     let block_header = self.get_block_header(&current_block)?;
-        //     current_block = block_header.prev_hash().clone();
-        // }
-        // blocks_seq.reverse();
-
-        // println!("BLOCKS SEQ: {blocks_seq:?}");
-        // for (i, block_hash) in blocks_seq.into_iter().enumerate() {
-        //     println!("ITER {block_hash}");
-        //     // first should be new, others should be old
-        //     let block = self.get_block(&block_hash)?;
         {
             let prev_hash = block.header().prev_hash();
             if prev_hash == &CryptoHash::default() {
