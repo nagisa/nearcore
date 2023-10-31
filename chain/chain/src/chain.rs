@@ -4113,7 +4113,9 @@ impl Chain {
                 }
 
                 // some basic checks of future chunk still must happen, I think
+                println!("get chunk clone START");
                 let chunk = self.get_chunk_clone_from_header(&chunk_header.clone())?;
+                println!("get chunk clone END");
 
                 let transactions = chunk.transactions();
                 if !validate_transactions_order(transactions) {
