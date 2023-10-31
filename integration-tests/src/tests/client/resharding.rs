@@ -1234,7 +1234,7 @@ fn test_shard_layout_upgrade_cross_contract_calls_impl(
 }
 
 fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
-    init_test_logger();
+    // init_test_logger();
 
     // setup
     let epoch_length = 5;
