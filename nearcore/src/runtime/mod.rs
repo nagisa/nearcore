@@ -876,7 +876,6 @@ impl RuntimeAdapter for NightshadeRuntime {
         epoch_id: &EpochId,
         request: &QueryRequest,
     ) -> Result<QueryResponse, near_chain::near_chain_primitives::error::QueryError> {
-        println!("received {:?}", request);
         match request {
             QueryRequest::ViewAccount { account_id } => {
                 let account = self
