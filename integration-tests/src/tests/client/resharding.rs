@@ -1233,7 +1233,7 @@ fn test_shard_layout_upgrade_cross_contract_calls_impl(
     test_env.check_split_states_artifacts();
 }
 
-fn non_resharding_cross_contract_calls_impl(rng_seed: u64) {
+fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
     init_test_logger();
 
     // setup
@@ -1244,7 +1244,7 @@ fn non_resharding_cross_contract_calls_impl(rng_seed: u64) {
 
     let new_accounts = setup_test_env_with_cross_contract_txs(&mut test_env, epoch_length);
 
-    let drop_chunk_condition = DropChunkCondition::new();
+    let drop_chunk_condition = DropChunkCondition::with_probability(prob);
     for _ in 1..5 * epoch_length {
         test_env.step_impl(&drop_chunk_condition, PROTOCOL_VERSION, None);
         test_env.check_receipt_id_to_shard_id();
@@ -1260,14 +1260,19 @@ fn non_resharding_cross_contract_calls_impl(rng_seed: u64) {
 
 #[test]
 fn test_non_resharding_1() {
-    non_resharding_cross_contract_calls_impl(42);
+    non_resharding_cross_contract_calls_impl(0.1, 42);
 }
 
 // Test cross contract calls
 // This test case tests postponed receipts and delayed receipts
 #[test]
 fn test_non_resharding_2() {
-    non_resharding_cross_contract_calls_impl(43);
+    non_resharding_cross_contract_calls_impl(0.5, 43);
+}
+
+#[test]
+fn test_non_resharding_3() {
+    non_resharding_cross_contract_calls_impl(0.9, 44);
 }
 
 // Test cross contract calls
