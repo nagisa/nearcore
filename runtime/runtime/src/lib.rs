@@ -1171,7 +1171,7 @@ impl Runtime {
         state_patch: SandboxStatePatch,
     ) -> Result<ApplyResult, RuntimeError> {
         let receipt_ids: Vec<_> = incoming_receipts.iter().map(|r| r.receipt_id).collect();
-        println!("runtime_apply {receipt_ids}");
+        println!("runtime_apply {receipt_ids:?}");
         // state_patch must be empty unless this is sandbox build.  Thanks to
         // conditional compilation this always resolves to true so technically
         // the check is not necessary.  It’s defence in depth to make sure any
