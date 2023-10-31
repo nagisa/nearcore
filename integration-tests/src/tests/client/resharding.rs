@@ -46,7 +46,7 @@ const SIMPLE_NIGHTSHADE_V2_PROTOCOL_VERSION: ProtocolVersion =
 #[cfg(not(feature = "protocol_feature_simple_nightshade_v2"))]
 const SIMPLE_NIGHTSHADE_V2_PROTOCOL_VERSION: ProtocolVersion = PROTOCOL_VERSION + 1;
 
-const P_CATCHUP: f64 = 0; //0.2;
+const P_CATCHUP: f64 = 0.0; //0.2;
 
 #[derive(Clone, Copy)]
 enum ReshardingType {
