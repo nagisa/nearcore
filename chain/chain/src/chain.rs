@@ -4418,10 +4418,14 @@ impl Chain {
                     }
                     block_hash = prev_hash;
                 }
-                let block = self.get_block(&chunk_prev_hash)?;
-                let prev_prev_chunk_height_included =
-                    block.chunks()[shard_id as usize].height_included();
-                (block_hash, prev_prev_chunk_height_included)
+                if chunk_prev_hash == CryptoHash::default() {
+                    (block_hash, 0)
+                } else {
+                    let block = self.get_block(&chunk_prev_hash)?;
+                    let prev_prev_chunk_height_included =
+                        block.chunks()[shard_id as usize].height_included();
+                    (block_hash, prev_prev_chunk_height_included)
+                }
             } else {
                 (prev_hash.clone(), prev_chunk_height_included)
             };
