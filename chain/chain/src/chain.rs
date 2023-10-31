@@ -4403,12 +4403,28 @@ impl Chain {
         // should be empty for Delayed
         let new_receipts = collect_receipts(incoming_receipts.get(&shard_id).unwrap());
         // because receipts are already in DB
-        let receipts_block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200
-        {
-            block.hash().clone()
-        } else {
-            prev_hash.clone()
-        };
+        let (receipts_block_hash, prev_chunk_height_included) =
+            if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                let chunk_prev_hash = chunk_header.prev_block_hash().clone();
+                let mut block_hash = block.hash().clone();
+                loop {
+                    let header = self.get_block_header(&block_hash)?;
+                    if header.height() < prev_chunk_height_included {
+                        panic!("...");
+                    }
+                    let prev_hash = header.prev_hash().clone();
+                    if prev_hash == chunk_prev_hash {
+                        break;
+                    }
+                    block_hash = prev_hash;
+                }
+                let block = self.get_block(&chunk_prev_hash)?;
+                let prev_prev_chunk_height_included =
+                    block.chunks()[shard_id as usize].height_included();
+                (block_hash, prev_prev_chunk_height_included)
+            } else {
+                (prev_hash.clone(), prev_chunk_height_included)
+            };
         let old_receipts = &self.store().get_incoming_receipts_for_shard(
             self.epoch_manager.as_ref(),
             shard_id,
