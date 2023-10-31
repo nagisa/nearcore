@@ -922,8 +922,9 @@ fn test_shard_layout_upgrade_simple_impl(
     }
 
     let drop_chunk_condition = DropChunkCondition::new();
-    for _ in 1..4 * epoch_length {
+    for i in 1..4 * epoch_length {
         test_env.step_impl(&drop_chunk_condition, target_protocol_version, Some(resharding_type));
+        println!("height {i}");
         test_env.check_receipt_id_to_shard_id();
         test_env.check_snapshot(state_snapshot_enabled);
     }
