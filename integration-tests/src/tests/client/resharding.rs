@@ -724,6 +724,17 @@ fn check_outgoing_receipts_reassigned_impl(
 /// This function checks both state_root from chunk extra and state root from chunk header, if
 /// the corresponding chunk is included in the block
 fn check_account(env: &TestEnv, account_id: &AccountId, block: &Block) {
+    let prev_hash = block.header().prev_hash();
+    if prev_hash == &CryptoHash::default() {
+        return;
+    }
+    let prev_block = env.clients[0].chain.get_block(prev_hash).unwrap();
+    let block = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+        &prev_block
+    } else {
+        block
+    };
+
     tracing::trace!(target: "test", ?account_id, block_height=block.header().height(), "checking account");
     let prev_hash = block.header().prev_hash();
     let shard_layout =
@@ -1194,6 +1205,32 @@ fn test_shard_layout_upgrade_cross_contract_calls_impl(
     let drop_chunk_condition = DropChunkCondition::new();
     for _ in 1..5 * epoch_length {
         test_env.step_impl(&drop_chunk_condition, target_protocol_version, &resharding_type);
+        test_env.check_receipt_id_to_shard_id();
+    }
+
+    let successful_txs = test_env.check_tx_outcomes(false);
+    let new_accounts =
+        successful_txs.iter().flat_map(|tx_hash| new_accounts.get(tx_hash)).collect();
+
+    test_env.check_accounts(new_accounts);
+
+    test_env.check_split_states_artifacts();
+}
+
+fn non_resharding_cross_contract_calls_impl(rng_seed: u64) {
+    init_test_logger();
+
+    // setup
+    let epoch_length = 5;
+
+    let mut test_env =
+        create_test_env_for_cross_contract_test(PROTOCOL_VERSION, epoch_length, rng_seed);
+
+    let new_accounts = setup_test_env_with_cross_contract_txs(&mut test_env, epoch_length);
+
+    let drop_chunk_condition = DropChunkCondition::new();
+    for _ in 1..5 * epoch_length {
+        test_env.step_impl(&drop_chunk_condition, PROTOCOL_VERSION, &resharding_type);
         test_env.check_receipt_id_to_shard_id();
     }
 
