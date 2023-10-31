@@ -1530,7 +1530,7 @@ impl Client {
                     let prev_hash = block.header().prev_hash();
                     let block_height = block.header().height();
                     let epoch_id = block.header().epoch_id();
-                    let pv = self.epoch_manager.get_epoch_protocol_version(epoch_id)?;
+                    let pv = self.epoch_manager.get_epoch_protocol_version(epoch_id).unwrap();
                     let chunks: Vec<_> = block
                         .chunks()
                         .iter()
