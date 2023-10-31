@@ -834,7 +834,9 @@ impl Client {
         // TODO: this awful stuff is needed to pass integration tests
         // They are related to getting freshest execution result for new feature testing
         // And this is inconsistent with `test_congestion_receipt_execution`.
-        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200
+        // NOW I'M TESTING WITHOUT THIS
+        if false
+            && ProtocolFeature::DelayChunkExecution.protocol_version() == 200
             && prev_block.header().prev_hash() != &CryptoHash::default()
         {
             let prev_height = prev_block.header().height();
