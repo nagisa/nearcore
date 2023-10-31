@@ -2491,7 +2491,7 @@ fn test_validate_chunk_extra() {
 
     // About to produce a block on top of block1. Validate that this chunk is legit.
     let b = env.clients[0].produce_block_on(next_height + 2, *block1.hash()).unwrap().unwrap();
-    env.clients[0].process_block_test(b, Provenance::PRODUCED).unwrap();
+    env.clients[0].process_block_test(b.into(), Provenance::PRODUCED).unwrap();
     let chunks = env.clients[0]
         .get_chunk_headers_ready_for_inclusion(block1.header().epoch_id(), &block1.hash());
     let chunk_extra =
