@@ -546,7 +546,7 @@ impl TestReshardingEnv {
 
         for (shard_id, chunk_header) in block.chunks().iter().enumerate() {
             let is_new_chunk = *new_chunk_map.get(&(shard_id as ShardId)).unwrap_or(&false);
-            println!("{shard_id} {is_new_chunk}");
+            println!("{} {shard_id} {is_new_chunk}", chunk_header.height_created());
             if !is_new_chunk {
                 continue;
             }
