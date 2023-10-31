@@ -834,8 +834,7 @@ impl Client {
         // TODO: this awful stuff is needed to pass integration tests
         // They are related to getting freshest execution result for new feature testing
         // And this is inconsistent with `test_congestion_receipt_execution`.
-        // NOW I'M TESTING WITHOUT THIS
-        if false
+        if true
             && ProtocolFeature::DelayChunkExecution.protocol_version() == 200
             && prev_block.header().prev_hash() != &CryptoHash::default()
         {
