@@ -107,17 +107,16 @@ pub fn validate_transactions_order(transactions: &[SignedTransaction]) -> bool {
 
 /// Validate that all next chunk information matches previous chunk extra.
 pub fn validate_chunk_with_chunk_extra(
-    chain_store: &ChainStore,
+    // chain_store: &ChainStore,
     epoch_manager: &dyn EpochManagerAdapter,
-    prev_block_hash: &CryptoHash,
-    // ---
+    // prev_block_hash: &CryptoHash,
     outgoing_receipts: Vec<Receipt>,
     prev_header: BlockHeader,
     prev_chunk_extra: &ChunkExtra,
     prev_chunk_height_included: BlockHeight,
     chunk_header: &ShardChunkHeader,
 ) -> Result<(), Error> {
-    let prev_header = chain_store.get_block_header(prev_block_hash)?;
+    // let prev_header = chain_store.get_block_header(prev_block_hash)?;
     let prev_height = prev_header.height();
     println!(
         "VALIDATING CHUNK EXTRA: PREV HEIGHT {prev_height} VS HEIGHT {}",
@@ -162,22 +161,23 @@ pub fn validate_chunk_with_chunk_extra(
         //     prev_chunk_height_included,
         // )?;
 
-        let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-            chain_store
-                .get_outgoing_receipts(&prev_block_hash, chunk_header.shard_id())
-                .map(|v| v.to_vec())
-                .unwrap_or_default()
-        } else {
-            chain_store.get_outgoing_receipts_for_shard(
-                epoch_manager,
-                *prev_block_hash,
-                chunk_header.shard_id(),
-                prev_chunk_height_included,
-            )?
-        };
+        // let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+        //     chain_store
+        //         .get_outgoing_receipts(&prev_block_hash, chunk_header.shard_id())
+        //         .map(|v| v.to_vec())
+        //         .unwrap_or_default()
+        // } else {
+        //     chain_store.get_outgoing_receipts_for_shard(
+        //         epoch_manager,
+        //         *prev_block_hash,
+        //         chunk_header.shard_id(),
+        //         prev_chunk_height_included,
+        //     )?
+        // };
 
         let outgoing_receipts_hashes = {
-            let shard_layout = epoch_manager.get_shard_layout_from_prev_block(prev_block_hash)?;
+            let shard_layout =
+                epoch_manager.get_shard_layout_from_prev_block(prev_header.hash())?;
             Chain::build_receipts_hashes(&outgoing_receipts, &shard_layout)
         };
         let (outgoing_receipts_root, _) = merklize(&outgoing_receipts_hashes);

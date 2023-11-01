@@ -4233,9 +4233,9 @@ impl Chain {
         validate_chunk_with_chunk_extra(
             // It's safe here to use ChainStore instead of ChainStoreUpdate
             // because we're asking prev_chunk_header for already committed block
-            self.store(),
+            // self.store(),
             self.epoch_manager.as_ref(),
-            prev_hash,
+            // prev_hash,
             outgoing_receipts,
             prev_header,
             &prev_chunk_extra,
@@ -4426,9 +4426,9 @@ impl Chain {
             validate_chunk_with_chunk_extra(
                 // It's safe here to use ChainStore instead of ChainStoreUpdate
                 // because we're asking prev_chunk_header for already committed block
-                self.store(),
+                // self.store(),
                 self.epoch_manager.as_ref(),
-                prev_hash,
+                // prev_hash,
                 outgoing_receipts,
                 prev_header,
                 &prev_chunk_extra,

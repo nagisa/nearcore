@@ -2511,9 +2511,9 @@ fn test_validate_chunk_extra() {
             )?
         };
     assert!(validate_chunk_with_chunk_extra(
-        &mut chain_store,
+        // &mut chain_store,
         env.clients[0].epoch_manager.as_ref(),
-        block1.hash(),
+        // block1.hash(),
         outgoing_receipts,
         block1.header().clone(),
         &chunk_extra,
