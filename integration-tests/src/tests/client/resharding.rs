@@ -1259,15 +1259,29 @@ fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
 
     let new_accounts = setup_test_env_with_cross_contract_txs(&mut test_env, epoch_length);
 
+    let drop_chunk_condition = DropChunkCondition::new();
+    for _ in 1..3 {
+        test_env.step(&drop_chunk_condition);
+    }
+
     let drop_chunk_condition = DropChunkCondition::with_probability(prob);
-    for i in 1..5 * epoch_length {
-        println!("height {i}");
-        test_env.step_impl(
-            &drop_chunk_condition,
-            target_protocol_version,
-            Some(resharding_type),
-            true,
-        );
+    for _ in 3..3 * epoch_length {
+        test_env.step(&drop_chunk_condition);
+        let last_height = test_env.env.clients[0].chain.head().unwrap().height;
+        for height in last_height - 3..=last_height {
+            test_env.check_next_block_with_new_chunk(height);
+        }
+        test_env.check_receipt_id_to_shard_id();
+    }
+
+    // make sure all included transactions finished processing
+    let drop_chunk_condition = DropChunkCondition::new();
+    for _ in 3 * epoch_length..5 * epoch_length {
+        test_env.step(&drop_chunk_condition);
+        let last_height = test_env.env.clients[0].chain.head().unwrap().height;
+        for height in last_height - 3..=last_height {
+            test_env.check_next_block_with_new_chunk(height);
+        }
         test_env.check_receipt_id_to_shard_id();
     }
 
