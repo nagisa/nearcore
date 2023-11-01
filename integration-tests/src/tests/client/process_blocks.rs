@@ -2502,12 +2502,14 @@ fn test_validate_chunk_extra() {
             .map(|v| v.to_vec())
             .unwrap_or_default()
     } else {
-        chain_store.get_outgoing_receipts_for_shard(
-            env.clients[0].epoch_manager.as_ref(),
-            *block1.hash(),
-            chunk_header.shard_id(),
-            block1.chunks()[0].height_included(),
-        )?
+        chain_store
+            .get_outgoing_receipts_for_shard(
+                env.clients[0].epoch_manager.as_ref(),
+                *block1.hash(),
+                chunk_header.shard_id(),
+                block1.chunks()[0].height_included(),
+            )
+            .unwrap()
     };
     let shard_layout =
         env.clients[0].epoch_manager.get_shard_layout_from_prev_block(block1.hash()).unwrap();
