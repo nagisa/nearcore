@@ -5835,7 +5835,16 @@ impl<'a> ChainUpdate<'a> {
                 apply_result,
                 apply_split_result_or_state_changes,
             }) => {
-                assert_eq!(block_hash, &apply_result.trie_changes.block_hash);
+                // assert_eq!(block_hash, &apply_result.trie_changes.block_hash);
+                let (block_hash, block) =
+                    if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                        (prev_hash, self.chain_store_update.get_block(&prev_hash)?)
+                    } else {
+                        (block_hash, block.clone())
+                    };
+                let prev_hash = block.header().prev_hash();
+                let height = block.header().height();
+
                 let (outcome_root, outcome_paths) =
                     ApplyTransactionResult::compute_outcomes_proof(&apply_result.outcomes);
                 let shard_id = shard_uid.shard_id();
@@ -5878,7 +5887,7 @@ impl<'a> ChainUpdate<'a> {
                     outcome_paths,
                 );
                 if let Some(apply_results_or_state_changes) = apply_split_result_or_state_changes {
-                    self.process_split_state(block, &shard_uid, apply_results_or_state_changes)?;
+                    self.process_split_state(&block, &shard_uid, apply_results_or_state_changes)?;
                 }
             }
             ApplyChunkResult::DifferentHeight(DifferentHeightResult {
@@ -5886,6 +5895,15 @@ impl<'a> ChainUpdate<'a> {
                 apply_result,
                 apply_split_result_or_state_changes,
             }) => {
+                let (block_hash, block) =
+                    if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                        (prev_hash, self.chain_store_update.get_block(&prev_hash)?)
+                    } else {
+                        (block_hash, block.clone())
+                    };
+                let prev_hash = block.header().prev_hash();
+                let height = block.header().height();
+
                 let old_extra = self.chain_store_update.get_chunk_extra(prev_hash, &shard_uid)?;
 
                 let mut new_extra = ChunkExtra::clone(&old_extra);
@@ -5905,7 +5923,7 @@ impl<'a> ChainUpdate<'a> {
                 self.chain_store_update.save_trie_changes(apply_result.trie_changes);
 
                 if let Some(apply_results_or_state_changes) = apply_split_result_or_state_changes {
-                    self.process_split_state(block, &shard_uid, apply_results_or_state_changes)?;
+                    self.process_split_state(&block, &shard_uid, apply_results_or_state_changes)?;
                 }
             }
             ApplyChunkResult::SplitState(SplitStateResult { shard_uid, results }) => {
