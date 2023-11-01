@@ -2510,7 +2510,7 @@ fn test_validate_chunk_extra() {
         )?
     };
     let shard_layout =
-        env.clients[0].epoch_manager.get_shard_layout_from_prev_block(block1.hash())?;
+        env.clients[0].epoch_manager.get_shard_layout_from_prev_block(block1.hash()).unwrap();
     assert!(validate_chunk_with_chunk_extra(
         // &mut chain_store,
         // env.clients[0].epoch_manager.as_ref(),
