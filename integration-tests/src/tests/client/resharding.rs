@@ -834,7 +834,16 @@ fn setup_genesis(
         epoch_config.num_block_producer_seats_per_shard;
     genesis.config.avg_hidden_validator_seats_per_shard =
         epoch_config.avg_hidden_validator_seats_per_shard;
+
+    genesis.config.block_producer_kickout_threshold = 0;
     genesis.config.chunk_producer_kickout_threshold = 0;
+    // Technically, after ChunkOnlyProducers is enabled, this field is no longer used
+    // We still set it here just in case
+    // config.num_block_producer_seats = 100;
+    // config.num_block_producer_seats_per_shard = vec![100; num_shards];
+    // config.block_producer_kickout_threshold = 80;
+    // config.chunk_producer_kickout_threshold = 80;
+    // config.validator_selection_config.num_chunk_only_producer_seats = 200;
 
     genesis
 }
