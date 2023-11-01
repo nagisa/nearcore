@@ -2,6 +2,7 @@ from serializer import BinarySerializer
 import hashlib
 from ed25519 import SigningKey
 import base58
+from configured_logger import logger
 
 from messages.tx import *
 from messages.crypto import *
@@ -31,6 +32,7 @@ def sign_and_serialize_transaction(receiverId, nonce, actions, blockHash,
                                    accountId, pk, sk):
     tx, hash_ = compute_tx_hash(receiverId, nonce, actions, blockHash,
                                 accountId, pk)
+    logger.info(f"Signed tx with hash {hash_}")
 
     signature = Signature()
     signature.keyType = 0

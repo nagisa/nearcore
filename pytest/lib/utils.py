@@ -60,6 +60,7 @@ class TxContext:
                     self.nodes[from_].signer_key, 'test%s' % to, amt,
                     self.next_nonce,
                     base58.b58decode(last_block_hash.encode('utf8')))
+
                 if use_routing:
                     self.nodes[0].send_tx(tx)
                 else:
