@@ -2410,6 +2410,7 @@ impl<'a> ChainStoreUpdate<'a> {
         }
 
         // 3. Delete block_hash-indexed data
+        println!("gc_col block {block_hash} {}", block.header().height());
         self.gc_col(DBCol::Block, block_hash.as_bytes());
         self.gc_col(DBCol::BlockExtra, block_hash.as_bytes());
         self.gc_col(DBCol::NextBlockHashes, block_hash.as_bytes());

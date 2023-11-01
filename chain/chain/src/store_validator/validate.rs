@@ -669,6 +669,11 @@ pub(crate) fn outcome_id_block_exists(
     block_hash: &CryptoHash,
     _outcome_ids: &[CryptoHash],
 ) -> Result<(), StoreValidatorError> {
+    let x = sv.store.get_ser::<Block>(DBCol::Block, block_hash.as_ref());
+    match x {
+        Err(_) | Ok(None) => println!("outcome_id_block_exists problematic block {block_hash}"),
+        _ => {}
+    }
     unwrap_or_err_db!(
         sv.store.get_ser::<Block>(DBCol::Block, block_hash.as_ref()),
         "Can't get Block from DB"
