@@ -5835,6 +5835,7 @@ impl<'a> ChainUpdate<'a> {
                 apply_result,
                 apply_split_result_or_state_changes,
             }) => {
+                assert_eq!(block_hash, apply_result.trie_changes.block_hash);
                 let (outcome_root, outcome_paths) =
                     ApplyTransactionResult::compute_outcomes_proof(&apply_result.outcomes);
                 let shard_id = shard_uid.shard_id();
