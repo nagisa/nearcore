@@ -5835,6 +5835,16 @@ impl<'a> ChainUpdate<'a> {
                 apply_result,
                 apply_split_result_or_state_changes,
             }) => {
+                let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
+                let store_update = flat_storage_manager.save_flat_state_changes(
+                    *block_hash,
+                    *prev_hash,
+                    height,
+                    shard_uid,
+                    apply_result.trie_changes.state_changes(),
+                )?;
+                self.chain_store_update.merge(store_update);
+
                 // assert_eq!(block_hash, &apply_result.trie_changes.block_hash);
                 let (block_hash, block) =
                     if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
@@ -5863,16 +5873,6 @@ impl<'a> ChainUpdate<'a> {
                     ),
                 );
 
-                let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
-                let store_update = flat_storage_manager.save_flat_state_changes(
-                    *block_hash,
-                    *prev_hash,
-                    height,
-                    shard_uid,
-                    apply_result.trie_changes.state_changes(),
-                )?;
-                self.chain_store_update.merge(store_update);
-
                 self.chain_store_update.save_trie_changes(apply_result.trie_changes);
                 self.chain_store_update.save_outgoing_receipt(
                     block_hash,
@@ -5895,6 +5895,16 @@ impl<'a> ChainUpdate<'a> {
                 apply_result,
                 apply_split_result_or_state_changes,
             }) => {
+                let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
+                let store_update = flat_storage_manager.save_flat_state_changes(
+                    *block_hash,
+                    *prev_hash,
+                    height,
+                    shard_uid,
+                    apply_result.trie_changes.state_changes(),
+                )?;
+                self.chain_store_update.merge(store_update);
+
                 let (block_hash, block) =
                     if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
                         (prev_hash, self.chain_store_update.get_block(&prev_hash)?)
@@ -5908,16 +5918,6 @@ impl<'a> ChainUpdate<'a> {
 
                 let mut new_extra = ChunkExtra::clone(&old_extra);
                 *new_extra.state_root_mut() = apply_result.new_root;
-
-                let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
-                let store_update = flat_storage_manager.save_flat_state_changes(
-                    *block_hash,
-                    *prev_hash,
-                    height,
-                    shard_uid,
-                    apply_result.trie_changes.state_changes(),
-                )?;
-                self.chain_store_update.merge(store_update);
 
                 self.chain_store_update.save_chunk_extra(block_hash, &shard_uid, new_extra);
                 self.chain_store_update.save_trie_changes(apply_result.trie_changes);
