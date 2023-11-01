@@ -10,6 +10,7 @@ use near_primitives::challenge::{
 };
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::merklize;
+use near_primitives::receipt::Receipt;
 use near_primitives::sharding::{ShardChunk, ShardChunkHeader};
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::types::chunk_extra::ChunkExtra;
@@ -109,6 +110,9 @@ pub fn validate_chunk_with_chunk_extra(
     chain_store: &ChainStore,
     epoch_manager: &dyn EpochManagerAdapter,
     prev_block_hash: &CryptoHash,
+    // ---
+    outgoing_receipts: Vec<Receipt>,
+    prev_header: BlockHeader,
     prev_chunk_extra: &ChunkExtra,
     prev_chunk_height_included: BlockHeight,
     chunk_header: &ShardChunkHeader,

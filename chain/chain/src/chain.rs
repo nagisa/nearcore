@@ -4216,12 +4216,28 @@ impl Chain {
         // make chunk extra
         // in true stateless validation, it must happen before applying chunk
         println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
+        let prev_header = self.store().get_block_header(prev_hash)?;
+        let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            self.store()
+                .get_outgoing_receipts(prev_hash, chunk_header.shard_id())
+                .map(|v| v.to_vec())
+                .unwrap_or_default()
+        } else {
+            self.store().get_outgoing_receipts_for_shard(
+                self.epoch_manager.as_ref(),
+                *prev_hash,
+                chunk_header.shard_id(),
+                prev_chunk_header.height_included(),
+            )?
+        };
         validate_chunk_with_chunk_extra(
             // It's safe here to use ChainStore instead of ChainStoreUpdate
             // because we're asking prev_chunk_header for already committed block
             self.store(),
             self.epoch_manager.as_ref(),
             prev_hash,
+            outgoing_receipts,
+            prev_header,
             &prev_chunk_extra,
             prev_chunk_header.height_included(),
             chunk_header,
@@ -4392,12 +4408,29 @@ impl Chain {
 
         // Validate that all next chunk information matches previous chunk extra.
         if ProtocolFeature::DelayChunkExecution.protocol_version() != 200 {
+            let prev_header = self.store().get_block_header(prev_hash)?;
+            let outgoing_receipts =
+                if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                    self.store()
+                        .get_outgoing_receipts(prev_hash, chunk_header.shard_id())
+                        .map(|v| v.to_vec())
+                        .unwrap_or_default()
+                } else {
+                    self.store().get_outgoing_receipts_for_shard(
+                        self.epoch_manager.as_ref(),
+                        *prev_hash,
+                        chunk_header.shard_id(),
+                        prev_chunk_height_included,
+                    )?
+                };
             validate_chunk_with_chunk_extra(
                 // It's safe here to use ChainStore instead of ChainStoreUpdate
                 // because we're asking prev_chunk_header for already committed block
                 self.store(),
                 self.epoch_manager.as_ref(),
                 prev_hash,
+                outgoing_receipts,
+                prev_header,
                 &prev_chunk_extra,
                 prev_chunk_height_included,
                 chunk_header,

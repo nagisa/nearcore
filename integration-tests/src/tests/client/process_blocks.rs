@@ -2496,10 +2496,26 @@ fn test_validate_chunk_extra() {
         .get_chunk_headers_ready_for_inclusion(block1.header().epoch_id(), &block1.hash());
     let chunk_extra =
         env.clients[0].chain.get_chunk_extra(block1.hash(), &ShardUId::single_shard()).unwrap();
+    let outgoing_receipts =
+        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            chain_store
+                .get_outgoing_receipts(block1.hash(), chunk_header.shard_id())
+                .map(|v| v.to_vec())
+                .unwrap_or_default()
+        } else {
+            chain_store.get_outgoing_receipts_for_shard(
+                env.clients[0].epoch_manager.as_ref(),
+                *block1.hash(),
+                chunk_header.shard_id(),
+                block1.chunks()[0].height_included(),,
+            )?
+        };
     assert!(validate_chunk_with_chunk_extra(
         &mut chain_store,
         env.clients[0].epoch_manager.as_ref(),
         block1.hash(),
+        outgoing_receipts,
+        block1.header().clone(),
         &chunk_extra,
         block1.chunks()[0].height_included(),
         &chunks.get(&0).cloned().unwrap().0,
