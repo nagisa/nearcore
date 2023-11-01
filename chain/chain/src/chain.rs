@@ -4084,38 +4084,39 @@ impl Chain {
             .zip(prev_prev_chunk_headers.iter())
             .enumerate()
             .filter_map(|(shard_id, (prev_chunk_header, prev_prev_chunk_header))| {
-        {
-            // XXX: This is a bit questionable -- sandbox state patching works
-            // only for a single shard. This so far has been enough.
-            let state_patch = state_patch.take();
-            let next_chunk_header = &block.chunks()[shard_id as usize];
-            let see_future_chunk = next_chunk_header.height_included() == block.header().height();
+                // XXX: This is a bit questionable -- sandbox state patching works
+                // only for a single shard. This so far has been enough.
+                let state_patch = state_patch.take();
+                let next_chunk_header = &block.chunks()[shard_id as usize];
+                let see_future_chunk =
+                    next_chunk_header.height_included() == block.header().height();
 
-            let maybe_job = self.get_apply_chunk_job(
-                me,
-                Some(see_future_chunk),
-                prev_block,             // block,
-                &prev_prev_block,       // prev_block,
-                prev_chunk_header,      // chunk_header,
-                prev_prev_chunk_header, // prev_chunk_header,
-                shard_id,
-                mode,
-                will_shard_layout_change,
-                &HashMap::from_iter([(shard_id as u64, vec![])]),
-                state_patch,
-                false,
-            );
-            match maybe_job {
-                Ok(Some(processor)) => Some(Ok(processor)),
-                Ok(None) => None,
-                Err(err) => {
-                    if err.is_bad_data() {
-                        invalid_chunks.push(next_chunk_header.clone());
+                let maybe_job = self.get_apply_chunk_job(
+                    me,
+                    Some(see_future_chunk),
+                    prev_block,             // block,
+                    &prev_prev_block,       // prev_block,
+                    prev_chunk_header,      // chunk_header,
+                    prev_prev_chunk_header, // prev_chunk_header,
+                    shard_id,
+                    mode,
+                    will_shard_layout_change,
+                    &HashMap::from_iter([(shard_id as u64, vec![])]),
+                    state_patch,
+                    false,
+                );
+                match maybe_job {
+                    Ok(Some(processor)) => Some(Ok(processor)),
+                    Ok(None) => None,
+                    Err(err) => {
+                        if err.is_bad_data() {
+                            invalid_chunks.push(next_chunk_header.clone());
+                        }
+                        Some(Err(err))
                     }
-                    Some(Err(err))
                 }
-            }
-        }).collect()
+            })
+            .collect()
 
         // let epoch_id = self.epoch_manager.get_epoch_id(prev_hash)?;
         // let num_shards = self.epoch_manager.num_shards(&epoch_id)?;
