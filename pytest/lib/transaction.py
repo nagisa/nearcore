@@ -32,7 +32,7 @@ def sign_and_serialize_transaction(receiverId, nonce, actions, blockHash,
                                    accountId, pk, sk):
     tx, hash_ = compute_tx_hash(receiverId, nonce, actions, blockHash,
                                 accountId, pk)
-    logger.info(f"Signed tx with hash {base58.b58decode(hash_)}")
+    logger.info(f"Signed tx with hash {base58.b58decode(hash_).decode('utf8')}")
 
     signature = Signature()
     signature.keyType = 0
