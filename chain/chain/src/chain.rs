@@ -521,7 +521,7 @@ pub enum VerifyBlockHashAndSignatureResult {
 impl Chain {
     pub fn make_dummy_job(&self, shard_uid: ShardUId) -> ApplyChunkJob {
         let block_hash = self.genesis().hash();
-        let genesis_chunk_extra = self.get_chunk_extra(block_hash, &shard_uid)?;
+        let genesis_chunk_extra = self.get_chunk_extra(block_hash, &shard_uid).unwrap();
         let state_root = genesis_chunk_extra.state_root().clone();
         let gas_limit = genesis_chunk_extra.gas_limit().clone();
         let runtime = self.runtime_adapter.clone();
@@ -2661,8 +2661,7 @@ impl Chain {
                 },
                 state_patch,
                 invalid_chunks,
-            )?;
-            vec![]
+            )?
         } else {
             self.apply_chunks_preprocessing(
                 me,
@@ -3949,6 +3948,7 @@ impl Chain {
                 false,                       // will_shard_layout_change, - I don't know
                 &HashMap::from_iter([(shard_id as u64, vec![])]),
                 SandboxStatePatch::default(),
+                true,
             )?;
 
             let job = match maybe_job {
@@ -4070,28 +4070,28 @@ impl Chain {
         // let incoming_receipts = self.collect_incoming_receipts_from_block(me, prev_block)?;
 
         // resharding, other shard ids, epoch boundary?!
-        let mut apply_results: Vec<ApplyChunkResult> = vec![];
-        let mut applied_chunk_ids = vec![];
-        let mut apply_chunk_errors = vec![];
-        let mut jobs = vec![];
+        // let mut apply_results: Vec<ApplyChunkResult> = vec![];
+        // let mut applied_chunk_ids = vec![];
+        // let mut apply_chunk_errors = vec![];
 
         // Validate current chunk against created chunk extra in a weird way
         // to minimize code changes
-        for (shard_id, (prev_chunk_header, prev_prev_chunk_header)) in
-            prev_block.chunks().iter().zip(prev_prev_chunk_headers.iter()).enumerate().into_iter()
+        // for (shard_id, (prev_chunk_header, prev_prev_chunk_header)) in
+        //     prev_block.chunks().iter().zip(prev_prev_chunk_headers.iter()).enumerate().into_iter()
+        prev_block
+            .chunks()
+            .iter()
+            .zip(prev_prev_chunk_headers.iter())
+            .enumerate()
+            .filter_map(|(shard_id, (prev_chunk_header, prev_prev_chunk_header))| {
         {
             // XXX: This is a bit questionable -- sandbox state patching works
             // only for a single shard. This so far has been enough.
             let state_patch = state_patch.take();
-
-            // maaaaybe there will be extra validation runs
-            // but it shouldn't hurt?
-
             let next_chunk_header = &block.chunks()[shard_id as usize];
             let see_future_chunk = next_chunk_header.height_included() == block.header().height();
 
-            // Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
-            let apply_chunk_job_result = self.get_apply_chunk_job(
+            let maybe_job = self.get_apply_chunk_job(
                 me,
                 Some(see_future_chunk),
                 prev_block,             // block,
@@ -4103,131 +4103,33 @@ impl Chain {
                 will_shard_layout_change,
                 &HashMap::from_iter([(shard_id as u64, vec![])]),
                 state_patch,
+                false,
             );
-
-            let result = match apply_chunk_job_result {
-                Ok(Some(apply_chunk_job)) => apply_chunk_job(&_span),
-                Ok(None) => continue,
-                Err(err) => Err(err),
-            };
-
-            match result {
-                Ok(result) => {
-                    applied_chunk_ids.push(shard_id);
-                    apply_results.push(result);
-                }
+            match maybe_job {
+                Ok(Some(processor)) => Some(Ok(processor)),
+                Ok(None) => None,
                 Err(err) => {
-                    apply_chunk_errors.push((shard_id, err));
+                    if err.is_bad_data() {
+                        invalid_chunks.push(next_chunk_header.clone());
+                    }
+                    Some(Err(err))
                 }
             }
-        }
+        }).collect()
 
-        let epoch_id = self.epoch_manager.get_epoch_id(prev_hash)?;
-        let num_shards = self.epoch_manager.num_shards(&epoch_id)?;
+        // let epoch_id = self.epoch_manager.get_epoch_id(prev_hash)?;
+        // let num_shards = self.epoch_manager.num_shards(&epoch_id)?;
         // Postprocess successfully applied prev chunks
         // It includes saving chunk extras and flat state changes
-        let mut chain_update = self.chain_update();
-        chain_update.apply_chunk_postprocessing(prev_block, apply_results)?;
-        chain_update.save_receipt_id_to_shard_id_for_block(
-            me,
-            prev_hash,
-            prev_prev_hash,
-            num_shards,
-        )?;
-        chain_update.commit()?;
-
-        // TODO: flat storage
-
-        // Just validate chunk headers against chunk extra.
-        // Taking a job is weird, but this seems to minimize new code.
-        for shard_id in applied_chunk_ids {
-            let chunk_header = &block.chunks()[shard_id];
-            let see_future_chunk = chunk_header.height_included() == block.header().height();
-            let prev_chunk_header = &prev_block.chunks()[shard_id];
-            let shard_uid = self
-                .epoch_manager
-                .shard_id_to_uid(shard_id as ShardId, block.header().epoch_id())?;
-            let prev_chunk_extra = self.get_chunk_extra(prev_hash, &shard_uid)?;
-            // let incoming_receipts: HashMap<u64, Vec<ReceiptProof>> =
-            //     HashMap::from_iter([(shard_id as u64, vec![])]);
-            if see_future_chunk {
-                let block_hash = block.hash();
-
-                // in true stateless validation, it must happen before applying chunk
-                println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
-                let apply_chunk_job_result = validate_chunk_with_chunk_extra(
-                    // It's safe here to use ChainStore instead of ChainStoreUpdate
-                    // because we're asking prev_chunk_header for already committed block
-                    self.store(),
-                    self.epoch_manager.as_ref(),
-                    prev_hash,
-                    prev_chunk_extra.as_ref(),
-                    prev_chunk_header.height_included(),
-                    chunk_header,
-                );
-                if let Err(err) = apply_chunk_job_result {
-                    apply_chunk_errors.push((shard_id, err));
-                    continue;
-                }
-
-                // some basic checks of future chunk still must happen, I think
-                println!("get chunk clone START");
-                let chunk = self.get_chunk_clone_from_header(&chunk_header.clone())?;
-                println!("get chunk clone END");
-
-                let transactions = chunk.transactions();
-                if !validate_transactions_order(transactions) {
-                    let merkle_paths = Block::compute_chunk_headers_root(block.chunks().iter()).1;
-                    let chunk_proof = ChunkProofs {
-                        block_header: borsh::to_vec(&block.header()).expect("Failed to serialize"),
-                        merkle_proof: merkle_paths[shard_id as usize].clone(),
-                        chunk: MaybeEncodedShardChunk::Decoded(chunk),
-                    };
-                    let err = Error::InvalidChunkProofs(Box::new(chunk_proof));
-                    apply_chunk_errors.push((shard_id, err));
-                    continue;
-                }
-
-                let protocol_version =
-                    self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
-                if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
-                    let transaction_validity_period = self.transaction_validity_period;
-                    for transaction in transactions {
-                        let error = self
-                            .store()
-                            .check_transaction_validity_period(
-                                prev_block.header(),
-                                &transaction.transaction.block_hash,
-                                transaction_validity_period,
-                            )
-                            .map_err(|_| {
-                                tracing::warn!("Invalid Transactions for mock node");
-                                Error::from(Error::InvalidTransactions)
-                            });
-                        if let Err(err) = error {
-                            apply_chunk_errors.push((shard_id, err));
-                            continue;
-                        }
-                    }
-                };
-            }
-        }
-
-        // If there is any error, return it and mark current chunks as invalid
-        let mut first_err = None;
-        for (shard_id, err) in apply_chunk_errors.into_iter() {
-            if err.is_bad_data() {
-                invalid_chunks.push(block.chunks()[shard_id].clone());
-            }
-            if first_err.is_none() {
-                first_err = Some(err);
-            }
-        }
-        if let Some(err) = first_err {
-            return Err(err);
-        }
-
-        Ok(())
+        // let mut chain_update = self.chain_update();
+        // chain_update.apply_chunk_postprocessing(prev_block, apply_results)?;
+        // chain_update.save_receipt_id_to_shard_id_for_block(
+        //     me,
+        //     prev_hash,
+        //     prev_prev_hash,
+        //     num_shards,
+        // )?;
+        // chain_update.commit()?;
     }
 
     /// Creates jobs that would apply chunks
@@ -4268,6 +4170,7 @@ impl Chain {
                     will_shard_layout_change,
                     incoming_receipts,
                     state_patch,
+                    false,
                 );
 
                 match apply_chunk_job {
@@ -4282,6 +4185,80 @@ impl Chain {
                 }
             })
             .collect()
+    }
+
+    // Lol
+    // Call if `see_future_chunk` and not production
+    fn postvalidate(
+        &self,
+        apply_result: &ApplyTransactionResult,
+        gas_limit: Gas,
+        block: &Block,
+        prev_block: &Block,
+        shard_id: usize,
+    ) -> Result<(), Error> {
+        let block_hash = block.hash();
+        let prev_hash = block.header().prev_hash();
+        let (outcome_root, _) =
+            ApplyTransactionResult::compute_outcomes_proof(&apply_result.outcomes);
+        let prev_chunk_extra = ChunkExtra::new(
+            &apply_result.new_root,
+            outcome_root,
+            apply_result.validator_proposals.clone(),
+            apply_result.total_gas_burnt,
+            gas_limit,
+            apply_result.total_balance_burnt,
+        );
+        let chunk_header = &block.chunks()[shard_id];
+        let prev_chunk_header = &prev_block.chunks()[shard_id];
+
+        // make chunk extra
+        // in true stateless validation, it must happen before applying chunk
+        println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
+        validate_chunk_with_chunk_extra(
+            // It's safe here to use ChainStore instead of ChainStoreUpdate
+            // because we're asking prev_chunk_header for already committed block
+            self.store(),
+            self.epoch_manager.as_ref(),
+            prev_hash,
+            &prev_chunk_extra,
+            prev_chunk_header.height_included(),
+            chunk_header,
+        )?;
+
+        // some basic checks of future chunk still must happen, I think
+        let chunk = self.get_chunk_clone_from_header(&chunk_header.clone())?;
+
+        let transactions = chunk.transactions();
+        if !validate_transactions_order(transactions) {
+            let merkle_paths = Block::compute_chunk_headers_root(block.chunks().iter()).1;
+            let chunk_proof = ChunkProofs {
+                block_header: borsh::to_vec(&block.header()).expect("Failed to serialize"),
+                merkle_proof: merkle_paths[shard_id as usize].clone(),
+                chunk: MaybeEncodedShardChunk::Decoded(chunk),
+            };
+            return Err(Error::InvalidChunkProofs(Box::new(chunk_proof)));
+        }
+
+        let protocol_version =
+            self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
+        if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
+            let transaction_validity_period = self.transaction_validity_period;
+            for transaction in transactions {
+                self.store()
+                    .check_transaction_validity_period(
+                        prev_block.header(),
+                        &transaction.transaction.block_hash,
+                        transaction_validity_period,
+                    )
+                    .map_err(|_| {
+                        tracing::warn!("Invalid Transactions for mock node");
+                        Error::from(Error::InvalidTransactions)
+                    })?;
+            }
+        }
+
+        Ok(())
     }
 
     /// This method returns the closure that is responsible for applying of a single chunk.
@@ -4299,6 +4276,7 @@ impl Chain {
         will_shard_layout_change: bool,
         incoming_receipts: &HashMap<u64, Vec<ReceiptProof>>,
         state_patch: SandboxStatePatch,
+        i_am_producer: bool,
     ) -> Result<Option<ApplyChunkJob>, Error> {
         let shard_id = shard_id as ShardId;
         let block_hash = block.hash();
@@ -4357,6 +4335,7 @@ impl Chain {
                     runtime,
                     epoch_manager,
                     split_state_roots,
+                    i_am_producer,
                 )
             } else {
                 self.get_apply_chunk_job_old_chunk(
@@ -4368,6 +4347,7 @@ impl Chain {
                     runtime,
                     epoch_manager,
                     split_state_roots,
+                    i_am_producer,
                 )
             }
         } else if let Some(split_state_roots) = split_state_roots {
@@ -4400,6 +4380,7 @@ impl Chain {
         runtime: Arc<dyn RuntimeAdapter>,
         epoch_manager: Arc<dyn EpochManagerAdapter>,
         split_state_roots: Option<HashMap<ShardUId, CryptoHash>>,
+        i_am_producer: bool,
     ) -> Result<Option<ApplyChunkJob>, Error> {
         let prev_hash = block.header().prev_hash();
         let shard_id = shard_uid.shard_id();
@@ -4569,6 +4550,15 @@ impl Chain {
                 is_first_block_with_chunk_of_version,
             ) {
                 Ok(apply_result) => {
+                    if !i_am_producer {
+                        self.postvalidate(
+                            &apply_result,
+                            gas_limit,
+                            block,
+                            prev_block,
+                            shard_id as usize,
+                        )?;
+                    }
                     let apply_split_result_or_state_changes = if will_shard_layout_change {
                         Some(ChainUpdate::apply_split_state_changes(
                             epoch_manager.as_ref(),
@@ -4604,6 +4594,7 @@ impl Chain {
         runtime: Arc<dyn RuntimeAdapter>,
         epoch_manager: Arc<dyn EpochManagerAdapter>,
         split_state_roots: Option<HashMap<ShardUId, CryptoHash>>,
+        i_am_producer: bool,
     ) -> Result<Option<ApplyChunkJob>, Error> {
         let shard_id = shard_uid.shard_id();
         let prev_block_hash = *prev_block.hash();
@@ -4656,6 +4647,15 @@ impl Chain {
                 false,
             ) {
                 Ok(apply_result) => {
+                    if !i_am_producer {
+                        self.postvalidate(
+                            &apply_result,
+                            new_extra.gas_limit(),
+                            block,
+                            prev_block,
+                            shard_id as usize,
+                        )?;
+                    }
                     let apply_split_result_or_state_changes = if will_shard_layout_change {
                         Some(ChainUpdate::apply_split_state_changes(
                             epoch_manager.as_ref(),
@@ -5556,6 +5556,7 @@ impl<'a> ChainUpdate<'a> {
             if !care_about_shard {
                 continue;
             }
+            // todo: prev_hash
             let receipt_id_to_shard_id = self.get_receipt_id_to_shard_id(hash, shard_id)?;
             for (receipt_id, shard_id) in receipt_id_to_shard_id {
                 self.chain_store_update.save_receipt_id_to_shard_id(receipt_id, shard_id);
