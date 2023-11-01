@@ -1249,7 +1249,7 @@ fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
     // init_test_logger();
 
     // setup
-    let epoch_length = 5;
+    let epoch_length = 10;
 
     let resharding_type = ReshardingType::V1;
     let genesis_protocol_version = get_genesis_protocol_version(&resharding_type);
@@ -1276,7 +1276,7 @@ fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
 
     // make sure all included transactions finished processing
     let drop_chunk_condition = DropChunkCondition::new();
-    for _ in 3 * epoch_length..8 * epoch_length {
+    for _ in 3 * epoch_length..5 * epoch_length {
         test_env.step(&drop_chunk_condition);
         let last_height = test_env.env.clients[0].chain.head().unwrap().height;
         for height in last_height - 3..=last_height {
