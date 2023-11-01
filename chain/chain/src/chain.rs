@@ -4228,11 +4228,14 @@ impl Chain {
         // in true stateless validation, it must happen before applying chunk
         println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
         let block_header = block.header().clone();
+        // block or prev block?
+        let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(block_hash)?;
         validate_chunk_with_chunk_extra(
             // It's safe here to use ChainStore instead of ChainStoreUpdate
             // because we're asking prev_chunk_header for already committed block
             // self.store(),
-            self.epoch_manager.as_ref(),
+            // self.epoch_manager.as_ref(),
+            shard_layout,
             // prev_hash,
             outgoing_receipts,
             block_header.clone(),
@@ -4414,11 +4417,13 @@ impl Chain {
                 chunk_header.shard_id(),
                 prev_chunk_height_included,
             )?;
+            let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(prev_hash)?;
             validate_chunk_with_chunk_extra(
                 // It's safe here to use ChainStore instead of ChainStoreUpdate
                 // because we're asking prev_chunk_header for already committed block
                 // self.store(),
-                self.epoch_manager.as_ref(),
+                // self.epoch_manager.as_ref(),
+                shard_layout,
                 // prev_hash,
                 outgoing_receipts,
                 prev_header,

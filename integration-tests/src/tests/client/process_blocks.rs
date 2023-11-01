@@ -2510,9 +2510,11 @@ fn test_validate_chunk_extra() {
                 block1.chunks()[0].height_included(),,
             )?
         };
+    let shard_layout = env.clients[0].epoch_manager.get_shard_layout_from_prev_block(block1.hash())?;
     assert!(validate_chunk_with_chunk_extra(
         // &mut chain_store,
-        env.clients[0].epoch_manager.as_ref(),
+        // env.clients[0].epoch_manager.as_ref(),
+        shard_layout,
         // block1.hash(),
         outgoing_receipts,
         block1.header().clone(),
