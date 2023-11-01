@@ -4206,7 +4206,7 @@ impl Chain {
         outgoing_receipts: Vec<Receipt>,
         apply_result: &ApplyTransactionResult,
         gas_limit: Gas,
-        block: &Block,
+        block: Block,
         shard_id: usize,
         next_chunk: ShardChunk,
     ) -> Result<(), Error> {
@@ -4564,7 +4564,6 @@ impl Chain {
         // block or prev block??
         let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(&block_hash)?;
         let block_copy = block.clone();
-        let block = &block_copy;
 
         Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let _span = tracing::debug_span!(
@@ -4607,7 +4606,7 @@ impl Chain {
                             outgoing_receipts,
                             &apply_result,
                             gas_limit,
-                            block,
+                            block_copy,
                             shard_id as usize,
                             next_shard_chunk,
                         )?;
