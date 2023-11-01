@@ -1251,8 +1251,11 @@ fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
     // setup
     let epoch_length = 10;
 
+    let resharding_type = ReshardingType::V1;
+    let genesis_protocol_version = get_genesis_protocol_version(&resharding_type);
+    // let target_protocol_version = get_target_protocol_version(&resharding_type);
     let mut test_env =
-        create_test_env_for_cross_contract_test(PROTOCOL_VERSION, epoch_length, rng_seed);
+        create_test_env_for_cross_contract_test(genesis_protocol_version, epoch_length, rng_seed);
 
     let new_accounts = setup_test_env_with_cross_contract_txs(&mut test_env, epoch_length);
 
