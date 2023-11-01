@@ -1253,7 +1253,7 @@ fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
 
     let resharding_type = ReshardingType::V1;
     let genesis_protocol_version = get_genesis_protocol_version(&resharding_type);
-    let target_protocol_version = get_target_protocol_version(&resharding_type);
+    let target_protocol_version = PROTOCOL_VERSION; // get_target_protocol_version(&resharding_type);
     let mut test_env =
         create_test_env_for_cross_contract_test(genesis_protocol_version, epoch_length, rng_seed);
 
