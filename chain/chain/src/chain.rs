@@ -4563,6 +4563,8 @@ impl Chain {
         };
         // block or prev block??
         let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(&block_hash)?;
+        let block_copy = block.clone();
+        let block = &block_copy;
 
         Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let _span = tracing::debug_span!(
