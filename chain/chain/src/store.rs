@@ -42,7 +42,7 @@ use near_primitives::utils::{
     get_block_shard_id, get_outcome_id_block_hash, get_outcome_id_block_hash_rev, index_to_bytes,
     to_timestamp,
 };
-use near_primitives::version::ProtocolVersion;
+use near_primitives::version::{ProtocolFeature, ProtocolVersion};
 use near_primitives::views::LightClientBlockView;
 use near_store::{
     DBCol, KeyForStateChanges, ShardTries, Store, StoreUpdate, WrappedTrieChanges, CHUNK_TAIL_KEY,
@@ -2652,6 +2652,11 @@ impl<'a> ChainStoreUpdate<'a> {
         for chunk_header in
             block.chunks().iter().filter(|h| h.height_included() == block.header().height())
         {
+            let block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                *block.header().prev_hash()
+            } else {
+                block_hash
+            };
             let shard_id = chunk_header.shard_id();
             let outcome_ids =
                 self.chain_store.get_outcomes_by_block_hash_and_shard_id(block_hash, shard_id)?;

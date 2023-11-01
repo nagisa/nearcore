@@ -20,7 +20,9 @@ nightly = len(sys.argv) > 1
 genesis_change = [
     ["num_block_producer_seats", 199],
     ["num_block_producer_seats_per_shard", [24, 25, 25, 25, 25, 25, 25, 25]],
-    ["min_gas_price", 0], ["max_inflation_rate", [0, 1]], ["epoch_length", 5],
+    ["min_gas_price", 0], ["max_inflation_rate", [0, 1]],
+    # it was 10, seriously?? and then node got killed?? obviously rearrangement of validators takes time, no??
+    ["epoch_length", 5],
     ["block_producer_kickout_threshold", 60],
     ["chunk_producer_kickout_threshold", 60],
     ["validators", 0, "amount", "110000000000000000000000000000000"],
