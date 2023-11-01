@@ -518,6 +518,13 @@ pub enum VerifyBlockHashAndSignatureResult {
     CannotVerifyBecauseBlockIsOrphan,
 }
 
+#[derive(PartialEq, Eq)]
+pub enum FutureValidationMode {
+    None, // no delay, or not received chunk
+    IAmProducer,
+    StateWitness(ShardChunk),
+}
+
 impl Chain {
     pub fn make_dummy_job(&self, shard_uid: ShardUId) -> ApplyChunkJob {
         let block_hash = self.genesis().hash();
@@ -3938,7 +3945,7 @@ impl Chain {
             let maybe_job = self.get_apply_chunk_job(
                 me,
                 // we are producer of next chunk
-                Some(true),
+                FutureValidationMode::IAmProducer,
                 &block,
                 &prev_block,
                 &block.chunks()[shard_id],
@@ -3948,7 +3955,6 @@ impl Chain {
                 false,                       // will_shard_layout_change, - I don't know
                 &HashMap::from_iter([(shard_id as u64, vec![])]),
                 SandboxStatePatch::default(),
-                true,
             )?;
 
             let job = match maybe_job {
@@ -4088,12 +4094,18 @@ impl Chain {
                 // only for a single shard. This so far has been enough.
                 let state_patch = state_patch.take();
                 let next_chunk_header = &block.chunks()[shard_id as usize];
-                let see_future_chunk =
-                    next_chunk_header.height_included() == block.header().height();
+                let future_validation_mode =
+                    if next_chunk_header.height_included() == block.header().height() {
+                        FutureValidationMode::StateWitness(
+                            self.get_chunk_clone_from_header(next_chunk_header)?,
+                        )
+                    } else {
+                        FutureValidationMode::None
+                    };
 
                 let maybe_job = self.get_apply_chunk_job(
                     me,
-                    Some(see_future_chunk),
+                    future_validation_mode,
                     prev_block,             // block,
                     &prev_prev_block,       // prev_block,
                     prev_chunk_header,      // chunk_header,
@@ -4103,7 +4115,6 @@ impl Chain {
                     will_shard_layout_change,
                     &HashMap::from_iter([(shard_id as u64, vec![])]),
                     state_patch,
-                    false,
                 );
                 match maybe_job {
                     Ok(Some(processor)) => Some(Ok(processor)),
@@ -4161,7 +4172,7 @@ impl Chain {
 
                 let apply_chunk_job = self.get_apply_chunk_job(
                     me,
-                    None,
+                    FutureValidationMode::None,
                     block,
                     prev_block,
                     chunk_header,
@@ -4171,7 +4182,6 @@ impl Chain {
                     will_shard_layout_change,
                     incoming_receipts,
                     state_patch,
-                    false,
                 );
 
                 match apply_chunk_job {
@@ -4192,17 +4202,18 @@ impl Chain {
     // Call if `see_future_chunk` and not production
     fn postvalidate(
         &self,
+        outgoing_receipts: Vec<Receipt>,
         apply_result: &ApplyTransactionResult,
         gas_limit: Gas,
         block: &Block,
-        prev_block: &Block,
         shard_id: usize,
+        next_chunk: ShardChunk,
     ) -> Result<(), Error> {
         let block_hash = block.hash();
         let prev_hash = block.header().prev_hash();
         let (outcome_root, _) =
             ApplyTransactionResult::compute_outcomes_proof(&apply_result.outcomes);
-        let prev_chunk_extra = ChunkExtra::new(
+        let chunk_extra = ChunkExtra::new(
             &apply_result.new_root,
             outcome_root,
             apply_result.validator_proposals.clone(),
@@ -4211,25 +4222,12 @@ impl Chain {
             apply_result.total_balance_burnt,
         );
         let chunk_header = &block.chunks()[shard_id];
-        let prev_chunk_header = &prev_block.chunks()[shard_id];
+        let next_chunk_header = next_chunk.cloned_header();
 
         // make chunk extra
         // in true stateless validation, it must happen before applying chunk
         println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
-        let prev_header = self.store().get_block_header(prev_hash)?;
-        let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-            self.store()
-                .get_outgoing_receipts(prev_hash, chunk_header.shard_id())
-                .map(|v| v.to_vec())
-                .unwrap_or_default()
-        } else {
-            self.store().get_outgoing_receipts_for_shard(
-                self.epoch_manager.as_ref(),
-                *prev_hash,
-                chunk_header.shard_id(),
-                prev_chunk_header.height_included(),
-            )?
-        };
+        let block_header = block.header().clone();
         validate_chunk_with_chunk_extra(
             // It's safe here to use ChainStore instead of ChainStoreUpdate
             // because we're asking prev_chunk_header for already committed block
@@ -4237,22 +4235,21 @@ impl Chain {
             self.epoch_manager.as_ref(),
             // prev_hash,
             outgoing_receipts,
-            prev_header,
-            &prev_chunk_extra,
-            prev_chunk_header.height_included(),
-            chunk_header,
+            block_header.clone(),
+            &chunk_extra,
+            chunk_header.height_included(),
+            &next_chunk_header,
         )?;
 
         // some basic checks of future chunk still must happen, I think
-        let chunk = self.get_chunk_clone_from_header(&chunk_header.clone())?;
 
-        let transactions = chunk.transactions();
+        let transactions = next_chunk.transactions();
         if !validate_transactions_order(transactions) {
             let merkle_paths = Block::compute_chunk_headers_root(block.chunks().iter()).1;
             let chunk_proof = ChunkProofs {
                 block_header: borsh::to_vec(&block.header()).expect("Failed to serialize"),
                 merkle_proof: merkle_paths[shard_id as usize].clone(),
-                chunk: MaybeEncodedShardChunk::Decoded(chunk),
+                chunk: MaybeEncodedShardChunk::Decoded(next_chunk),
             };
             return Err(Error::InvalidChunkProofs(Box::new(chunk_proof)));
         }
@@ -4264,7 +4261,7 @@ impl Chain {
             for transaction in transactions {
                 self.store()
                     .check_transaction_validity_period(
-                        prev_block.header(),
+                        &block_header,
                         &transaction.transaction.block_hash,
                         transaction_validity_period,
                     )
@@ -4283,7 +4280,8 @@ impl Chain {
         &self,
         me: &Option<AccountId>,
         // enabled only for delayed chunk execution
-        see_future_chunk: Option<bool>,
+        future_validation_mode: FutureValidationMode,
+        // see_future_chunk: Option<bool>,
         block: &Block,
         prev_block: &Block,
         chunk_header: &ShardChunkHeader,
@@ -4293,7 +4291,6 @@ impl Chain {
         will_shard_layout_change: bool,
         incoming_receipts: &HashMap<u64, Vec<ReceiptProof>>,
         state_patch: SandboxStatePatch,
-        i_am_producer: bool,
     ) -> Result<Option<ApplyChunkJob>, Error> {
         let shard_id = shard_id as ShardId;
         let block_hash = block.hash();
@@ -4331,8 +4328,11 @@ impl Chain {
         };
 
         let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, block.header().epoch_id())?;
-        let is_new_chunk = if let Some(see_future_chunk) = see_future_chunk {
-            see_future_chunk
+        let is_new_chunk = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            matches!(
+                future_validation_mode,
+                FutureValidationMode::IAmProducer | FutureValidationMode::StateWitness(_)
+            )
         } else {
             chunk_header.height_included() == block.header().height()
         };
@@ -4352,7 +4352,7 @@ impl Chain {
                     runtime,
                     epoch_manager,
                     split_state_roots,
-                    i_am_producer,
+                    future_validation_mode,
                 )
             } else {
                 self.get_apply_chunk_job_old_chunk(
@@ -4364,7 +4364,6 @@ impl Chain {
                     runtime,
                     epoch_manager,
                     split_state_roots,
-                    i_am_producer,
                 )
             }
         } else if let Some(split_state_roots) = split_state_roots {
@@ -4386,8 +4385,8 @@ impl Chain {
     /// Returns the apply chunk job when applying a new chunk and applying transactions.
     fn get_apply_chunk_job_new_chunk(
         &self,
-        block: &Block,      // 5
-        prev_block: &Block, // 4
+        block: &Block,
+        prev_block: &Block,
         chunk_header: &ShardChunkHeader,
         prev_chunk_header: &ShardChunkHeader,
         shard_uid: ShardUId,
@@ -4397,7 +4396,7 @@ impl Chain {
         runtime: Arc<dyn RuntimeAdapter>,
         epoch_manager: Arc<dyn EpochManagerAdapter>,
         split_state_roots: Option<HashMap<ShardUId, CryptoHash>>,
-        i_am_producer: bool,
+        future_validation_mode: FutureValidationMode,
     ) -> Result<Option<ApplyChunkJob>, Error> {
         let prev_hash = block.header().prev_hash();
         let shard_id = shard_uid.shard_id();
@@ -4409,20 +4408,12 @@ impl Chain {
         // Validate that all next chunk information matches previous chunk extra.
         if ProtocolFeature::DelayChunkExecution.protocol_version() != 200 {
             let prev_header = self.store().get_block_header(prev_hash)?;
-            let outgoing_receipts =
-                if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-                    self.store()
-                        .get_outgoing_receipts(prev_hash, chunk_header.shard_id())
-                        .map(|v| v.to_vec())
-                        .unwrap_or_default()
-                } else {
-                    self.store().get_outgoing_receipts_for_shard(
-                        self.epoch_manager.as_ref(),
-                        *prev_hash,
-                        chunk_header.shard_id(),
-                        prev_chunk_height_included,
-                    )?
-                };
+            let outgoing_receipts = self.store().get_outgoing_receipts_for_shard(
+                self.epoch_manager.as_ref(),
+                *prev_hash,
+                chunk_header.shard_id(),
+                prev_chunk_height_included,
+            )?;
             validate_chunk_with_chunk_extra(
                 // It's safe here to use ChainStore instead of ChainStoreUpdate
                 // because we're asking prev_chunk_header for already committed block
@@ -4551,6 +4542,20 @@ impl Chain {
             return Ok(Some(self.make_dummy_job(shard_uid)));
         }
 
+        let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            self.store()
+                .get_outgoing_receipts(prev_hash, chunk_header.shard_id())
+                .map(|v| v.to_vec())
+                .unwrap_or_default()
+        } else {
+            self.store().get_outgoing_receipts_for_shard(
+                self.epoch_manager.as_ref(),
+                *prev_hash,
+                chunk_header.shard_id(),
+                prev_chunk_header.height_included(),
+            )?
+        };
+
         Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let _span = tracing::debug_span!(
                 target: "chain",
@@ -4584,13 +4589,16 @@ impl Chain {
                 is_first_block_with_chunk_of_version,
             ) {
                 Ok(apply_result) => {
-                    if !i_am_producer {
+                    if let FutureValidationMode::StateWitness(next_shard_chunk) =
+                        future_validation_mode
+                    {
                         self.postvalidate(
+                            outgoing_receipts,
                             &apply_result,
                             gas_limit,
                             block,
-                            prev_block,
                             shard_id as usize,
+                            next_shard_chunk,
                         )?;
                     }
                     let apply_split_result_or_state_changes = if will_shard_layout_change {
@@ -4628,7 +4636,6 @@ impl Chain {
         runtime: Arc<dyn RuntimeAdapter>,
         epoch_manager: Arc<dyn EpochManagerAdapter>,
         split_state_roots: Option<HashMap<ShardUId, CryptoHash>>,
-        i_am_producer: bool,
     ) -> Result<Option<ApplyChunkJob>, Error> {
         let shard_id = shard_uid.shard_id();
         let prev_block_hash = *prev_block.hash();
@@ -4681,15 +4688,6 @@ impl Chain {
                 false,
             ) {
                 Ok(apply_result) => {
-                    if !i_am_producer {
-                        self.postvalidate(
-                            &apply_result,
-                            new_extra.gas_limit(),
-                            block,
-                            prev_block,
-                            shard_id as usize,
-                        )?;
-                    }
                     let apply_split_result_or_state_changes = if will_shard_layout_change {
                         Some(ChainUpdate::apply_split_state_changes(
                             epoch_manager.as_ref(),
