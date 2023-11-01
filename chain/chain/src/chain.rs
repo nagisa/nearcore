@@ -4096,9 +4096,9 @@ impl Chain {
                 let next_chunk_header = &block.chunks()[shard_id as usize];
                 let future_validation_mode =
                     if next_chunk_header.height_included() == block.header().height() {
-                        FutureValidationMode::StateWitness(
-                            self.get_chunk_clone_from_header(next_chunk_header)?,
-                        )
+                        // bad unwrap
+                        let chunk = self.get_chunk_clone_from_header(next_chunk_header).unwrap();
+                        FutureValidationMode::StateWitness(chunk)
                     } else {
                         FutureValidationMode::None
                     };
