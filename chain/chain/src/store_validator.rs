@@ -143,19 +143,8 @@ impl StoreValidator {
                     self.check(&validate::header_hash_indexed_by_height, &block_hash, &header, col);
                 }
                 DBCol::Block => {
-                    let (block_hash, block) =
-                        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-                            let block = Block::try_from_slice(value_ref)?;
-                            let prev_hash = block.header().prev_hash();
-                            let prev_value = self.store.get(DBCol::Block, prev_hash.as_ref())?;
-                            let prev_block = match prev_value {
-                                None => continue, // can be GC-d already or trivial
-                                Some(prev_value) => Block::try_from_slice(&prev_value)?,
-                            };
-                            (*prev_hash, prev_block)
-                        } else {
-                            (CryptoHash::try_from(key_ref)?, Block::try_from_slice(value_ref)?)
-                        };
+                    let block_hash = CryptoHash::try_from(key_ref)?;
+                    let block = Block::try_from_slice(value_ref)?;
 
                     // Block Hash is valid
                     self.check(&validate::block_hash_validity, &block_hash, &block, col);
@@ -165,8 +154,6 @@ impl StoreValidator {
                     self.check(&validate::block_indexed_by_height, &block_hash, &block, col);
                     // Block Header for current Block exists
                     self.check(&validate::block_header_exists, &block_hash, &block, col);
-                    // Chunks for current Block exist
-                    self.check(&validate::block_chunks_exist, &block_hash, &block, col);
                     // Chunks for current Block have Height Created not higher than Block Height
                     self.check(&validate::block_chunks_height_validity, &block_hash, &block, col);
                     // BlockInfo for current Block exists
@@ -175,6 +162,18 @@ impl StoreValidator {
                     self.check(&validate::block_epoch_exists, &block_hash, &block, col);
                     // Increase Block Refcount
                     self.check(&validate::block_increment_refcount, &block_hash, &block, col);
+
+                    let raw_refcount = self.store.get(DBCol::BlockRefCount, block_hash.as_ref())?;
+                    let refcount = match raw_refcount {
+                        None => continue, // can be GC-d already or trivial
+                        Some(raw_refcount) => u64::try_from_slice(&raw_refcount)?,
+                    };
+                    if refcount == 0 {
+                        continue;
+                    }
+
+                    // Chunks for current Block exist
+                    self.check(&validate::block_chunks_exist, &block_hash, &block, col);
                 }
                 DBCol::BlockHeight => {
                     let height = BlockHeight::try_from_slice(key_ref)?;
