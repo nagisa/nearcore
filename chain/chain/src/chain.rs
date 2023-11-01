@@ -4201,7 +4201,8 @@ impl Chain {
     // Lol
     // Call if `see_future_chunk` and not production
     fn postvalidate(
-        &self,
+        // &self,
+        shard_layout: ShardLayout,
         outgoing_receipts: Vec<Receipt>,
         apply_result: &ApplyTransactionResult,
         gas_limit: Gas,
@@ -4229,7 +4230,6 @@ impl Chain {
         println!("call validate_chunk_with_chunk_extra {prev_hash} -> {block_hash}");
         let block_header = block.header().clone();
         // block or prev block?
-        let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(block_hash)?;
         validate_chunk_with_chunk_extra(
             // It's safe here to use ChainStore instead of ChainStoreUpdate
             // because we're asking prev_chunk_header for already committed block
@@ -4257,23 +4257,24 @@ impl Chain {
             return Err(Error::InvalidChunkProofs(Box::new(chunk_proof)));
         }
 
-        let protocol_version =
-            self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
-        if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
-            let transaction_validity_period = self.transaction_validity_period;
-            for transaction in transactions {
-                self.store()
-                    .check_transaction_validity_period(
-                        &block_header,
-                        &transaction.transaction.block_hash,
-                        transaction_validity_period,
-                    )
-                    .map_err(|_| {
-                        tracing::warn!("Invalid Transactions for mock node");
-                        Error::from(Error::InvalidTransactions)
-                    })?;
-            }
-        }
+        // reintroduce later.
+        // let protocol_version =
+        //     self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
+        // if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
+        //     let transaction_validity_period = self.transaction_validity_period;
+        //     for transaction in transactions {
+        //         self.store()
+        //             .check_transaction_validity_period(
+        //                 &block_header,
+        //                 &transaction.transaction.block_hash,
+        //                 transaction_validity_period,
+        //             )
+        //             .map_err(|_| {
+        //                 tracing::warn!("Invalid Transactions for mock node");
+        //                 Error::from(Error::InvalidTransactions)
+        //             })?;
+        //     }
+        // }
 
         Ok(())
     }
@@ -4560,6 +4561,8 @@ impl Chain {
                 prev_chunk_header.height_included(),
             )?
         };
+        // block or prev block??
+        let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(&block_hash)?;
 
         Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let _span = tracing::debug_span!(
@@ -4597,7 +4600,8 @@ impl Chain {
                     if let FutureValidationMode::StateWitness(next_shard_chunk) =
                         future_validation_mode
                     {
-                        self.postvalidate(
+                        Chain::postvalidate(
+                            shard_layout,
                             outgoing_receipts,
                             &apply_result,
                             gas_limit,
