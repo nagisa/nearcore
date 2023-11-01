@@ -3956,6 +3956,9 @@ impl Chain {
                         apply_result.total_balance_burnt,
                     );
 
+                    // that's really tricky.
+                    // next, when we apply txns, we need to have trie to get correct nonces, balances, etc.
+                    // but FS is not necessary
                     // let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
                     // let store_update = flat_storage_manager.save_flat_state_changes(
                     //     *block_hash,
@@ -3966,9 +3969,14 @@ impl Chain {
                     // )?;
                     // self.chain_store_update.merge(store_update);
 
-                    chain_update
-                        .chain_store_update
-                        .save_trie_changes(apply_result.trie_changes.clone());
+                    let mut store_update =
+                        chain_update.chain_store_update.store().clone().store_update();
+                    apply_result.trie_changes.insertions_into(&mut store_update);
+                    chain_update.chain_store_update.merge(store_update);
+
+                    // chain_update
+                    //     .chain_store_update
+                    //     .save_trie_changes(apply_result.trie_changes.clone());
 
                     (
                         chunk_extra,

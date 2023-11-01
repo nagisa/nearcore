@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -29,6 +30,7 @@ use validate::StoreValidatorError;
 use crate::types::RuntimeAdapter;
 use near_primitives::shard_layout::get_block_shard_uid_rev;
 use near_primitives::static_clock::StaticClock;
+use near_primitives::version::ProtocolFeature;
 
 mod validate;
 
@@ -141,8 +143,20 @@ impl StoreValidator {
                     self.check(&validate::header_hash_indexed_by_height, &block_hash, &header, col);
                 }
                 DBCol::Block => {
-                    let block_hash = CryptoHash::try_from(key_ref)?;
-                    let block = Block::try_from_slice(value_ref)?;
+                    let (block_hash, block) =
+                        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                            let block = Block::try_from_slice(value_ref)?;
+                            let prev_hash = block.header().prev_hash();
+                            let prev_value = self.store.get(DBCol::Block, prev_hash.as_ref())?;
+                            let prev_block = match prev_value {
+                                None => continue, // can be GC-d already or trivial
+                                Some(prev_value) => Block::try_from_slice(&prev_value)?,
+                            };
+                            (*prev_hash, prev_block)
+                        } else {
+                            (CryptoHash::try_from(key_ref)?, Block::try_from_slice(value_ref)?)
+                        };
+
                     // Block Hash is valid
                     self.check(&validate::block_hash_validity, &block_hash, &block, col);
                     // Block Height is valid
@@ -200,8 +214,10 @@ impl StoreValidator {
                 }
                 DBCol::TrieChanges => {
                     let (block_hash, shard_uid) = get_block_shard_uid_rev(key_ref)?;
+
                     let trie_changes = TrieChanges::try_from_slice(value_ref)?;
                     // ShardChunk should exist for current TrieChanges
+                    // not necessarily the case with 200 chunk production, hm.
                     self.check(
                         &validate::trie_changes_chunk_extra_exists,
                         &(block_hash, shard_uid),
