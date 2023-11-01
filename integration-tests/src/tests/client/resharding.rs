@@ -816,15 +816,6 @@ fn setup_genesis(
         genesis.config.gas_limit = gas_limit;
     }
 
-    // println!(
-    //     "{} {} {} {} {}",
-    //     genesis.config.num_block_producer_seats,
-    //     genesis.config.num_block_producer_seats_per_shard,
-    //     genesis.config.block_producer_kickout_threshold,
-    //     genesis.config.chunk_producer_kickout_threshold,
-    //     genesis.config.validator_selection_config.num_chunk_only_producer_seats
-    // );
-
     // The block producer assignment often happens to be unlucky enough to not
     // include one of the validators in the first epoch. When that happens the
     // new protocol version gets only 75% of the votes which is lower that the
@@ -843,16 +834,6 @@ fn setup_genesis(
         epoch_config.num_block_producer_seats_per_shard;
     genesis.config.avg_hidden_validator_seats_per_shard =
         epoch_config.avg_hidden_validator_seats_per_shard;
-
-    // genesis.config.block_producer_kickout_threshold = 0;
-    genesis.config.chunk_producer_kickout_threshold = 0;
-    // Technically, after ChunkOnlyProducers is enabled, this field is no longer used
-    // We still set it here just in case
-    // config.num_block_producer_seats = 100;
-    // config.num_block_producer_seats_per_shard = vec![100; num_shards];
-    // config.block_producer_kickout_threshold = 80;
-    // config.chunk_producer_kickout_threshold = 80;
-    // config.validator_selection_config.num_chunk_only_producer_seats = 200;
 
     genesis
 }
@@ -1270,8 +1251,8 @@ fn non_resharding_cross_contract_calls_impl(prob: f64, rng_seed: u64) {
     let epoch_length = 10;
 
     let resharding_type = ReshardingType::V1;
-    let genesis_protocol_version = 56; // PROTOCOL_VERSION; //get_genesis_protocol_version(&resharding_type);
-    let target_protocol_version = 56; //PROTOCOL_VERSION; // get_target_protocol_version(&resharding_type);
+    let genesis_protocol_version = PROTOCOL_VERSION; //get_genesis_protocol_version(&resharding_type);
+    let target_protocol_version = PROTOCOL_VERSION; // get_target_protocol_version(&resharding_type);
     let mut test_env =
         create_test_env_for_cross_contract_test(genesis_protocol_version, epoch_length, rng_seed);
 
