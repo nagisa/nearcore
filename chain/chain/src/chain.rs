@@ -527,8 +527,8 @@ pub enum FutureValidationMode {
 
 impl Chain {
     pub fn make_dummy_job(&self, shard_uid: ShardUId) -> ApplyChunkJob {
-        let block_hash = self.genesis().hash();
-        let genesis_chunk_extra = self.get_chunk_extra(block_hash, &shard_uid).unwrap();
+        let block_hash = self.genesis().hash().clone();
+        let genesis_chunk_extra = self.get_chunk_extra(&block_hash, &shard_uid).unwrap();
         let state_root = genesis_chunk_extra.state_root().clone();
         let gas_limit = genesis_chunk_extra.gas_limit().clone();
         let runtime = self.runtime_adapter.clone();
@@ -542,7 +542,7 @@ impl Chain {
                         shard_uid,
                         TrieChanges::empty(state_root),
                         vec![],
-                        *block_hash,
+                        block_hash,
                     ),
                     new_root: state_root,
                     outcomes: vec![],
