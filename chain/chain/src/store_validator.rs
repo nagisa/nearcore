@@ -163,10 +163,11 @@ impl StoreValidator {
                     // Increase Block Refcount
                     self.check(&validate::block_increment_refcount, &block_hash, &block, col);
 
-                    let raw_refcount = self.store.get(DBCol::BlockRefCount, block_hash.as_ref())?;
-                    let refcount = match raw_refcount {
-                        None => continue, // can be GC-d already or trivial
-                        Some(raw_refcount) => u64::try_from_slice(&raw_refcount)?,
+                    let refcount = {
+                        match self.store.get(DBCol::BlockRefCount, block_hash.as_ref())? {
+                            None => continue, // can be GC-d already or trivial
+                            Some(raw_refcount) => u64::try_from_slice(&raw_refcount)?.clone(),
+                        }
                     };
                     if refcount == 0 {
                         continue;
