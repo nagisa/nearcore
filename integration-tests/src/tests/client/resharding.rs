@@ -809,7 +809,6 @@ fn setup_genesis(
 ) -> Genesis {
     let mut genesis = Genesis::test(initial_accounts, num_validators);
     // No kickout, since we are going to test missing chunks
-    genesis.config.chunk_producer_kickout_threshold = 0;
     genesis.config.epoch_length = epoch_length;
     genesis.config.protocol_version = genesis_protocol_version;
     genesis.config.use_production_config = true;
@@ -835,6 +834,7 @@ fn setup_genesis(
         epoch_config.num_block_producer_seats_per_shard;
     genesis.config.avg_hidden_validator_seats_per_shard =
         epoch_config.avg_hidden_validator_seats_per_shard;
+    genesis.config.chunk_producer_kickout_threshold = 0;
 
     genesis
 }
