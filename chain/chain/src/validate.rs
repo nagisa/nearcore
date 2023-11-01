@@ -177,9 +177,8 @@ pub fn validate_chunk_with_chunk_extra(
         //     )?
         // };
 
-        let outgoing_receipts_hashes = {
-            Chain::build_receipts_hashes(&outgoing_receipts, &shard_layout)
-        };
+        let outgoing_receipts_hashes =
+            { Chain::build_receipts_hashes(&outgoing_receipts, &shard_layout) };
         let (outgoing_receipts_root, _) = merklize(&outgoing_receipts_hashes);
         outgoing_receipts_root
     } else {
@@ -188,7 +187,7 @@ pub fn validate_chunk_with_chunk_extra(
 
     if outgoing_receipts_root != chunk_header.prev_outgoing_receipts_root() {
         println!(
-        chunk_header_prev_hash={chunk_header_prev_hash} \
+            "chunk_header_prev_hash={chunk_header_prev_hash} \
         prev_chunk_height_included={prev_chunk_height_included} \
         outgoing_receipts_root={outgoing_receipts_root} \
         chunk_header.prev_outgoing_receipts_root={}",
