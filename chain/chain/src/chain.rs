@@ -519,6 +519,37 @@ pub enum VerifyBlockHashAndSignatureResult {
 }
 
 impl Chain {
+    pub fn make_dummy_job(&self, shard_uid: ShardUId) -> ApplyChunkJob {
+        let block_hash = self.genesis().hash();
+        let genesis_chunk_extra = self.get_chunk_extra(block_hash, &shard_uid)?;
+        let state_root = genesis_chunk_extra.state_root().clone();
+        let gas_limit = genesis_chunk_extra.gas_limit().clone();
+        let runtime = self.runtime_adapter.clone();
+        Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
+            Ok(ApplyChunkResult::SameHeight(SameHeightResult {
+                shard_uid,
+                gas_limit,
+                apply_result: ApplyTransactionResult {
+                    trie_changes: WrappedTrieChanges::new(
+                        runtime.get_tries(),
+                        shard_uid,
+                        TrieChanges::empty(state_root),
+                        vec![],
+                        *block_hash,
+                    ),
+                    new_root: state_root,
+                    outcomes: vec![],
+                    outgoing_receipts: vec![],
+                    validator_proposals: vec![],
+                    total_gas_burnt: 0,
+                    total_balance_burnt: 0,
+                    proof: None,
+                    processed_delayed_receipts: vec![],
+                },
+                apply_split_result_or_state_changes: None,
+            }))
+        })
+    }
     pub fn make_genesis_block(
         epoch_manager: &dyn EpochManagerAdapter,
         runtime_adapter: &dyn RuntimeAdapter,
@@ -4002,20 +4033,34 @@ impl Chain {
         mode: ApplyChunksMode,
         mut state_patch: SandboxStatePatch,
         invalid_chunks: &mut Vec<ShardChunkHeader>,
-    ) -> Result<(), Error> {
+    ) -> Result<Vec<ApplyChunkJob>, Error> {
         let _span = tracing::debug_span!(target: "chain", "validate_chunks").entered();
         let prev_hash = block.header().prev_hash();
+        let num_shards = block.chunks().len();
+        let epoch_id = block.header().epoch_id();
 
         // this shouldn't be even triggered as genesis chunks are never processed.
         // just in case
         if prev_hash == &CryptoHash::default() {
-            return Ok(());
+            return Ok((0..num_shards)
+                .map(|shard_id| {
+                    self.make_dummy_job(
+                        self.epoch_manager.shard_id_to_uid(shard_id as ShardId, epoch_id).unwrap(),
+                    )
+                })
+                .collect());
         }
 
         let prev_prev_hash = prev_block.header().prev_hash();
         // chunk to apply is genesis chunk. its execution result will be trivial.
         if prev_prev_hash == &CryptoHash::default() {
-            return Ok(());
+            return Ok((0..num_shards)
+                .map(|shard_id| {
+                    self.make_dummy_job(
+                        self.epoch_manager.shard_id_to_uid(shard_id as ShardId, epoch_id).unwrap(),
+                    )
+                })
+                .collect());
         }
         let prev_prev_block = self.get_block(prev_block.header().prev_hash())?;
 
@@ -4028,6 +4073,7 @@ impl Chain {
         let mut apply_results: Vec<ApplyChunkResult> = vec![];
         let mut applied_chunk_ids = vec![];
         let mut apply_chunk_errors = vec![];
+        let mut jobs = vec![];
 
         // Validate current chunk against created chunk extra in a weird way
         // to minimize code changes
@@ -4043,6 +4089,8 @@ impl Chain {
 
             let next_chunk_header = &block.chunks()[shard_id as usize];
             let see_future_chunk = next_chunk_header.height_included() == block.header().height();
+
+            // Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let apply_chunk_job_result = self.get_apply_chunk_job(
                 me,
                 Some(see_future_chunk),
@@ -4485,35 +4533,7 @@ impl Chain {
         let prev_block_hash = *chunk_header.prev_block_hash();
 
         if prev_block_hash == CryptoHash::default() {
-            let genesis_chunk_extra = self.get_chunk_extra(self.genesis().hash(), &shard_uid)?;
-            let state_root = genesis_chunk_extra.state_root().clone();
-            let gas_limit = genesis_chunk_extra.gas_limit().clone();
-            let runtime = self.runtime_adapter.clone();
-            let block_hash = block.hash().clone();
-            return Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
-                Ok(ApplyChunkResult::SameHeight(SameHeightResult {
-                    shard_uid,
-                    gas_limit,
-                    apply_result: ApplyTransactionResult {
-                        trie_changes: WrappedTrieChanges::new(
-                            runtime.get_tries(),
-                            shard_uid,
-                            TrieChanges::empty(state_root),
-                            vec![],
-                            block_hash,
-                        ),
-                        new_root: state_root,
-                        outcomes: vec![],
-                        outgoing_receipts: vec![],
-                        validator_proposals: vec![],
-                        total_gas_burnt: 0,
-                        total_balance_burnt: 0,
-                        proof: None,
-                        processed_delayed_receipts: vec![],
-                    },
-                    apply_split_result_or_state_changes: None,
-                }))
-            })));
+            return Ok(Some(self.make_dummy_job(shard_uid)));
         }
 
         Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
