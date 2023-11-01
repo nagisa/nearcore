@@ -825,7 +825,7 @@ impl Client {
                 )
             };
 
-        // TODO: this awful stuff is needed to pass integration tests
+        // TODO: this awful stuff was needed to pass integration tests
         // They are related to getting freshest execution result for new feature testing
         // And this is inconsistent with `test_congestion_receipt_execution`.
         if false
