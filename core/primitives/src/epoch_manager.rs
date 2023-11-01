@@ -105,6 +105,7 @@ impl AllEpochConfig {
         Self::config_nightshade(&mut config, protocol_version);
 
         Self::config_chunk_only_producers(&mut config, &self.chain_id, protocol_version);
+        config.chunk_producer_kickout_threshold = 0;
 
         Self::config_max_kickout_stake(&mut config, protocol_version);
 

@@ -816,6 +816,15 @@ fn setup_genesis(
         genesis.config.gas_limit = gas_limit;
     }
 
+    // println!(
+    //     "{} {} {} {} {}",
+    //     genesis.config.num_block_producer_seats,
+    //     genesis.config.num_block_producer_seats_per_shard,
+    //     genesis.config.block_producer_kickout_threshold,
+    //     genesis.config.chunk_producer_kickout_threshold,
+    //     genesis.config.validator_selection_config.num_chunk_only_producer_seats
+    // );
+
     // The block producer assignment often happens to be unlucky enough to not
     // include one of the validators in the first epoch. When that happens the
     // new protocol version gets only 75% of the votes which is lower that the
@@ -835,7 +844,7 @@ fn setup_genesis(
     genesis.config.avg_hidden_validator_seats_per_shard =
         epoch_config.avg_hidden_validator_seats_per_shard;
 
-    genesis.config.block_producer_kickout_threshold = 0;
+    // genesis.config.block_producer_kickout_threshold = 0;
     genesis.config.chunk_producer_kickout_threshold = 0;
     // Technically, after ChunkOnlyProducers is enabled, this field is no longer used
     // We still set it here just in case
