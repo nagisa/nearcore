@@ -2653,7 +2653,7 @@ impl<'a> ChainStoreUpdate<'a> {
             block.chunks().iter().filter(|h| h.height_included() == block.header().height())
         {
             let block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-                *block.header().prev_hash()
+                block.header().prev_hash()
             } else {
                 block_hash
             };
