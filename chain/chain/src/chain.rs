@@ -4392,17 +4392,17 @@ impl Chain {
             if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
                 let chunk_prev_hash = chunk_header.prev_block_hash().clone();
                 let mut block_hash = block.hash().clone();
-                // loop {
-                //     let header = self.get_block_header(&block_hash)?;
-                //     if header.height() < prev_chunk_height_included {
-                //         panic!("...");
-                //     }
-                //     let prev_hash = header.prev_hash().clone();
-                //     if prev_hash == chunk_prev_hash {
-                //         break;
-                //     }
-                //     block_hash = prev_hash;
-                // }
+                loop {
+                    let header = self.get_block_header(&block_hash)?;
+                    if header.height() < prev_chunk_height_included {
+                        panic!("...");
+                    }
+                    let prev_hash = header.prev_hash().clone();
+                    if prev_hash == chunk_prev_hash {
+                        break;
+                    }
+                    block_hash = prev_hash;
+                }
                 if chunk_prev_hash == CryptoHash::default() {
                     (block_hash, 0)
                 } else {
