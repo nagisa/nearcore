@@ -2518,6 +2518,7 @@ impl Chain {
         block_received_time: Instant,
         state_patch: SandboxStatePatch,
     ) -> Result<PreprocessBlockResult, Error> {
+        println!("preprocess_block {} {}", block.hash(), block.header().height());
         let header = block.header();
 
         // see if the block is already in processing or if there are too many blocks being processed
