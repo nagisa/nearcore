@@ -136,6 +136,9 @@ impl FlatStorageManager {
         shard_uid: ShardUId,
         state_changes: &[RawStateChangesWithTrieKey],
     ) -> Result<StoreUpdate, StorageError> {
+        if prev_hash == CryptoHash::default() {
+            return Ok(self.0.store.store_update());
+        }
         println!(
             "save_flat_state_changes {prev_hash} -> {block_hash} | {height} {}",
             shard_uid.shard_id()
