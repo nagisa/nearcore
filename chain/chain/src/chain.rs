@@ -5597,8 +5597,12 @@ impl<'a> ChainUpdate<'a> {
             if !care_about_shard {
                 continue;
             }
-            // todo: prev_hash
-            let receipt_id_to_shard_id = self.get_receipt_id_to_shard_id(hash, shard_id)?;
+            let block_hash = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                prev_hash
+            } else {
+                hash
+            };
+            let receipt_id_to_shard_id = self.get_receipt_id_to_shard_id(block_hash, shard_id)?;
             for (receipt_id, shard_id) in receipt_id_to_shard_id {
                 self.chain_store_update.save_receipt_id_to_shard_id(receipt_id, shard_id);
             }
