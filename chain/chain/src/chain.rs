@@ -522,7 +522,7 @@ pub enum VerifyBlockHashAndSignatureResult {
 pub enum FutureValidationMode {
     None, // no delay, or not received chunk
     IAmProducer,
-    StateWitness(ShardChunk),
+    StateWitness(ShardChunkHeader),
 }
 
 impl Chain {
@@ -4095,24 +4095,23 @@ impl Chain {
                 // only for a single shard. This so far has been enough.
                 let state_patch = state_patch.take();
                 let next_chunk_header = &block.chunks()[shard_id as usize];
-                let cares_about_shard_this_epoch = self.shard_tracker.care_about_shard(
-                    me.as_ref(),
-                    prev_prev_block.hash(),
-                    shard_id as ShardId,
-                    true,
-                );
-                let cares_about_shard_next_epoch = self.shard_tracker.will_care_about_shard(
-                    me.as_ref(),
-                    prev_prev_block.hash(),
-                    shard_id as ShardId,
-                    true,
-                );
-                println!("care {cares_about_shard_this_epoch} {cares_about_shard_next_epoch}");
+                // let cares_about_shard_this_epoch = self.shard_tracker.care_about_shard(
+                //     me.as_ref(),
+                //     prev_prev_block.hash(),
+                //     shard_id as ShardId,
+                //     true,
+                // );
+                // let cares_about_shard_next_epoch = self.shard_tracker.will_care_about_shard(
+                //     me.as_ref(),
+                //     prev_prev_block.hash(),
+                //     shard_id as ShardId,
+                //     true,
+                // );
+                // println!("care {cares_about_shard_this_epoch} {cares_about_shard_next_epoch}");
                 let future_validation_mode =
                     if next_chunk_header.height_included() == block.header().height() {
                         // bad unwrap
-                        let chunk = self.get_chunk_clone_from_header(next_chunk_header).unwrap();
-                        FutureValidationMode::StateWitness(chunk)
+                        FutureValidationMode::StateWitness(next_chunk_header.clone())
                     } else {
                         FutureValidationMode::None
                     };
@@ -4578,6 +4577,12 @@ impl Chain {
         // block or prev block??
         let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(&block_hash)?;
         let block_copy = block.clone();
+        let next_chunk = match &future_validation_mode {
+            FutureValidationMode::StateWitness(next_chunk_header) => {
+                Some(self.get_chunk_clone_from_header(next_chunk_header)?)
+            }
+            _ => None,
+        };
 
         Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let _span = tracing::debug_span!(
@@ -4612,16 +4617,14 @@ impl Chain {
                 is_first_block_with_chunk_of_version,
             ) {
                 Ok(apply_result) => {
-                    if let FutureValidationMode::StateWitness(next_shard_chunk) =
-                        future_validation_mode
-                    {
+                    if let Some(next_chunk) = next_chunk {
                         Chain::postvalidate(
                             shard_layout,
                             &apply_result,
                             gas_limit,
                             block_copy,
                             shard_id as usize,
-                            next_shard_chunk,
+                            next_chunk,
                         )?;
                     }
                     let apply_split_result_or_state_changes = if will_shard_layout_change {
