@@ -5871,14 +5871,14 @@ impl<'a> ChainUpdate<'a> {
                 self.chain_store_update.merge(store_update);
 
                 // assert_eq!(block_hash, &apply_result.trie_changes.block_hash);
-                let (block_hash, block) =
-                    if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-                        (prev_hash, self.chain_store_update.get_block(&prev_hash)?)
-                    } else {
-                        (block_hash, block.clone())
-                    };
-                let prev_hash = block.header().prev_hash();
-                let height = block.header().height();
+                // let (block_hash, block) =
+                //     if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                //         (prev_hash, self.chain_store_update.get_block(&prev_hash)?)
+                //     } else {
+                //         (block_hash, block.clone())
+                //     };
+                // let prev_hash = block.header().prev_hash();
+                // let height = block.header().height();
 
                 let (outcome_root, outcome_paths) =
                     ApplyTransactionResult::compute_outcomes_proof(&apply_result.outcomes);
@@ -5930,14 +5930,14 @@ impl<'a> ChainUpdate<'a> {
                 )?;
                 self.chain_store_update.merge(store_update);
 
-                let (block_hash, block) =
-                    if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-                        (prev_hash, self.chain_store_update.get_block(&prev_hash)?)
-                    } else {
-                        (block_hash, block.clone())
-                    };
-                let prev_hash = block.header().prev_hash();
-                let height = block.header().height();
+                // let (block_hash, block) =
+                //     if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+                //         (prev_hash, self.chain_store_update.get_block(&prev_hash)?)
+                //     } else {
+                //         (block_hash, block.clone())
+                //     };
+                // let prev_hash = block.header().prev_hash();
+                // let height = block.header().height();
 
                 let old_extra = self.chain_store_update.get_chunk_extra(prev_hash, &shard_uid)?;
 
@@ -5980,7 +5980,12 @@ impl<'a> ChainUpdate<'a> {
             }
             x
         }).collect::<Result<Vec<_>, Error>>()?;
-        self.apply_chunk_postprocessing(block, results)?;
+        if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+            let prev_block = self.chain_store_update.get_block(prev_hash)?;
+            self.apply_chunk_postprocessing(&prev_block, results)?;
+        } else {
+            self.apply_chunk_postprocessing(block, results)?;
+        }
 
         let BlockPreprocessInfo {
             is_caught_up,
