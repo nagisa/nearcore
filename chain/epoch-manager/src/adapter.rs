@@ -810,7 +810,10 @@ impl EpochManagerAdapter for EpochManagerHandle {
                 }
                 Ok(header.signature().verify(header.hash().as_ref(), block_producer.public_key()))
             }
-            Err(_) => return Err(EpochError::MissingBlock(*header.prev_hash()).into()),
+            Err(_) => {
+                println!("verify_header_signature {}", header.height());
+                return Err(EpochError::MissingBlock(*header.prev_hash()).into());
+            }
         }
     }
 

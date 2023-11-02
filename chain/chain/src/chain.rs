@@ -1373,6 +1373,7 @@ impl Chain {
         provenance: &Provenance,
         challenges: &mut Vec<ChallengeBody>,
     ) -> Result<(), Error> {
+        println!("validate_header {}", header.height());
         // Refuse blocks from the too distant future.
         if header.timestamp() > StaticClock::utc() + Duration::seconds(ACCEPTABLE_TIME_DIFFERENCE) {
             return Err(Error::InvalidBlockFutureTime(header.timestamp()));
@@ -1537,6 +1538,7 @@ impl Chain {
             }
         }
 
+        println!("validate_header END");
         Ok(())
     }
 
