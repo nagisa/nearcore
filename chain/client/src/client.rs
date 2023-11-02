@@ -825,58 +825,6 @@ impl Client {
                 )
             };
 
-        // TODO: this awful stuff was needed to pass integration tests
-        // They are related to getting freshest execution result for new feature testing
-        // And this is inconsistent with `test_congestion_receipt_execution`.
-        if false
-            && ProtocolFeature::DelayChunkExecution.protocol_version() == 200
-            && prev_block.header().prev_hash() != &CryptoHash::default()
-        {
-            let prev_height = prev_block.header().height();
-            let prev_prev_hash = *prev_block.header().prev_hash();
-            let mut chain_update = self.chain.chain_update();
-
-            let (_, outcome_paths) =
-                ApplyTransactionResult::compute_outcomes_proof(&outcomes_with_id);
-            let shard_id = shard_uid.shard_id();
-
-            // Save state root after applying transactions.
-            chain_update.chain_store_update.save_chunk_extra(
-                &prev_block_hash,
-                &shard_uid,
-                chunk_extra.clone(),
-            );
-
-            let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
-            let store_update = flat_storage_manager
-                .save_flat_state_changes(
-                    prev_block_hash,
-                    prev_prev_hash,
-                    prev_height,
-                    shard_uid,
-                    trie_changes.state_changes(),
-                )
-                .unwrap();
-            chain_update.chain_store_update.merge(store_update);
-
-            // self.chain_store_update.save_trie_changes(apply_result.trie_changes);
-            chain_update.chain_store_update.save_outgoing_receipt(
-                &prev_block_hash,
-                shard_id,
-                outgoing_receipts.clone(),
-            );
-            // Save receipt and transaction results.
-            // Consider not doing it to solve issue with different outcomes for the same receipt.
-            chain_update.chain_store_update.save_outcomes_with_proofs(
-                &prev_block_hash,
-                shard_id,
-                outcomes_with_id,
-                outcome_paths,
-            );
-
-            chain_update.commit()?;
-        }
-
         let validator_signer = self
             .validator_signer
             .as_ref()
@@ -916,7 +864,6 @@ impl Client {
             validator_signer.as_ref(),
             prev_block_hash,
             epoch_id,
-            last_header,
             next_height,
             shard_id,
         )?;
@@ -939,16 +886,10 @@ impl Client {
         validator_signer: &dyn ValidatorSigner,
         prev_block_hash: CryptoHash,
         epoch_id: &EpochId,
-        last_header: ShardChunkHeader,
         next_height: BlockHeight,
         shard_id: ShardId,
     ) -> Result<(EncodedShardChunk, Vec<MerklePath>, Vec<Receipt>), Error> {
         let shard_uid = self.epoch_manager.shard_id_to_uid(shard_id, epoch_id)?;
-        // let chunk_extra = self
-        //     .chain
-        //     .get_chunk_extra(&prev_block_hash, &shard_uid)
-        //     .map_err(|err| Error::ChunkProducer(format!("No chunk extra available: {}", err)))?;
-
         let prev_block_header = self.chain.get_block_header(&prev_block_hash)?;
         let transactions = self.prepare_transactions(
             shard_uid,
@@ -964,20 +905,6 @@ impl Client {
         );
         let num_filtered_transactions = transactions.len();
         let (tx_root, _) = merklize(&transactions);
-        // because chunk was just executed
-        // let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-        //     self.chain
-        //         .store()
-        //         .get_outgoing_receipts(&prev_block_hash, shard_id)
-        //         .map(|v| v.to_vec())
-        //         .unwrap_or_default()
-        // } else {
-        //     self.chain.get_outgoing_receipts_for_shard(
-        //         prev_block_hash,
-        //         shard_id,
-        //         last_header.height_included(),
-        //     )?
-        // };
 
         let outgoing_receipts_root = self.calculate_receipts_root(epoch_id, &outgoing_receipts)?;
         let protocol_version = self.epoch_manager.get_epoch_protocol_version(epoch_id)?;

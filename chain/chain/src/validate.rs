@@ -118,12 +118,6 @@ pub fn validate_chunk_with_chunk_extra(
     prev_chunk_height_included: BlockHeight,
     chunk_header: &ShardChunkHeader,
 ) -> Result<(), Error> {
-    // let prev_header = chain_store.get_block_header(prev_block_hash)?;
-    let prev_height = prev_header.height();
-    println!(
-        "VALIDATING CHUNK EXTRA: PREV HEIGHT {prev_height} VS HEIGHT {}",
-        chunk_header.height_created()
-    );
     if *prev_chunk_extra.state_root() != chunk_header.prev_state_root() {
         return Err(Error::InvalidStateRoot);
     }
@@ -152,31 +146,9 @@ pub fn validate_chunk_with_chunk_extra(
         return Err(Error::InvalidBalanceBurnt);
     }
 
-    // let prev_header = chain_store.get_block_header(prev_block_hash)?;
     let chunk_header_prev_hash = chunk_header.prev_block_hash();
 
     let outgoing_receipts_root = if chunk_header_prev_hash != &CryptoHash::default() {
-        // let outgoing_receipts = chain_store.get_outgoing_receipts_for_shard(
-        //     epoch_manager,
-        //     *prev_block_hash,
-        //     chunk_header.shard_id(),
-        //     prev_chunk_height_included,
-        // )?;
-
-        // let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-        //     chain_store
-        //         .get_outgoing_receipts(&prev_block_hash, chunk_header.shard_id())
-        //         .map(|v| v.to_vec())
-        //         .unwrap_or_default()
-        // } else {
-        //     chain_store.get_outgoing_receipts_for_shard(
-        //         epoch_manager,
-        //         *prev_block_hash,
-        //         chunk_header.shard_id(),
-        //         prev_chunk_height_included,
-        //     )?
-        // };
-
         let outgoing_receipts_hashes =
             { Chain::build_receipts_hashes(&outgoing_receipts, &shard_layout) };
         let (outgoing_receipts_root, _) = merklize(&outgoing_receipts_hashes);
