@@ -21,7 +21,7 @@ fn run_test(
     high_height_with_no_chunk: BlockHeight,
     should_be_restored: bool,
 ) {
-    init_test_logger();
+    // init_test_logger();
 
     let protocol_version =
         ProtocolFeature::RestoreReceiptsAfterFixApplyChunks.protocol_version() - 1;
@@ -61,6 +61,7 @@ fn run_test(
     while height < 15
         || (!receipt_hashes_to_restore.is_empty() && height - last_update_height < HEIGHT_TIMEOUT)
     {
+        println!("TO RESTORE: {}", receipt_hashes_to_restore.len());
         let mut block = env.clients[0].produce_block(height).unwrap().unwrap();
         if low_height_with_no_chunk <= height && height < high_height_with_no_chunk {
             let prev_block = env.clients[0].chain.get_block_by_height(height - 1).unwrap().clone();
