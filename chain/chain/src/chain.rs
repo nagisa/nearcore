@@ -3710,14 +3710,12 @@ impl Chain {
         outcomes: &mut Vec<ExecutionOutcomeWithIdView>,
         id: &CryptoHash,
     ) -> Result<(), Error> {
-        println!("DFS {id} v");
         outcomes.push(ExecutionOutcomeWithIdView::from(self.get_execution_outcome(id)?));
         let outcome_idx = outcomes.len() - 1;
         for idx in 0..outcomes[outcome_idx].outcome.receipt_ids.len() {
             let id = outcomes[outcome_idx].outcome.receipt_ids[idx];
             self.get_recursive_transaction_results(outcomes, &id)?;
         }
-        println!("DFS {id} ^");
         Ok(())
     }
 
@@ -4098,22 +4096,8 @@ impl Chain {
                 // only for a single shard. This so far has been enough.
                 let state_patch = state_patch.take();
                 let next_chunk_header = &block.chunks()[shard_id as usize];
-                // let cares_about_shard_this_epoch = self.shard_tracker.care_about_shard(
-                //     me.as_ref(),
-                //     prev_prev_block.hash(),
-                //     shard_id as ShardId,
-                //     true,
-                // );
-                // let cares_about_shard_next_epoch = self.shard_tracker.will_care_about_shard(
-                //     me.as_ref(),
-                //     prev_prev_block.hash(),
-                //     shard_id as ShardId,
-                //     true,
-                // );
-                // println!("care {cares_about_shard_this_epoch} {cares_about_shard_next_epoch}");
                 let future_validation_mode =
                     if next_chunk_header.height_included() == block.header().height() {
-                        // bad unwrap
                         FutureValidationMode::StateWitness(next_chunk_header.clone())
                     } else {
                         FutureValidationMode::None
@@ -5362,12 +5346,6 @@ impl Chain {
         id: &CryptoHash,
     ) -> Result<ExecutionOutcomeWithIdAndProof, Error> {
         let outcomes = self.store.get_outcomes_by_id(id)?;
-        let debug_outcomes: Vec<_> = outcomes
-            .iter()
-            .cloned()
-            .map(|o| (o.block_hash, o.outcome_with_id.id, o.outcome_with_id.outcome.receipt_ids))
-            .collect();
-        println!("OUTCOMES: {debug_outcomes:?}");
         outcomes
             .into_iter()
             .find(|outcome| match self.get_block_header(&outcome.block_hash) {
