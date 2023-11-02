@@ -5370,8 +5370,11 @@ impl Chain {
         id: &CryptoHash,
     ) -> Result<ExecutionOutcomeWithIdAndProof, Error> {
         let outcomes = self.store.get_outcomes_by_id(id)?;
-        let debug_outcomes: Vec<_> =
-            outcomes.iter().cloned().map(|o| (o.block_hash, o.outcome_with_id.id)).collect();
+        let debug_outcomes: Vec<_> = outcomes
+            .iter()
+            .cloned()
+            .map(|o| (o.block_hash, o.outcome_with_id.id, o.outcome_with_id.outcome.receipt_ids))
+            .collect();
         println!("OUTCOMES: {debug_outcomes:?}");
         outcomes
             .into_iter()
