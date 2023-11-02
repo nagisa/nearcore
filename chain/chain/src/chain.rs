@@ -4203,7 +4203,7 @@ impl Chain {
     fn postvalidate(
         // &self,
         shard_layout: ShardLayout,
-        outgoing_receipts: Vec<Receipt>,
+        // outgoing_receipts: Vec<Receipt>,
         apply_result: &ApplyTransactionResult,
         gas_limit: Gas,
         block: Block,
@@ -4237,7 +4237,7 @@ impl Chain {
             // self.epoch_manager.as_ref(),
             shard_layout,
             // prev_hash,
-            outgoing_receipts,
+            apply_result.outgoing_receipts.clone(),
             block_header.clone(),
             &chunk_extra,
             chunk_header.height_included(),
@@ -4548,19 +4548,19 @@ impl Chain {
             return Ok(Some(self.make_dummy_job(shard_uid)));
         }
 
-        let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
-            self.store()
-                .get_outgoing_receipts(prev_hash, chunk_header.shard_id())
-                .map(|v| v.to_vec())
-                .unwrap_or_default()
-        } else {
-            self.store().get_outgoing_receipts_for_shard(
-                self.epoch_manager.as_ref(),
-                *prev_hash,
-                chunk_header.shard_id(),
-                prev_chunk_header.height_included(),
-            )?
-        };
+        // let outgoing_receipts = if ProtocolFeature::DelayChunkExecution.protocol_version() == 200 {
+        //     self.store()
+        //         .get_outgoing_receipts(&block_hash, chunk_header.shard_id())
+        //         .map(|v| v.to_vec())
+        //         .unwrap_or_default()
+        // } else {
+        //     self.store().get_outgoing_receipts_for_shard(
+        //         self.epoch_manager.as_ref(),
+        //         *prev_hash,
+        //         chunk_header.shard_id(),
+        //         prev_chunk_header.height_included(),
+        //     )?
+        // };
         // block or prev block??
         let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(&block_hash)?;
         let block_copy = block.clone();
@@ -4603,7 +4603,6 @@ impl Chain {
                     {
                         Chain::postvalidate(
                             shard_layout,
-                            outgoing_receipts,
                             &apply_result,
                             gas_limit,
                             block_copy,
