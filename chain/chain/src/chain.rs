@@ -3592,6 +3592,7 @@ impl Chain {
             let prev_block = self.store.get_block(block.header().prev_hash())?.clone();
 
             let receipts_by_shard = self.collect_incoming_receipts_from_block(me, &block)?;
+            // TODO: this must be changed for stateless validation / state sync as well
             let work = self.apply_chunks_preprocessing(
                 me,
                 &block,
