@@ -4095,6 +4095,19 @@ impl Chain {
                 // only for a single shard. This so far has been enough.
                 let state_patch = state_patch.take();
                 let next_chunk_header = &block.chunks()[shard_id as usize];
+                let cares_about_shard_this_epoch = self.shard_tracker.care_about_shard(
+                    me.as_ref(),
+                    prev_prev_block.hash(),
+                    shard_id as ShardId,
+                    true,
+                );
+                let cares_about_shard_next_epoch = self.shard_tracker.will_care_about_shard(
+                    me.as_ref(),
+                    prev_prev_block.hash(),
+                    shard_id as ShardId,
+                    true,
+                );
+                println!("care {cares_about_shard_this_epoch} {cares_about_shard_next_epoch}");
                 let future_validation_mode =
                     if next_chunk_header.height_included() == block.header().height() {
                         // bad unwrap
