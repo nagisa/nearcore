@@ -4393,23 +4393,27 @@ impl Chain {
         let prev_chunk_height_included = prev_chunk_header.height_included();
         // Validate state root.
         let prev_chunk_extra = self.get_chunk_extra(prev_hash, &shard_uid)?;
+        let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(prev_hash)?;
 
+        println!("1");
         // Validate that all next chunk information matches previous chunk extra.
         if ProtocolFeature::DelayChunkExecution.protocol_version() != 200 {
             let prev_header = self.store().get_block_header(prev_hash)?;
+            println!("2");
             let outgoing_receipts = self.store().get_outgoing_receipts_for_shard(
                 self.epoch_manager.as_ref(),
                 *prev_hash,
                 chunk_header.shard_id(),
                 prev_chunk_height_included,
             )?;
-            let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(prev_hash)?;
+            println!("3");
+            println!("4");
             validate_chunk_with_chunk_extra(
                 // It's safe here to use ChainStore instead of ChainStoreUpdate
                 // because we're asking prev_chunk_header for already committed block
                 // self.store(),
                 // self.epoch_manager.as_ref(),
-                shard_layout,
+                shard_layout.clone(),
                 // prev_hash,
                 outgoing_receipts,
                 prev_header,
@@ -4435,6 +4439,7 @@ impl Chain {
                 }
             })?;
         }
+        println!("5");
 
         // we can't use hash from the current block here yet because the incoming receipts
         // for this block is not stored yet
@@ -4473,6 +4478,8 @@ impl Chain {
             receipts_block_hash,
             prev_chunk_height_included,
         )?;
+        println!("6");
+
         let old_receipts = collect_receipts_from_response(old_receipts);
         let receipts = [new_receipts, old_receipts].concat();
 
@@ -4489,6 +4496,7 @@ impl Chain {
             return Err(Error::InvalidChunkProofs(Box::new(chunk_proof)));
         }
 
+        println!("7");
         let protocol_version =
             self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
         if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
@@ -4546,8 +4554,7 @@ impl Chain {
         //         prev_chunk_header.height_included(),
         //     )?
         // };
-        // block or prev block??
-        let shard_layout = self.epoch_manager.get_shard_layout_from_prev_block(&block_hash)?;
+        // shard layout - block or prev block??
         let block_copy = block.clone();
         let next_chunk = match &future_validation_mode {
             FutureValidationMode::StateWitness(next_chunk_header) => {
