@@ -3519,7 +3519,7 @@ fn test_congestion_receipt_execution() {
     assert!(delayed_indices.next_available_index > 0);
 
     // let all receipts finish
-    for i in height + 2..height + 7 {
+    for i in height + 2..height + 8 {
         env.produce_block(0, i);
     }
 
