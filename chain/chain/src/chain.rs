@@ -4257,38 +4257,6 @@ impl Chain {
             &next_chunk_header,
         )?;
 
-        // some basic checks of future chunk still must happen, I think
-
-        let transactions = next_chunk.transactions();
-        if !validate_transactions_order(transactions) {
-            let merkle_paths = Block::compute_chunk_headers_root(block.chunks().iter()).1;
-            let chunk_proof = ChunkProofs {
-                block_header: borsh::to_vec(&block.header()).expect("Failed to serialize"),
-                merkle_proof: merkle_paths[shard_id as usize].clone(),
-                chunk: MaybeEncodedShardChunk::Decoded(next_chunk),
-            };
-            return Err(Error::InvalidChunkProofs(Box::new(chunk_proof)));
-        }
-
-        // reintroduce later.
-        // let protocol_version =
-        //     self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
-        // if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
-        //     let transaction_validity_period = self.transaction_validity_period;
-        //     for transaction in transactions {
-        //         self.store()
-        //             .check_transaction_validity_period(
-        //                 &block_header,
-        //                 &transaction.transaction.block_hash,
-        //                 transaction_validity_period,
-        //             )
-        //             .map_err(|_| {
-        //                 tracing::warn!("Invalid Transactions for mock node");
-        //                 Error::from(Error::InvalidTransactions)
-        //             })?;
-        //     }
-        // }
-
         Ok(())
     }
 
@@ -4579,7 +4547,39 @@ impl Chain {
         let block_copy = block.clone();
         let next_chunk = match &future_validation_mode {
             FutureValidationMode::StateWitness(next_chunk_header) => {
-                Some(self.get_chunk_clone_from_header(next_chunk_header)?)
+                let chunk = self.get_chunk_clone_from_header(next_chunk_header)?;
+
+                // some basic checks of future chunk still must happen, I think
+                let transactions = chunk.transactions();
+                if !validate_transactions_order(transactions) {
+                    let merkle_paths = Block::compute_chunk_headers_root(block.chunks().iter()).1;
+                    let chunk_proof = ChunkProofs {
+                        block_header: borsh::to_vec(&block.header()).expect("Failed to serialize"),
+                        merkle_proof: merkle_paths[shard_id as usize].clone(),
+                        chunk: MaybeEncodedShardChunk::Decoded(chunk),
+                    };
+                    return Err(Error::InvalidChunkProofs(Box::new(chunk_proof)));
+                }
+
+                let protocol_version =
+                    self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
+                if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
+                    let transaction_validity_period = self.transaction_validity_period;
+                    for transaction in transactions {
+                        self.store()
+                            .check_transaction_validity_period(
+                                block.header(),
+                                &transaction.transaction.block_hash,
+                                transaction_validity_period,
+                            )
+                            .map_err(|_| {
+                                tracing::warn!("Invalid Transactions for mock node");
+                                Error::from(Error::InvalidTransactions)
+                            })?;
+                    }
+                }
+
+                Some(chunk)
             }
             _ => None,
         };
