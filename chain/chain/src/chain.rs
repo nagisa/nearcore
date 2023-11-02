@@ -3707,14 +3707,14 @@ impl Chain {
         outcomes: &mut Vec<ExecutionOutcomeWithIdView>,
         id: &CryptoHash,
     ) -> Result<(), Error> {
-        // println!("DFS {id} v");
+        println!("DFS {id} v");
         outcomes.push(ExecutionOutcomeWithIdView::from(self.get_execution_outcome(id)?));
         let outcome_idx = outcomes.len() - 1;
         for idx in 0..outcomes[outcome_idx].outcome.receipt_ids.len() {
             let id = outcomes[outcome_idx].outcome.receipt_ids[idx];
             self.get_recursive_transaction_results(outcomes, &id)?;
         }
-        // println!("DFS {id} ^");
+        println!("DFS {id} ^");
         Ok(())
     }
 
@@ -5370,7 +5370,9 @@ impl Chain {
         id: &CryptoHash,
     ) -> Result<ExecutionOutcomeWithIdAndProof, Error> {
         let outcomes = self.store.get_outcomes_by_id(id)?;
-        // println!("OUTCOMES: {outcomes:?}");
+        let debug_outcomes: Vec<_> =
+            outcomes.iter().cloned().map(|o| (o.block_hash, o.outcome_with_id.id)).collect();
+        println!("OUTCOMES: {debug_outcomes:?}");
         outcomes
             .into_iter()
             .find(|outcome| match self.get_block_header(&outcome.block_hash) {
