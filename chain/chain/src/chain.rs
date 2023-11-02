@@ -4386,6 +4386,7 @@ impl Chain {
         split_state_roots: Option<HashMap<ShardUId, CryptoHash>>,
         future_validation_mode: FutureValidationMode,
     ) -> Result<Option<ApplyChunkJob>, Error> {
+        println!("get_apply_chunk_job_new_chunk {}", block.header().height());
         let prev_hash = block.header().prev_hash();
         let shard_id = shard_uid.shard_id();
 
@@ -4587,7 +4588,7 @@ impl Chain {
             _ => None,
         };
 
-        Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
+        let result = Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let _span = tracing::debug_span!(
                 target: "chain",
                 parent: parent_span,
@@ -4651,7 +4652,10 @@ impl Chain {
                 }
                 Err(err) => Err(err),
             }
-        })))
+        })));
+
+        println!("get_apply_chunk_job_new_chunk END");
+        result
     }
 
     /// Returns the apply chunk job when applying an old chunk and applying transactions.
