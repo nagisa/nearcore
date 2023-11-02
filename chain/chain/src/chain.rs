@@ -4587,8 +4587,9 @@ impl Chain {
             }
             _ => None,
         };
+        println!("get_apply_chunk_job_new_chunk END");
 
-        let result = Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
+        Ok(Some(Box::new(move |parent_span| -> Result<ApplyChunkResult, Error> {
             let _span = tracing::debug_span!(
                 target: "chain",
                 parent: parent_span,
@@ -4652,10 +4653,7 @@ impl Chain {
                 }
                 Err(err) => Err(err),
             }
-        })));
-
-        println!("get_apply_chunk_job_new_chunk END");
-        result
+        })))
     }
 
     /// Returns the apply chunk job when applying an old chunk and applying transactions.
