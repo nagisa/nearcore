@@ -2921,6 +2921,7 @@ impl Chain {
             .log_storage_error("block has already been checked for existence")?;
         let sync_block_header = sync_block.header().clone();
         let sync_block_epoch_id = sync_block.header().epoch_id().clone();
+        tracing::info!(shard_id, ?sync_block_header, ?sync_block_epoch_id);
         if shard_id as usize >= sync_block.chunks().len() {
             return Err(shard_id_out_of_bounds(shard_id));
         }
@@ -2936,6 +2937,7 @@ impl Chain {
         }
         // Chunk header here is the same chunk header as at the `current` height.
         let sync_prev_hash = *sync_prev_block.hash();
+        tracing::info!(shard_id, ?sync_prev_hash);
         let chunk_header = sync_prev_block.chunks()[shard_id as usize].clone();
         let (chunk_headers_root, chunk_proofs) = merklize(
             &sync_prev_block
@@ -2946,6 +2948,8 @@ impl Chain {
                 })
                 .collect::<Vec<ChunkHashHeight>>(),
         );
+        tracing::info!(shard_id, ?sync_prev_hash);
+        tracing::info!(?chunk_headers_root, chr = ?sync_prev_block.header().chunk_headers_root());
         assert_eq!(&chunk_headers_root, sync_prev_block.header().chunk_headers_root());
 
         let chunk = self.get_chunk_clone_from_header(&chunk_header)?;
@@ -3001,7 +3005,8 @@ impl Chain {
 
         // Collecting proofs for incoming receipts.
         let mut root_proofs = vec![];
-        for receipt_response in incoming_receipts_proofs.iter() {
+        tracing::info!(?incoming_receipts_proofs);
+        for receipt_response in &incoming_receipts_proofs {
             let ReceiptProofResponse(block_hash, receipt_proofs) = receipt_response;
             let block_header = self.get_block_header(block_hash)?.clone();
             let block = self.get_block(block_hash)?;
@@ -3014,6 +3019,7 @@ impl Chain {
             );
 
             let mut root_proofs_cur = vec![];
+            tracing::info!(?receipt_proofs, chunks_included = ?block_header.chunks_included(), ?block_header);
             assert_eq!(receipt_proofs.len(), block_header.chunks_included() as usize);
             for receipt_proof in receipt_proofs.iter() {
                 let ReceiptProof(receipts, shard_proof) = receipt_proof;
