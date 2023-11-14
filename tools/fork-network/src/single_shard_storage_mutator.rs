@@ -159,13 +159,25 @@ impl SingleShardStorageMutator {
         self.num_changes >= batch_size
     }
 
-    pub(crate) fn commit(mut self, shard_uid: &ShardUId) -> anyhow::Result<StateRoot> {
+    /// The fake block height is used to allow memtries to garbage collect.
+    /// Otherwise it would take significantly more memory holding old nodes.
+    pub(crate) fn commit(
+        mut self,
+        shard_uid: &ShardUId,
+        fake_block_height: u64,
+    ) -> anyhow::Result<StateRoot> {
         tracing::info!(?shard_uid, num_changes = ?self.num_changes, "commit");
         let mut update = self.shard_tries.store_update();
         self.trie_update.commit(near_primitives::types::StateChangeCause::Migration);
         let (_, trie_updates, raw_changes) = self.trie_update.finalize()?;
         let state_root = self.shard_tries.apply_all(&trie_updates, *shard_uid, &mut update);
-        self.shard_tries.apply_memtrie_changes(&trie_updates, *shard_uid, 0);
+        self.shard_tries.apply_memtrie_changes(&trie_updates, *shard_uid, fake_block_height);
+        self.shard_tries
+            .get_mem_tries(*shard_uid)
+            .unwrap()
+            .write()
+            .unwrap()
+            .delete_until_height(fake_block_height - 1);
         let flat_state_changes = FlatStateChanges::from_state_changes(&raw_changes);
         flat_state_changes.apply_to_flat_state(&mut update, *shard_uid);
         tracing::info!(?shard_uid, num_changes = ?self.num_changes, "committing");

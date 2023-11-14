@@ -310,7 +310,7 @@ impl ForkNetworkCommand {
         let storage = open_storage(&home_dir, near_config).unwrap();
         let store = storage.get_hot_store();
 
-        let (prev_state_roots, prev_hash, epoch_id, _block_height) =
+        let (prev_state_roots, prev_hash, epoch_id, block_height) =
             self.get_state_roots_and_hash(store.clone())?;
         tracing::info!(?prev_state_roots, ?epoch_id, ?prev_hash);
 
@@ -339,6 +339,7 @@ impl ForkNetworkCommand {
             &all_shard_uids,
             store,
             &prev_state_roots,
+            block_height,
             make_storage_mutator.clone(),
         )?;
         Ok(new_state_roots)
@@ -479,6 +480,7 @@ impl ForkNetworkCommand {
         shard_uid: ShardUId,
         store: Store,
         prev_state_root: StateRoot,
+        block_height: BlockHeight,
         make_storage_mutator: MakeSingleShardStorageMutatorFn,
     ) -> anyhow::Result<StateRoot> {
         // Doesn't support secrets.
@@ -504,6 +506,7 @@ impl ForkNetworkCommand {
         let mut postponed_receipts_updated = 0;
         let mut delayed_receipts_updated = 0;
         let mut received_data_updated = 0;
+        let mut fake_block_height = block_height + 1;
         for item in store_helper::iter_flat_state_entries(shard_uid, &store, None, None) {
             let (key, value) = match item {
                 Ok((key, FlatStateValue::Ref(ref_value))) => {
@@ -621,7 +624,8 @@ impl ForkNetworkCommand {
                     "last key: {}",
                     hex::encode(&key)
                 );
-                let state_root = storage_mutator.commit(&shard_uid)?;
+                let state_root = storage_mutator.commit(&shard_uid, fake_block_height)?;
+                fake_block_height += 1;
                 storage_mutator = make_storage_mutator(shard_id, state_root)?;
             }
         }
@@ -662,7 +666,8 @@ impl ForkNetworkCommand {
                     )?;
                     num_added += 1;
                     if storage_mutator.should_commit(batch_size) {
-                        let state_root = storage_mutator.commit(&shard_uid)?;
+                        let state_root = storage_mutator.commit(&shard_uid, fake_block_height)?;
+                        fake_block_height += 1;
                         storage_mutator = make_storage_mutator(shard_id, state_root)?;
                     }
                 }
@@ -670,7 +675,7 @@ impl ForkNetworkCommand {
         }
         tracing::info!(?shard_uid, num_accounts, num_added, "Pass 2 done");
 
-        let state_root = storage_mutator.commit(&shard_uid)?;
+        let state_root = storage_mutator.commit(&shard_uid, fake_block_height)?;
 
         tracing::info!(?shard_uid, "Commit done");
         Ok(state_root)
@@ -682,6 +687,7 @@ impl ForkNetworkCommand {
         all_shard_uids: &[ShardUId],
         store: Store,
         prev_state_roots: &[StateRoot],
+        block_height: BlockHeight,
         make_storage_mutator: MakeSingleShardStorageMutatorFn,
     ) -> anyhow::Result<Vec<StateRoot>> {
         let state_roots = all_shard_uids
@@ -693,6 +699,7 @@ impl ForkNetworkCommand {
                         *shard_uid,
                         store.clone(),
                         prev_state_roots[shard_uid.shard_id as usize],
+                        block_height,
                         make_storage_mutator.clone(),
                     )
                     .unwrap();
