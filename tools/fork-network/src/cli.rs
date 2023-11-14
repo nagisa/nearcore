@@ -121,7 +121,7 @@ struct Validator {
 }
 
 type MakeSingleShardStorageMutatorFn =
-    Arc<dyn Fn(ShardId, StateRoot) -> anyhow::Result<SingleShardStorageMutator> + Send + Sync>;
+    Arc<dyn Fn(StateRoot) -> anyhow::Result<SingleShardStorageMutator> + Send + Sync>;
 
 impl ForkNetworkCommand {
     pub fn run(
@@ -170,6 +170,7 @@ impl ForkNetworkCommand {
             panic!("Flat storage must be enabled");
         }
         near_config.config.store.state_snapshot_enabled = false;
+        near_config.config.store.disable_rocksdb_compression = true;
 
         match &self.command {
             SubCommand::Init(InitCmd) => {
@@ -325,13 +326,8 @@ impl ForkNetworkCommand {
         runtime.load_mem_tries_on_startup(&all_shard_uids).unwrap();
 
         let make_storage_mutator: MakeSingleShardStorageMutatorFn =
-            Arc::new(move |shard_id, prev_state_root| {
-                SingleShardStorageMutator::new(
-                    shard_id,
-                    &runtime.clone(),
-                    prev_hash,
-                    prev_state_root,
-                )
+            Arc::new(move |prev_state_root| {
+                SingleShardStorageMutator::new(&runtime.clone(), prev_state_root)
             });
 
         let new_state_roots = self.prepare_state(
@@ -361,7 +357,7 @@ impl ForkNetworkCommand {
         let storage = open_storage(&home_dir, near_config).unwrap();
         let store = storage.get_hot_store();
 
-        let (prev_state_roots, prev_hash, epoch_id, block_height) =
+        let (prev_state_roots, _prev_hash, epoch_id, block_height) =
             self.get_state_roots_and_hash(store.clone())?;
 
         let epoch_manager =
@@ -377,7 +373,6 @@ impl ForkNetworkCommand {
             epoch_manager.clone(),
             &runtime,
             epoch_id.clone(),
-            prev_hash,
             prev_state_roots,
         )?;
         let (new_state_roots, new_validator_accounts) =
@@ -485,9 +480,7 @@ impl ForkNetworkCommand {
     ) -> anyhow::Result<StateRoot> {
         // Doesn't support secrets.
         tracing::info!(?shard_uid);
-        let shard_id = shard_uid.shard_id as ShardId;
-        let mut storage_mutator: SingleShardStorageMutator =
-            make_storage_mutator(shard_id, prev_state_root)?;
+        let mut storage_mutator: SingleShardStorageMutator = make_storage_mutator(prev_state_root)?;
 
         // Keeps track of accounts that have a full access key.
         let mut has_full_key = HashSet::new();
@@ -620,13 +613,17 @@ impl ForkNetworkCommand {
                     ?shard_uid,
                     ref_keys_retrieved,
                     records_parsed,
-                    records_not_parsed,
-                    "last key: {}",
-                    hex::encode(&key)
+                    updated = access_keys_updated
+                        + accounts_implicit_updated
+                        + contract_data_updated
+                        + contract_code_updated
+                        + postponed_receipts_updated
+                        + delayed_receipts_updated
+                        + received_data_updated,
                 );
                 let state_root = storage_mutator.commit(&shard_uid, fake_block_height)?;
                 fake_block_height += 1;
-                storage_mutator = make_storage_mutator(shard_id, state_root)?;
+                storage_mutator = make_storage_mutator(state_root)?;
             }
         }
 
@@ -668,7 +665,7 @@ impl ForkNetworkCommand {
                     if storage_mutator.should_commit(batch_size) {
                         let state_root = storage_mutator.commit(&shard_uid, fake_block_height)?;
                         fake_block_height += 1;
-                        storage_mutator = make_storage_mutator(shard_id, state_root)?;
+                        storage_mutator = make_storage_mutator(state_root)?;
                     }
                 }
             }

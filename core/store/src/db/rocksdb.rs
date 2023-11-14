@@ -428,7 +428,7 @@ impl Database for RocksDB {
 fn rocksdb_options(store_config: &StoreConfig, mode: Mode) -> Options {
     let mut opts = Options::default();
 
-    set_compression_options(&mut opts);
+    set_compression_options(&mut opts, store_config.disable_rocksdb_compression);
     opts.create_missing_column_families(mode.read_write());
     opts.create_if_missing(mode.can_create());
     opts.set_use_fsync(false);
@@ -501,7 +501,7 @@ fn rocksdb_block_based_options(store_config: &StoreConfig, db_col: DBCol) -> Blo
 
 fn rocksdb_column_options(col: DBCol, store_config: &StoreConfig, temp: Temperature) -> Options {
     let mut opts = Options::default();
-    set_compression_options(&mut opts);
+    set_compression_options(&mut opts, store_config.disable_rocksdb_compression);
     opts.set_level_compaction_dynamic_level_bytes(true);
     opts.set_block_based_table_factory(&rocksdb_block_based_options(store_config, col));
 
@@ -528,7 +528,12 @@ fn rocksdb_column_options(col: DBCol, store_config: &StoreConfig, temp: Temperat
     opts
 }
 
-fn set_compression_options(opts: &mut Options) {
+fn set_compression_options(opts: &mut Options, disable_compression: bool) {
+    if disable_compression {
+        opts.set_compression_type(rocksdb::DBCompressionType::None);
+        opts.set_bottommost_compression_type(rocksdb::DBCompressionType::None);
+        return;
+    }
     opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
     opts.set_bottommost_compression_type(rocksdb::DBCompressionType::Zstd);
     // RocksDB documenation says that 16KB is a typical dictionary size.

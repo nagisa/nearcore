@@ -121,6 +121,8 @@ pub struct StoreConfig {
 
     // TODO (#9989): To be phased out in favor of state_snapshot_config
     pub state_snapshot_compaction_enabled: bool,
+
+    pub disable_rocksdb_compression: bool,
 }
 
 /// Config used to control state snapshot creation. This is used for state sync and resharding.
@@ -293,6 +295,7 @@ impl Default for StoreConfig {
 
             // TODO: To be phased out in favor of state_snapshot_config
             state_snapshot_compaction_enabled: false,
+            disable_rocksdb_compression: false,
         }
     }
 }
