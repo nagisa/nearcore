@@ -1,6 +1,6 @@
 use crate::single_shard_storage_mutator::SingleShardStorageMutator;
 use crate::storage_mutator::StorageMutator;
-use near_chain::types::Tip;
+use near_chain::types::{RuntimeAdapter, Tip};
 use near_chain::{ChainStore, ChainStoreAccess};
 use near_chain_configs::{Genesis, GenesisConfig, GenesisValidationMode};
 use near_crypto::PublicKey;
@@ -306,6 +306,7 @@ impl ForkNetworkCommand {
         home_dir: &Path,
     ) -> anyhow::Result<Vec<StateRoot>> {
         // Open storage with migration
+        near_config.config.store.load_mem_tries_for_all_shards = true;
         let storage = open_storage(&home_dir, near_config).unwrap();
         let store = storage.get_hot_store();
 
@@ -321,6 +322,7 @@ impl ForkNetworkCommand {
             .collect();
         let runtime =
             NightshadeRuntime::from_config(home_dir, store.clone(), &near_config, epoch_manager);
+        runtime.load_mem_tries_on_startup(&all_shard_uids).unwrap();
 
         let make_storage_mutator: MakeSingleShardStorageMutatorFn =
             Arc::new(move |shard_id, prev_state_root| {
@@ -492,6 +494,7 @@ impl ForkNetworkCommand {
 
         // Iterate over the whole flat storage and do the necessary changes to have access to all accounts.
         let mut index_delayed_receipt = 0;
+        let mut ref_keys_retrieved = 0;
         let mut records_not_parsed = 0;
         let mut records_parsed = 0;
         let mut access_keys_updated = 0;
@@ -504,6 +507,7 @@ impl ForkNetworkCommand {
         for item in store_helper::iter_flat_state_entries(shard_uid, &store, None, None) {
             let (key, value) = match item {
                 Ok((key, FlatStateValue::Ref(ref_value))) => {
+                    ref_keys_retrieved += 1;
                     (key, trie_storage.retrieve_raw_bytes(&ref_value.hash)?.to_vec())
                 }
                 Ok((key, FlatStateValue::Inlined(value))) => (key, value),
@@ -609,6 +613,14 @@ impl ForkNetworkCommand {
                 records_not_parsed += 1;
             }
             if storage_mutator.should_commit(batch_size) {
+                tracing::info!(
+                    ?shard_uid,
+                    ref_keys_retrieved,
+                    records_parsed,
+                    records_not_parsed,
+                    "last key: {}",
+                    hex::encode(&key)
+                );
                 let state_root = storage_mutator.commit(&shard_uid)?;
                 storage_mutator = make_storage_mutator(shard_id, state_root)?;
             }
@@ -616,6 +628,7 @@ impl ForkNetworkCommand {
 
         tracing::info!(
             ?shard_uid,
+            ref_keys_retrieved,
             records_parsed,
             records_not_parsed,
             accounts_implicit_updated,
