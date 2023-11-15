@@ -25,12 +25,12 @@ impl SingleShardStorageMutator {
     }
 
     fn set(&mut self, key: TrieKey, value: Vec<u8>) -> anyhow::Result<()> {
-        self.updates.push((borsh::to_vec(&key)?, Some(value)));
+        self.updates.push((key.to_vec(), Some(value)));
         Ok(())
     }
 
     fn remove(&mut self, key: TrieKey) -> anyhow::Result<()> {
-        self.updates.push((borsh::to_vec(&key)?, None));
+        self.updates.push((key.to_vec(), None));
         Ok(())
     }
 
