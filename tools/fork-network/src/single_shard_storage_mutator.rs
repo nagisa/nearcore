@@ -148,7 +148,8 @@ impl SingleShardStorageMutator {
         shard_uid: &ShardUId,
         fake_block_height: u64,
     ) -> anyhow::Result<StateRoot> {
-        tracing::info!(?shard_uid, num_changes = ?self.updates.len(), "commit");
+        let num_updates = self.updates.len();
+        tracing::info!(?shard_uid, num_updates, "commit");
         let mut update = self.shard_tries.store_update();
         let flat_state_changes = FlatStateChanges::from_raw_key_value(&self.updates);
         flat_state_changes.apply_to_flat_state(&mut update, *shard_uid);
@@ -170,7 +171,7 @@ impl SingleShardStorageMutator {
             .write()
             .unwrap()
             .delete_until_height(fake_block_height - 1);
-        tracing::info!(?shard_uid, num_changes = ?self.updates.len(), "committing");
+        tracing::info!(?shard_uid, num_updates, "committing");
         update.set_ser(
             DBCol::Misc,
             format!("FORK_TOOL_SHARD_ID:{}", shard_uid.shard_id).as_bytes(),
