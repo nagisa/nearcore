@@ -652,7 +652,17 @@ impl ForkNetworkCommand {
             if let Ok((key, _)) = item {
                 if key[0] == col::ACCOUNT {
                     num_accounts += 1;
-                    let account_id = parse_account_id_from_account_key(&key).unwrap();
+                    let account_id = match parse_account_id_from_account_key(&key) {
+                        Ok(account_id) => account_id,
+                        Err(err) => {
+                            tracing::error!(
+                                ?err,
+                                "Failed to parse account id {}",
+                                hex::encode(&key)
+                            );
+                            continue;
+                        }
+                    };
                     if has_full_key.contains(&account_id) {
                         continue;
                     }

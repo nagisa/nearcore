@@ -17,17 +17,11 @@ pub(crate) struct SingleShardStorageMutator {
     updates: Vec<(Vec<u8>, Option<Vec<u8>>)>,
     state_root: StateRoot,
     shard_tries: ShardTries,
-    num_changes: u64,
 }
 
 impl SingleShardStorageMutator {
     pub(crate) fn new(runtime: &NightshadeRuntime, state_root: StateRoot) -> anyhow::Result<Self> {
-        Ok(Self {
-            updates: Vec::new(),
-            state_root,
-            shard_tries: runtime.get_tries(),
-            num_changes: 0,
-        })
+        Ok(Self { updates: Vec::new(), state_root, shard_tries: runtime.get_tries() })
     }
 
     fn set(&mut self, key: TrieKey, value: Vec<u8>) -> anyhow::Result<()> {
@@ -154,7 +148,7 @@ impl SingleShardStorageMutator {
         shard_uid: &ShardUId,
         fake_block_height: u64,
     ) -> anyhow::Result<StateRoot> {
-        tracing::info!(?shard_uid, num_changes = ?self.num_changes, "commit");
+        tracing::info!(?shard_uid, num_changes = ?self.updates.len(), "commit");
         let mut update = self.shard_tries.store_update();
         let flat_state_changes = FlatStateChanges::from_raw_key_value(&self.updates);
         flat_state_changes.apply_to_flat_state(&mut update, *shard_uid);
@@ -176,7 +170,7 @@ impl SingleShardStorageMutator {
             .write()
             .unwrap()
             .delete_until_height(fake_block_height - 1);
-        tracing::info!(?shard_uid, num_changes = ?self.num_changes, "committing");
+        tracing::info!(?shard_uid, num_changes = ?self.updates.len(), "committing");
         update.set_ser(
             DBCol::Misc,
             format!("FORK_TOOL_SHARD_ID:{}", shard_uid.shard_id).as_bytes(),
