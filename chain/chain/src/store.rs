@@ -2340,13 +2340,13 @@ impl<'a> ChainStoreUpdate<'a> {
     ) -> Result<(), Error> {
         // Need to check if this is the last block of the epoch where resharding is completed
         // which means shard layout changed in the previous epoch
-        if !epoch_manager.is_next_block_epoch_start(&block_hash)? {
+        if !epoch_manager.is_next_block_epoch_start(&block_hash).unwrap() {
             return Ok(());
         }
-        let epoch_id = epoch_manager.get_epoch_id(&block_hash)?;
-        let shard_layout = epoch_manager.get_shard_layout(&epoch_id)?;
-        let prev_epoch_id = epoch_manager.get_prev_epoch_id(&block_hash)?;
-        let prev_shard_layout = epoch_manager.get_shard_layout(&prev_epoch_id)?;
+        let epoch_id = epoch_manager.get_epoch_id(&block_hash).unwrap();
+        let shard_layout = epoch_manager.get_shard_layout(&epoch_id).unwrap();
+        let prev_epoch_id = epoch_manager.get_prev_epoch_id(&block_hash).unwrap();
+        let prev_shard_layout = epoch_manager.get_shard_layout(&prev_epoch_id).unwrap();
         if shard_layout == prev_shard_layout {
             return Ok(());
         }

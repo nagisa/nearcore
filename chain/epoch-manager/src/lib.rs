@@ -1082,7 +1082,7 @@ impl EpochManager {
 
     /// Returns true if next block after given block hash is in the new epoch.
     pub fn is_next_block_epoch_start(&self, parent_hash: &CryptoHash) -> Result<bool, EpochError> {
-        let block_info = self.get_block_info(parent_hash)?;
+        let block_info = self.get_block_info(parent_hash).unwrap();
         self.is_next_block_in_next_epoch(&block_info)
     }
 
@@ -1509,10 +1509,10 @@ impl EpochManager {
         if block_info.prev_hash() == &CryptoHash::default() {
             return Ok(true);
         }
-        let protocol_version = self.get_epoch_info_from_hash(block_info.hash())?.protocol_version();
+        let protocol_version = self.get_epoch_info_from_hash(block_info.hash()).unwrap().protocol_version();
         let epoch_length = self.config.for_protocol_version(protocol_version).epoch_length;
         let estimated_next_epoch_start =
-            self.get_block_info(block_info.epoch_first_block())?.height() + epoch_length;
+            self.get_block_info(block_info.epoch_first_block()).unwrap().height() + epoch_length;
 
         if epoch_length <= 3 {
             // This is here to make epoch_manager tests pass. Needs to be removed, tracked in

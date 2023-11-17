@@ -1002,12 +1002,12 @@ impl Chain {
                         self.epoch_manager.as_ref(),
                         *block_hash,
                         GCMode::Canonical(tries.clone()),
-                    )?;
+                    ).unwrap();
                     chain_store_update.clear_resharding_data(
                         self.runtime_adapter.as_ref(),
                         self.epoch_manager.as_ref(),
                         *block_hash,
-                    )?;
+                    ).unwrap();
                     gc_blocks_remaining -= 1;
                 } else {
                     return Err(Error::GCError(
