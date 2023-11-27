@@ -25,7 +25,8 @@ use near_primitives::types::{
     AccountId, AccountInfo, Balance, BlockHeight, EpochId, NumBlocks, ShardId, StateRoot,
 };
 use near_primitives::version::PROTOCOL_VERSION;
-use near_store::db::RocksDB;
+use near_store::cold_storage::copy_all_data_to_cold;
+use near_store::db::{ColdDB, RocksDB};
 use near_store::flat::{store_helper, BlockInfo, FlatStorageManager, FlatStorageStatus};
 use near_store::{
     checkpoint_hot_storage_and_cleanup_columns, DBCol, Store, TrieDBStorage, TrieStorage,
@@ -74,6 +75,9 @@ enum SubCommand {
     /// Drops unneeded columns.
     Finalize(FinalizeCmd),
 
+    /// Makes archival node out of finalized db and cold db.
+    MakeArchivalDb(MakeArchivalDbCmd),
+
     /// Recovers from a snapshot.
     /// Deletes the snapshot.
     Reset(ResetCmd),
@@ -107,6 +111,19 @@ struct SetValidatorsCmd {
     pub epoch_length: NumBlocks,
     #[arg(long, default_value = "-fork", allow_hyphen_values = true)]
     pub chain_id_suffix: String,
+}
+
+enum ArchivalDbType {
+    Split,
+    Legacy,
+}
+
+#[derive(clap::Parser)]
+struct MakeArchivalDbCmd {
+    #[arg(short, long)]
+    archival_type: ArchivalDbType,
+    #[arg(short, long)]
+    cold_db_path: PathBuf,
 }
 
 #[derive(clap::Parser)]
@@ -193,6 +210,9 @@ impl ForkNetworkCommand {
             }
             SubCommand::Finalize(FinalizeCmd) => {
                 self.finalize(near_config, home_dir)?;
+            }
+            SubCommand::MakeArchivalDb(MakeArchivalDbCmd { archival_type, cold_db_path }) => {
+                self.make_archival_db(near_config, home_dir, archival_type, cold_db_path)?;
             }
             SubCommand::Reset(ResetCmd) => {
                 self.reset(near_config, home_dir)?;
@@ -411,6 +431,67 @@ impl ForkNetworkCommand {
         }
         update.commit()?;
         Ok(())
+    }
+
+    fn make_archival_db(
+        &self,
+        near_config: &mut NearConfig,
+        home_dir: &Path,
+        archival_type: &ArchivalDbType,
+        cold_db_path: &PathBuf,
+    ) -> anyhow::Result<()> {
+        let cold_db_path = if cold_db_path.is_absolute() {
+            PathBuf::from(cold_db_path)
+        } else {
+            home_dir.join(&cold_db_path)
+        };
+
+        // TODO(posvyatokum): open cold_db_path into cold: dyn Database or RocksDB (with migration)
+
+        let cold_db = Arc::new(ColdDB::new(cold));
+
+        // TODO(posvyatokum): open home_dir with near_config into hot
+
+        match archival_type {
+            ArchivalDbType::Split => {
+                // just rewrite BlockMisc values and DBKind values
+                self.make_split_storage(cold_db.clone(), hot)?;
+                // maybe also dump new config
+                self.add_cold_store_section_to_config(near_config, cold_db_path)?;
+            }
+            ArchivalDbType::Legacy => {
+                // iterate over every column in finalized fork db
+                // and copy it fully into cold_store
+                // should not take too long, as we deleted almost all column during finalization
+                self.copy_hot_to_cold(cold_db.clone(), hot)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn make_split_storage(&self, cold_db: Arc<ColdDB>, hot_store: &Store) -> anyhow::Result<()> {
+        // TODO(posvyatokum): Set HOT type to hot_store (instead of RPC)
+
+        // TODO(posvyatokum): Set COLD_HEAD to genesis height in both stores
+        Ok(())
+    }
+
+    fn add_cold_store_section_to_config(
+        &self,
+        near_config: &mut NearConfig,
+        cold_db_path: &PathBuf,
+    ) -> anyhow::Result<()> {
+        // TODO(posvyatokum): Add cold_store section to near_config, but it has to be relative to home
+        Ok(())
+    }
+
+    fn copy_hot_to_cold(&self, cold_db: Arc<ColdDB>, hot_store: &Store) -> anyhow::Result<()> {
+        let keep_going = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        // TODO(posvyatokum): specify batch_size
+
+        // TODO(posvyatokum): pass argument to specify columns (without changes this only copies cold columns, which is useless here).
+        copy_all_data_to_cold(cold_db, hot_store, batch_size, &keep_going).into()
     }
 
     fn get_state_roots_and_hash(

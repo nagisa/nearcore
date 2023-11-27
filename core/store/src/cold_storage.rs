@@ -197,6 +197,7 @@ pub enum CopyAllDataToColdStatus {
 
 /// Copies all contents of all cold columns from `hot_store` to `cold_db`.
 /// Does it column by column, and because columns can be huge, writes in batches of ~`batch_size`.
+/// TODO(posvyatokum): add ability to copy arbitrary set of columns, not just all cold columns
 pub fn copy_all_data_to_cold(
     cold_db: std::sync::Arc<ColdDB>,
     hot_store: &Store,
