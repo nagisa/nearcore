@@ -2024,8 +2024,8 @@ impl Client {
                     next_shard_id,
                     horizon,
                 )?;
-                validators.insert(validator);
                 debug!(target: "tx", ?validator, horizon);
+                validators.insert(validator);
             }
         }
 
