@@ -408,8 +408,11 @@ impl Handler<WithSpanContext<ProcessTxRequest>> for ClientActor {
         ctx: &mut Context<Self>,
     ) -> Self::Result {
         self.wrap(msg, ctx, "ProcessTxRequest", |this: &mut Self, msg| {
+            let _span = tracing::debug_span!(target: "tx", "handleProcessTxRequest").entered();
             let ProcessTxRequest { transaction, is_forwarded, check_only } = msg;
-            this.client.process_tx(transaction, is_forwarded, check_only)
+            let res = this.client.process_tx(transaction, is_forwarded, check_only);
+            debug!(target: "tx", ?res);
+            res
         })
     }
 }

@@ -3794,6 +3794,7 @@ impl Chain {
 
     /// Find a validator that is responsible for a given shard to forward requests to
     pub fn find_validator_for_forwarding(&self, shard_id: ShardId) -> Result<AccountId, Error> {
+        let _span = tracing::debug_span!(target: "tx", "find_validator_for_forwarding", shard_id).entered();
         let head = self.head()?;
         let epoch_id = self.epoch_manager.get_epoch_id_from_prev_block(&head.last_block_hash)?;
         self.find_chunk_producer_for_forwarding(
