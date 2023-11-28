@@ -4175,10 +4175,10 @@ impl Chain {
         shard_id: ShardId,
         mode: ApplyChunksMode,
     ) -> Result<Option<UpdateShardJob>, Error> {
-        if checked_feature!("protocol_feature_chunk_validation", ChunkValidation, PROTOCOL_VERSION)
-        {
-            return Ok(None);
-        }
+        // if checked_feature!("protocol_feature_chunk_validation", ChunkValidation, PROTOCOL_VERSION)
+        // {
+        //     return Ok(None);
+        // }
 
         let last_shard_context =
             self.get_shard_context(me, block.header(), shard_id, mode, StorageDataSource::Db)?;
@@ -4190,7 +4190,13 @@ impl Chain {
         }
 
         // Validate transactions in chunk.
-        let chunk = self.get_chunk_clone_from_header(&chunk_header)?;
+        let chunk = match self.get_chunk_clone_from_header(&chunk_header) {
+            Ok(c) => c,
+            Err(e) => {
+                debug!(target: "client", "MISSING CURRENT CHUNK!!! {} {e}", block.header().height());
+                return Ok(None);
+            }
+        };
         self.validate_chunk_transactions(&block, prev_block.header(), &chunk)?;
 
         let runtime = self.runtime_adapter.clone();
