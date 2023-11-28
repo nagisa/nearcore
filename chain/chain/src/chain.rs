@@ -4291,7 +4291,13 @@ impl Chain {
             .as_ref(),
         );
         let (last_block_context, last_shard_context) = execution_contexts.pop().unwrap();
-        let prev_chunk = self.get_chunk_clone_from_header(&prev_chunk_header.clone())?;
+        let prev_chunk = match self.get_chunk_clone_from_header(&prev_chunk_header.clone()) {
+            Ok(c) => c,
+            Err(e) => {
+                debug!(target: "client", "MISSING CHUNK!!! {} {e}", block.header().height());
+                return Ok(None);
+            }
+        };
         Ok(Some(Box::new(move |parent_span| -> Result<ShardUpdateResult, Error> {
             let mut result = vec![];
             for (block_context, shard_context) in execution_contexts {
