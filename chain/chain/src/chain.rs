@@ -4175,6 +4175,11 @@ impl Chain {
         shard_id: ShardId,
         mode: ApplyChunksMode,
     ) -> Result<Option<UpdateShardJob>, Error> {
+        if checked_feature!("protocol_feature_chunk_validation", ChunkValidation, PROTOCOL_VERSION)
+        {
+            return Ok(None);
+        }
+
         let last_shard_context =
             self.get_shard_context(me, block.header(), shard_id, mode, StorageDataSource::Db)?;
         let is_new_chunk = chunk_header.height_included() == block.header().height();
