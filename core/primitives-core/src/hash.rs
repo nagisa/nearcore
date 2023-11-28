@@ -92,8 +92,8 @@ impl CryptoHash {
         // base58-encoded string is at most 1.4 times longer than the binary
         // sequence.  We’re serialising 32 bytes so ⌈32 * 1.4⌉ = 45 should be
         // enough.
-        let buffer = [0u8; 45];
-        // let len = bs58::encode(self).into(&mut buffer[..]).unwrap();
+        let mut buffer = [0u8; 45];
+        let _len = bs58::encode(self).into(&mut buffer[..]).unwrap();
         let value = String::from_utf8_lossy(&buffer[..6]);
         visitor((value + "...").as_ref())
     }
