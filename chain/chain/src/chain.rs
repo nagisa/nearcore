@@ -4294,13 +4294,16 @@ impl Chain {
         // Then, we process updates for missing chunks, until we find a block at which
         // `prev_chunk` was created.
         // And finally we process update for the `prev_chunk`.
-        let mut current_chunk_extra = ChunkExtra::clone(
-            self.get_chunk_extra(
-                &execution_contexts[0].0.prev_block_hash,
-                &execution_contexts[0].1.shard_uid,
-            )?
-            .as_ref(),
-        );
+        let mut current_chunk_extra = match self.get_chunk_extra(
+            &execution_contexts[0].0.prev_block_hash,
+            &execution_contexts[0].1.shard_uid,
+        ) {
+            Ok(c) => ChunkExtra::clone(c.as_ref()),
+            Err(e) => {
+                debug!(target: "client", "MISSING CHUNK EXTRA!!! {} {e}", block.header().height());
+                return Ok(None);
+            }
+        };
         let (last_block_context, last_shard_context) = execution_contexts.pop().unwrap();
         let prev_chunk = match self.get_chunk_clone_from_header(&prev_chunk_header.clone()) {
             Ok(c) => c,
