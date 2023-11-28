@@ -1243,30 +1243,6 @@ impl Client {
         apply_chunks_done_callback: DoneApplyChunkCallback,
         should_produce_chunk: bool,
     ) -> (Vec<CryptoHash>, HashMap<CryptoHash, near_chain::Error>) {
-        {
-            let head = self.chain.head().unwrap();
-            // EXTREME DEBUG
-            println!("CHAIN STRUCTURE:");
-            for height in 0..=head.height {
-                let result_block = self.chain.get_block_by_height(height);
-                if let Ok(block) = result_block {
-                    let block_hash = block.hash();
-                    let prev_hash = block.header().prev_hash();
-                    let block_height = block.header().height();
-                    let epoch_id = block.header().epoch_id();
-                    let pv = self.epoch_manager.get_epoch_protocol_version(epoch_id).unwrap();
-                    let chunks: Vec<_> = block
-                        .chunks()
-                        .iter()
-                        .map(|c| (c.chunk_hash(), c.height_included()))
-                        .collect();
-                    println!(
-                        "{prev_hash} -> {block_hash} | {block_height} | {} {pv} | CHUNKS: {:?}",
-                        epoch_id.0, chunks
-                    );
-                }
-            }
-        }
         let me = self
             .validator_signer
             .as_ref()
