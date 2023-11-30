@@ -12,7 +12,7 @@ use std::{collections::HashMap, iter::FromIterator};
 /// and slightly improved read speed for FlatState and reduced memory footprint in
 /// #9389
 /// This is purposefully hardcoded to avoid additional config.json parameters.
-const FLAT_COLUMN_BLOCK_CACHE_SIZE: bytesize::ByteSize = bytesize::ByteSize::mib(128);
+const FLAT_COLUMN_BLOCK_CACHE_SIZE: bytesize::ByteSize = bytesize::ByteSize::mib(1280);
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
