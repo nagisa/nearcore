@@ -56,3 +56,10 @@ nightly = [
   "nearcore/nightly",
   "node-runtime/nightly",
 ]
+sandbox = [
+  "nearcore/sandbox",
+  "near-client/sandbox",
+  "near-indexer-primitives/sandbox",
+  "near-primitives/sandbox",
+  "node-runtime/sandbox",
+]
