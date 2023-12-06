@@ -25,3 +25,4 @@ nightly = [
 nightly_protocol = [
   "near-primitives/nightly_protocol",
 ]
+sandbox = ["near-primitives/sandbox"]
