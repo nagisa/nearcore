@@ -171,6 +171,7 @@ pub fn verify_and_charge_transaction(
         }
         .into());
     }
+
     if checked_feature!("stable", AccessKeyNonceRange, current_protocol_version) {
         if let Some(height) = block_height {
             let upper_bound =
@@ -1840,6 +1841,8 @@ mod tests {
                 nonce: 19000001,
                 max_block_height: 57,
                 public_key: PublicKey::empty(KeyType::ED25519),
+                random_nonce: None,
+                expires_at: None,
             },
             signature: Signature::default(),
         };

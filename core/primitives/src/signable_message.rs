@@ -293,6 +293,8 @@ mod tests {
             nonce: 0,
             max_block_height: 1000,
             public_key,
+            random_nonce: None,
+            expires_at: None,
         };
         delegate_action
     }

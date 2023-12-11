@@ -78,6 +78,8 @@ fn protocol_upgrade() {
 
         nonce: 0,
         block_hash: CryptoHash::default(),
+        random_nonce: None,
+        expires_at: None,
     };
 
     // Run transaction writing storage key exceeding the limit. Check that execution succeeds.
@@ -138,6 +140,8 @@ fn protocol_upgrade() {
 
             nonce: 0,
             block_hash: CryptoHash::default(),
+            random_nonce: None,
+            expires_at: None,
         };
         let tip = env.clients[0].chain.head().unwrap();
         let signed_tx =

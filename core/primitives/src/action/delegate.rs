@@ -36,6 +36,10 @@ pub struct DelegateAction {
     pub max_block_height: BlockHeight,
     /// Public key used to sign this delegated action.
     pub public_key: PublicKey,
+    /// A tranditional random nonce as described in NEP-522
+    pub random_nonce: Option<Nonce>,
+    /// When this transaction expires
+    pub expires_at: Option<u64>,
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Eq, Clone, Debug)]
@@ -159,6 +163,8 @@ mod tests {
                 nonce: 1,
                 max_block_height: 2,
                 public_key: PublicKey::empty(KeyType::ED25519),
+                random_nonce: None,
+                expires_at: None,
             },
             signature: Signature::empty(KeyType::ED25519),
         }))

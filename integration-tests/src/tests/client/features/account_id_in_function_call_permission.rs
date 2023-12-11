@@ -58,6 +58,8 @@ fn test_account_id_in_function_call_permission_upgrade() {
         }))],
         nonce: 0,
         block_hash: CryptoHash::default(),
+        random_nonce: None,
+        expires_at: None,
     };
 
     // Run the transaction, it should pass as we don't do validation at this protocol version.
@@ -123,6 +125,8 @@ fn test_very_long_account_id() {
         }))],
         nonce: 0,
         block_hash: tip.last_block_hash,
+        random_nonce: None,
+        expires_at: None,
     }
     .sign(&signer);
 

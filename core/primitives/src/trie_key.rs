@@ -3,6 +3,7 @@ use std::mem::size_of;
 use borsh::{BorshDeserialize, BorshSerialize};
 
 use near_crypto::PublicKey;
+use near_primitives_core::types::BlockHeight;
 
 use crate::hash::CryptoHash;
 use crate::types::AccountId;
@@ -41,8 +42,10 @@ pub mod col {
     pub const DELAYED_RECEIPT: u8 = 8;
     /// This column id is used when storing Key-Value data from a contract on an `account_id`.
     pub const CONTRACT_DATA: u8 = 9;
+    /// This stores the hash of transactions that don't use key nonces
+    pub const TRANSACTION_HASH: u8 = 10;
     /// All columns
-    pub const NON_DELAYED_RECEIPT_COLUMNS: [(u8, &str); 8] = [
+    pub const NON_DELAYED_RECEIPT_COLUMNS: [(u8, &str); 9] = [
         (ACCOUNT, "Account"),
         (CONTRACT_CODE, "ContractCode"),
         (ACCESS_KEY, "AccessKey"),
@@ -51,6 +54,7 @@ pub mod col {
         (PENDING_DATA_COUNT, "PendingDataCount"),
         (POSTPONED_RECEIPT, "PostponedReceipt"),
         (CONTRACT_DATA, "ContractData"),
+        (TRANSACTION_HASH, "TransactionHash"),
     ];
 }
 
@@ -89,6 +93,74 @@ pub enum TrieKey {
     /// Used to store a key-value record `Vec<u8>` within a contract deployed on a given `AccountId`
     /// and a given key.
     ContractData { account_id: AccountId, key: Vec<u8> },
+
+    TransactionHash {
+        // TODO I think I should remove this, but I don't understand resharding enough to pull it off
+        account_id: AccountId,
+        expiry: Expiry,
+        hash: CryptoHash,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub enum Expiry {
+    BlockHeight(BlockHeight),
+    ExpiresAt(u64),
+}
+
+impl Expiry {
+    pub const BLOCK_HEIGHT_TAG: u8 = 0;
+    pub const EXPIRES_AT_TAG: u8 = 1;
+    pub const LENGTH: usize = 1 + size_of::<BlockHeight>();
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut output = Vec::new();
+        let inner = match self {
+            Expiry::BlockHeight(height) => {
+                output.push(Expiry::BLOCK_HEIGHT_TAG);
+                height
+            }
+            Expiry::ExpiresAt(expires) => {
+                output.push(Expiry::EXPIRES_AT_TAG);
+                expires
+            }
+        };
+        output.extend(inner.to_le_bytes());
+        output
+    }
+
+    #[must_use]
+    pub fn from_bytes(bytes: &[u8]) -> Result<(Self, &[u8]), String> {
+        let len = bytes.len();
+        let (to_parse, remaining) = if len >= Expiry::LENGTH {
+            // If I was really confident I'd do this unchecked
+            Ok(bytes.split_at(Expiry::LENGTH))
+        } else {
+            Err(format!(
+                "Too few bytes to parse Expiry, needed {} bytes found {} bytes",
+                len,
+                Expiry::LENGTH
+            ))
+        }?;
+        let to_parse: [u8; Expiry::LENGTH] = to_parse[0..Expiry::LENGTH]
+            // It's safe to do unwrap because we know len > Expiry::LENGTH
+            .try_into()
+            .unwrap();
+
+        let constructor: Result<fn(u64) -> Expiry, _> = match to_parse[0] {
+            Expiry::BLOCK_HEIGHT_TAG => Ok(Expiry::BlockHeight),
+            Expiry::EXPIRES_AT_TAG => Ok(Expiry::ExpiresAt),
+            bad_tag => Err(format!("Bad constructor tag {}", bad_tag)),
+        };
+        // This is awkward because type inference breaks down if you put the ? in the last statement
+        let constructor = constructor?;
+
+        // It's safe to unwrap here because [u8; 9][1..] == [u8; 8]
+        let value: [u8; Expiry::LENGTH - 1] = to_parse[1..].try_into().unwrap();
+        let value = u64::from_le_bytes(value);
+
+        Ok((constructor(value), remaining))
+    }
 }
 
 /// Provides `len` function.
@@ -145,6 +217,13 @@ impl TrieKey {
                     + account_id.len()
                     + ACCOUNT_DATA_SEPARATOR.len()
                     + key.len()
+            }
+            TrieKey::TransactionHash { account_id, .. } => {
+                col::TRANSACTION_HASH.len()
+                    + account_id.len()
+                    + ACCOUNT_DATA_SEPARATOR.len()
+                    + Expiry::LENGTH
+                    + CryptoHash::LENGTH
             }
         }
     }
@@ -205,6 +284,13 @@ impl TrieKey {
                 buf.push(ACCOUNT_DATA_SEPARATOR);
                 buf.extend(key);
             }
+            TrieKey::TransactionHash { expiry, hash, account_id } => {
+                buf.push(col::TRANSACTION_HASH);
+                buf.extend(&expiry.to_bytes());
+                buf.extend(account_id.as_bytes());
+                buf.push(ACCOUNT_DATA_SEPARATOR);
+                buf.extend(hash.0);
+            }
         };
         debug_assert_eq!(expected_len, buf.len() - start_len);
     }
@@ -228,6 +314,7 @@ impl TrieKey {
             TrieKey::DelayedReceiptIndices => None,
             TrieKey::DelayedReceipt { .. } => None,
             TrieKey::ContractData { account_id, .. } => Some(account_id.clone()),
+            TrieKey::TransactionHash { account_id, .. } => Some(account_id.clone()),
         }
     }
 }

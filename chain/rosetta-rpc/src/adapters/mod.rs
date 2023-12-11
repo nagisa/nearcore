@@ -764,6 +764,8 @@ impl TryFrom<Vec<crate::models::Operation>> for NearActions {
                                         ))
                                     }
                                 },
+                                random_nonce: None,
+                                expires_at: None,
                             },
                             signature: signed_delegate_action_operation.signature,
                         }
@@ -1113,6 +1115,8 @@ mod tests {
                     nonce: 0,
                     max_block_height: 0,
                     public_key: sk.public_key(),
+                    random_nonce: None,
+                    expires_at: None,
                 },
                 signature: sk.sign(&[0]),
             }))],

@@ -62,6 +62,8 @@ fn test_flat_storage_upgrade() {
         actions: vec![],
         nonce: 0,
         block_hash: CryptoHash::default(),
+        random_nonce: None,
+        expires_at: None,
     };
 
     // Write key-value pair to state.

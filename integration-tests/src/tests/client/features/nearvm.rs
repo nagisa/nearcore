@@ -61,6 +61,8 @@ fn test_nearvm_upgrade() {
 
         nonce: 0,
         block_hash: CryptoHash::default(),
+        random_nonce: None,
+        expires_at: None,
     };
 
     // Run the transaction & collect the logs.

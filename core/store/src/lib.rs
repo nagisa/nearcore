@@ -24,8 +24,8 @@ pub use near_primitives::errors::{MissingTrieValueContext, StorageError};
 use near_primitives::hash::CryptoHash;
 use near_primitives::receipt::{DelayedReceiptIndices, Receipt, ReceivedData};
 pub use near_primitives::shard_layout::ShardUId;
-use near_primitives::trie_key::{trie_key_parsers, TrieKey};
-use near_primitives::types::{AccountId, StateRoot};
+use near_primitives::trie_key::{trie_key_parsers, Expiry, TrieKey};
+use near_primitives::types::{AccountId, BlockHeight, StateRoot};
 use near_vm_runner::logic::{CompiledContract, CompiledContractCache};
 use near_vm_runner::ContractCode;
 
@@ -787,6 +787,39 @@ pub fn get_access_key_raw(
         &trie_key_parsers::parse_trie_key_access_key_from_raw_key(raw_key)
             .expect("access key in the state should be correct"),
     )
+}
+
+pub fn transaction_hash_already_exists(
+    trie: &dyn TrieAccess,
+    expiry: Expiry,
+    account_id: AccountId,
+    hash: CryptoHash,
+) -> Result<bool, StorageError> {
+    get(trie, &TrieKey::TransactionHash { expiry, account_id, hash })
+        .map(|v: Option<()>| v.is_some())
+}
+
+pub fn add_transaction_hash(
+    state_update: &mut TrieUpdate,
+    expiry: Expiry,
+    account_id: AccountId,
+    hash: CryptoHash,
+) {
+    state_update.set(TrieKey::TransactionHash { expiry, account_id, hash }, Vec::new())
+}
+
+pub fn remove_blocks_expired_at(
+    state_update: &mut TrieUpdate,
+    expiry: Expiry,
+) -> Result<(), StorageError> {
+    // TODO make sure this expiry is consistently serialised
+    for i in state_update.iter(&expiry.to_le_bytes()) {
+        let bytes: Vec<u8> = i.collect()?;
+        bytes.split(|n| ACCOUNT_DATA_SEPARATOR == n);
+        state_update.remove(TrieKey::TransactionHash { expiry, account_id, hash })
+    }
+
+    Ok(())
 }
 
 pub fn set_code(state_update: &mut TrieUpdate, account_id: AccountId, code: &ContractCode) {

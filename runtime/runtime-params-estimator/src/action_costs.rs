@@ -769,6 +769,8 @@ pub(crate) fn empty_delegate_action(
         nonce,
         max_block_height: 1000,
         public_key: signer.public_key.clone(),
+        random_nonce: None,
+        expires_at: None,
     };
     let signature =
         SignableMessage::new(&delegate_action, SignableMessageType::DelegateAction).sign(&signer);

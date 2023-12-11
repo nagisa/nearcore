@@ -89,7 +89,6 @@ members = [
 ]
 
 [workspace.lints.rust]
-warnings = "deny"
 
 [workspace.lints.clippy]
 all = { level = "allow", priority = -1 }

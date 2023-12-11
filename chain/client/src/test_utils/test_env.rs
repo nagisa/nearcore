@@ -459,6 +459,8 @@ impl TestEnv {
             nonce: user_nonce,
             max_block_height: tip.height + 100,
             public_key: inner_signer.public_key(),
+            random_nonce: None,
+            expires_at: None,
         };
         let signature = inner_signer.sign(delegate_action.get_nep461_hash().as_bytes());
         let signed_delegate_action = SignedDelegateAction { delegate_action, signature };

@@ -371,6 +371,8 @@ impl StateChanges {
                 TrieKey::PostponedReceipt { .. } => {}
                 TrieKey::DelayedReceiptIndices => {}
                 TrieKey::DelayedReceipt { .. } => {}
+                // TODO is it justifiable to do nothing here?
+                TrieKey::TransactionHash { .. } => {}
             }
         }
 

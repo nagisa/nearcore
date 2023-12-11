@@ -1030,6 +1030,8 @@ fn test_process_invalid_tx() {
             receiver_id: "test".parse().unwrap(),
             block_hash: *env.clients[0].chain.genesis().hash(),
             actions: vec![],
+            random_nonce: None,
+            expires_at: None,
         },
     );
     for i in 1..12 {
@@ -1048,6 +1050,8 @@ fn test_process_invalid_tx() {
             receiver_id: "test".parse().unwrap(),
             block_hash: hash(&[1]),
             actions: vec![],
+            random_nonce: None,
+            expires_at: None,
         },
     );
     assert_eq!(

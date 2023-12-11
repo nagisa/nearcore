@@ -654,6 +654,8 @@ async fn construction_payloads(
         nonce: signer_public_access_key_nonce,
         receiver_id: receiver_account_id,
         actions,
+        random_nonce: None,
+        expires_at: None,
     };
 
     let (transaction_hash, _) = unsigned_transaction.get_hash_and_size();

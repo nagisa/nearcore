@@ -39,6 +39,8 @@ pub(crate) async fn convert_transactions_sir_into_local_receipts(
                                 near_primitives::transaction::Action::try_from(action).unwrap()
                             })
                             .collect(),
+                        random_nonce: None,
+                        expires_at: None,
                     },
                     prev_block_gas_price,
                     true,

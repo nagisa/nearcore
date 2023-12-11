@@ -1209,6 +1209,8 @@ mod tests {
                 nonce: 19000001,
                 max_block_height: 57,
                 public_key: "ed25519:32LnPNBZQJ3uhY8yV6JqnNxtRW8E27Ps9YD1XeUNuA1m".parse::<PublicKey>().unwrap(),
+                random_nonce: None,
+                expires_at: None,
             },
             signature: "ed25519:5oswo6yH6u7xduXHEC4aWc8EGmWdbFz49DaHvAVioS9tbdrxpUtoNQUa8ST9Fxpk7zS2ogWvuKaL29JjMFDi3DLe".parse().unwrap()
         };

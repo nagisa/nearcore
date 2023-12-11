@@ -37,6 +37,10 @@ pub struct Transaction {
     pub block_hash: CryptoHash,
     /// A list of actions to be applied
     pub actions: Vec<Action>,
+    /// A tranditional random nonce as described in NEP-522
+    pub random_nonce: Option<Nonce>,
+    /// When this transaction expires
+    pub expires_at: Option<u64>,
 }
 
 impl Transaction {
@@ -324,6 +328,8 @@ mod tests {
             receiver_id: "test".parse().unwrap(),
             block_hash: Default::default(),
             actions: vec![],
+            random_nonce: None,
+            expires_at: None,
         }
         .sign(&signer);
         let wrong_public_key = PublicKey::from_seed(KeyType::ED25519, "wrong");
@@ -379,6 +385,8 @@ mod tests {
                     beneficiary_id: "123".parse().unwrap(),
                 }),
             ],
+            random_nonce: None,
+            expires_at: None,
         };
         let signed_tx = SignedTransaction::new(Signature::empty(KeyType::ED25519), transaction);
         let new_signed_tx =

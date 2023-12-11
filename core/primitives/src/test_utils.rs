@@ -36,7 +36,16 @@ impl Transaction {
         nonce: Nonce,
         block_hash: CryptoHash,
     ) -> Self {
-        Self { signer_id, public_key, nonce, receiver_id, block_hash, actions: vec![] }
+        Self {
+            signer_id,
+            public_key,
+            nonce,
+            receiver_id,
+            block_hash,
+            actions: vec![],
+            random_nonce: None,
+            expires_at: None,
+        }
     }
 
     pub fn sign(self, signer: &dyn Signer) -> SignedTransaction {
@@ -111,6 +120,8 @@ impl SignedTransaction {
             receiver_id,
             block_hash,
             actions,
+            random_nonce: None,
+            expires_at: None,
         }
         .sign(signer)
     }
