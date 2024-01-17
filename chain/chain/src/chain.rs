@@ -3226,6 +3226,9 @@ impl Chain {
         me: &Option<AccountId>,
         block_header: &BlockHeader,
     ) -> Result<bool, Error> {
+        if true {
+            return Ok(true);
+        }
         let epoch_id = block_header.epoch_id();
         // Use epoch manager because block is not in DB yet.
         let next_epoch_id =
