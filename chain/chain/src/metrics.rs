@@ -1,7 +1,8 @@
 use near_o11y::metrics::{
     exponential_buckets, processing_time_buckets, try_create_histogram, try_create_histogram_vec,
-    try_create_histogram_with_buckets, try_create_int_counter, try_create_int_gauge,
-    try_create_int_gauge_vec, Histogram, HistogramVec, IntCounter, IntGauge, IntGaugeVec,
+    try_create_histogram_with_buckets, try_create_int_counter, try_create_int_counter_vec,
+    try_create_int_gauge, try_create_int_gauge_vec, Histogram, HistogramVec, IntCounter,
+    IntCounterVec, IntGauge, IntGaugeVec,
 };
 use once_cell::sync::Lazy;
 
@@ -196,6 +197,16 @@ pub(crate) static CHUNK_STATE_TRANSITION_DATA_NUM_VALUES: Lazy<HistogramVec> = L
     )
     .unwrap()
 });
+pub(crate) static CHUNK_STATE_TRANSITION_CONTRACT_SIZE_ABOVE_250KB: Lazy<IntCounterVec> =
+    Lazy::new(|| {
+        try_create_int_counter_vec(
+            "near_chunk_state_transition_contract_size_above_250kb",
+            "For each contract included in the state transition where the code is more than 250KB,
+            the counter is incremented by the number of bytes of the code.",
+            &["name"],
+        )
+        .unwrap()
+    });
 
 pub(crate) enum ReshardingStatus {
     /// The ReshardingRequest was send to the SyncJobsActor.

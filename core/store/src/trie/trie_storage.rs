@@ -402,6 +402,19 @@ impl TrieMemoryPartialStorage {
         let key_type = trie_key_parsers::get_key_type(key);
         *stats.value_size_by_type.entry(key_type).or_insert(0) += data.len();
         *stats.num_values_by_type.entry(key_type).or_insert(0) += 1;
+        if key_type == TrieKeyType::ContractCode {
+            match trie_key_parsers::parse_account_id_from_contract_code_key(key) {
+                Ok(account_id) => {
+                    *stats
+                        .contract_size_by_account_id
+                        .entry(account_id.to_string())
+                        .or_insert(0) += data.len();
+                }
+                Err(_) => {
+                    stats.anomaly_cannot_decode_contract_code_key += 1;
+                }
+            }
+        }
     }
 
     pub fn stats(&self, root: CryptoHash) -> PartialStateStats {
@@ -410,7 +423,9 @@ impl TrieMemoryPartialStorage {
             total_node_size: 0,
             num_values_by_type: HashMap::new(),
             value_size_by_type: HashMap::new(),
+            contract_size_by_account_id: HashMap::new(),
             anomaly_missing_leaf: 0,
+            anomaly_cannot_decode_contract_code_key: 0,
         };
         self.visit_node(&mut vec![], root, &mut stats);
         stats
@@ -422,7 +437,9 @@ pub struct PartialStateStats {
     pub total_node_size: usize,
     pub num_values_by_type: HashMap<TrieKeyType, usize>,
     pub value_size_by_type: HashMap<TrieKeyType, usize>,
+    pub contract_size_by_account_id: HashMap<String, usize>,
     pub anomaly_missing_leaf: usize,
+    pub anomaly_cannot_decode_contract_code_key: usize,
 }
 
 impl PartialStateStats {

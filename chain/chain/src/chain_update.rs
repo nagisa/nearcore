@@ -385,6 +385,13 @@ impl<'a> ChainUpdate<'a> {
                             .with_label_values(&[&shard_id_str, &format!("{:?}", key_type)])
                             .observe(value as f64);
                     }
+                    for (account_id, contract_size) in stats.contract_size_by_account_id {
+                        if contract_size > 250_000 {
+                            metrics::CHUNK_STATE_TRANSITION_CONTRACT_SIZE_ABOVE_250KB
+                                .with_label_values(&[&account_id])
+                                .inc_by(contract_size as u64);
+                        }
+                    }
                 }
                 self.chain_store_update.save_state_transition_data(
                     *block_hash,
