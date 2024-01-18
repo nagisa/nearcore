@@ -1198,6 +1198,7 @@ impl RuntimeAdapter for KeyValueRuntime {
                 block.block_hash,
                 block.height,
             ),
+            old_root: storage_config.state_root,
             new_root: state_root,
             outcomes: tx_results,
             outgoing_receipts,

@@ -93,6 +93,21 @@ pub enum TrieKey {
     ContractData { account_id: AccountId, key: Vec<u8> },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum TrieKeyType {
+    Account,
+    ContractCode,
+    AccessKey,
+    ReceivedData,
+    PostponedReceiptId,
+    PendingDataCount,
+    PostponedReceipt,
+    DelayedReceiptIndices,
+    DelayedReceipt,
+    ContractData,
+    Invalid,
+}
+
 /// Provides `len` function.
 ///
 /// This trait exists purely so that we can do `col::ACCOUNT.len()` rather than
@@ -150,6 +165,21 @@ impl TrieKey {
                     + ACCOUNT_DATA_SEPARATOR.len()
                     + key.len()
             }
+        }
+    }
+
+    pub fn key_type(&self) -> TrieKeyType {
+        match self {
+            TrieKey::Account { .. } => TrieKeyType::Account,
+            TrieKey::ContractCode { .. } => TrieKeyType::ContractCode,
+            TrieKey::AccessKey { .. } => TrieKeyType::AccessKey,
+            TrieKey::ReceivedData { .. } => TrieKeyType::ReceivedData,
+            TrieKey::PostponedReceiptId { .. } => TrieKeyType::PostponedReceiptId,
+            TrieKey::PendingDataCount { .. } => TrieKeyType::PendingDataCount,
+            TrieKey::PostponedReceipt { .. } => TrieKeyType::PostponedReceipt,
+            TrieKey::DelayedReceiptIndices => TrieKeyType::DelayedReceiptIndices,
+            TrieKey::DelayedReceipt { .. } => TrieKeyType::DelayedReceipt,
+            TrieKey::ContractData { .. } => TrieKeyType::ContractData,
         }
     }
 
@@ -442,6 +472,21 @@ pub mod trie_key_parsers {
         res.push(ACCOUNT_DATA_SEPARATOR);
         res.extend(prefix);
         res
+    }
+
+    pub fn get_key_type(key: &[u8]) -> TrieKeyType {
+        match key.get(0).copied() {
+            Some(col::ACCOUNT) => TrieKeyType::Account,
+            Some(col::CONTRACT_CODE) => TrieKeyType::ContractCode,
+            Some(col::ACCESS_KEY) => TrieKeyType::AccessKey,
+            Some(col::RECEIVED_DATA) => TrieKeyType::ReceivedData,
+            Some(col::POSTPONED_RECEIPT_ID) => TrieKeyType::PostponedReceiptId,
+            Some(col::PENDING_DATA_COUNT) => TrieKeyType::PendingDataCount,
+            Some(col::POSTPONED_RECEIPT) => TrieKeyType::PostponedReceipt,
+            Some(col::DELAYED_RECEIPT_OR_INDICES) => TrieKeyType::DelayedReceiptIndices,
+            Some(col::CONTRACT_DATA) => TrieKeyType::ContractData,
+            _ => TrieKeyType::Invalid,
+        }
     }
 }
 

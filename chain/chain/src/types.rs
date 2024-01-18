@@ -102,6 +102,7 @@ pub enum ReshardingResults {
 #[derive(Debug)]
 pub struct ApplyChunkResult {
     pub trie_changes: WrappedTrieChanges,
+    pub old_root: StateRoot,
     pub new_root: StateRoot,
     pub outcomes: Vec<ExecutionOutcomeWithId>,
     pub outgoing_receipts: Vec<Receipt>,

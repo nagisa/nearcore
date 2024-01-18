@@ -18,9 +18,10 @@ use near_epoch_manager::types::BlockHeaderInfo;
 use near_epoch_manager::EpochManagerAdapter;
 use near_primitives::block::{Block, Tip};
 use near_primitives::block_header::BlockHeader;
+use near_primitives::challenge::PartialState;
 #[cfg(feature = "new_epoch_sync")]
 use near_primitives::epoch_manager::{block_info::BlockInfo, epoch_sync::EpochSyncInfo};
-use near_primitives::hash::CryptoHash;
+use near_primitives::hash::{hash, CryptoHash};
 use near_primitives::shard_layout::{account_id_to_shard_id, account_id_to_shard_uid, ShardUId};
 use near_primitives::sharding::ShardChunk;
 use near_primitives::state_sync::{ReceiptProofResponse, ShardStateSyncResponseHeader};
@@ -29,6 +30,7 @@ use near_primitives::types::{
     AccountId, BlockExtra, BlockHeight, BlockHeightDelta, NumShards, ShardId,
 };
 use near_primitives::views::LightClientBlockView;
+use near_store::trie::trie_storage::TrieMemoryPartialStorage;
 use std::collections::HashMap;
 #[cfg(feature = "new_epoch_sync")]
 use std::collections::HashSet;
@@ -353,6 +355,37 @@ impl<'a> ChainUpdate<'a> {
                     apply_result.outcomes,
                     outcome_paths,
                 );
+                if let Some(partial_storage) = &apply_result.proof {
+                    let storage = TrieMemoryPartialStorage::new(match &partial_storage.nodes {
+                        PartialState::TrieValues(values) => {
+                            values.iter().map(|value| (hash(&value), value.clone())).collect()
+                        }
+                    });
+                    let stats = storage.stats(apply_result.old_root);
+                    let shard_id_str = shard_id.to_string();
+                    metrics::CHUNK_STATE_TRANSITION_DATA_NUM_ENTRIES
+                        .with_label_values(&[&shard_id_str])
+                        .observe(stats.num_total_entries() as f64);
+                    metrics::CHUNK_STATE_TRANSITION_DATA_SIZE
+                        .with_label_values(&[&shard_id_str])
+                        .observe(stats.total_size() as f64);
+                    metrics::CHUNK_STATE_TRANSITION_DATA_NUM_NODES
+                        .with_label_values(&[&shard_id_str])
+                        .observe(stats.num_nodes as f64);
+                    metrics::CHUNK_STATE_TRANSITION_DATA_NODE_SIZE
+                        .with_label_values(&[&shard_id_str])
+                        .observe(stats.total_node_size as f64);
+                    for (key_type, value) in stats.num_values_by_type {
+                        metrics::CHUNK_STATE_TRANSITION_DATA_NUM_VALUES
+                            .with_label_values(&[&shard_id_str, &format!("{:?}", key_type)])
+                            .observe(value as f64);
+                    }
+                    for (key_type, value) in stats.value_size_by_type {
+                        metrics::CHUNK_STATE_TRANSITION_DATA_VALUE_SIZE
+                            .with_label_values(&[&shard_id_str, &format!("{:?}", key_type)])
+                            .observe(value as f64);
+                    }
+                }
                 self.chain_store_update.save_state_transition_data(
                     *block_hash,
                     shard_id,

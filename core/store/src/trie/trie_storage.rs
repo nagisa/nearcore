@@ -1,7 +1,11 @@
 use crate::trie::config::TrieConfig;
 use crate::trie::prefetching_trie_storage::PrefetcherResult;
 use crate::trie::POISONED_LOCK_ERR;
-use crate::{metrics, DBCol, MissingTrieValueContext, PrefetchApi, StorageError, Store};
+use crate::{
+    metrics, DBCol, MissingTrieValueContext, NibbleSlice, PrefetchApi, RawTrieNodeWithSize,
+    StorageError, Store,
+};
+use borsh::BorshDeserialize;
 use lru::LruCache;
 use near_o11y::log_assert;
 use near_o11y::metrics::prometheus;
@@ -9,6 +13,7 @@ use near_o11y::metrics::prometheus::core::{GenericCounter, GenericGauge};
 use near_primitives::challenge::PartialState;
 use near_primitives::hash::CryptoHash;
 use near_primitives::shard_layout::ShardUId;
+use near_primitives::trie_key::{trie_key_parsers, TrieKeyType};
 use near_primitives::types::ShardId;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -344,6 +349,89 @@ impl TrieMemoryPartialStorage {
 
         nodes.sort();
         PartialState::TrieValues(nodes)
+    }
+
+    fn visit_node(
+        &self,
+        key_prefix: &mut Vec<u8>,
+        hash: CryptoHash,
+        stats: &mut PartialStateStats,
+    ) {
+        let Some(data) = self.recorded_storage.get(&hash) else {
+            return;
+        };
+        stats.num_nodes += 1;
+        stats.total_node_size += data.len();
+        let node = RawTrieNodeWithSize::try_from_slice(data.as_ref()).unwrap();
+        match &node.node {
+            crate::RawTrieNode::Leaf(extension, value_ref) => {
+                let (nibbles, _) = NibbleSlice::from_encoded(&extension);
+                key_prefix.extend(nibbles.iter());
+                self.visit_value(&NibbleSlice::nibbles_to_bytes(key_prefix), value_ref.hash, stats);
+                key_prefix.drain(key_prefix.len() - nibbles.len()..);
+            }
+            crate::RawTrieNode::BranchNoValue(children) => {
+                for (index, child) in children.iter() {
+                    key_prefix.push(index);
+                    self.visit_node(key_prefix, *child, stats);
+                    key_prefix.pop();
+                }
+            }
+            crate::RawTrieNode::BranchWithValue(value_ref, children) => {
+                self.visit_value(&NibbleSlice::nibbles_to_bytes(key_prefix), value_ref.hash, stats);
+                for (index, child) in children.iter() {
+                    key_prefix.push(index);
+                    self.visit_node(key_prefix, *child, stats);
+                    key_prefix.pop();
+                }
+            }
+            crate::RawTrieNode::Extension(extension, child) => {
+                let (nibbles, _) = NibbleSlice::from_encoded(&extension);
+                key_prefix.extend(nibbles.iter());
+                self.visit_node(key_prefix, *child, stats);
+                key_prefix.drain(key_prefix.len() - nibbles.len()..);
+            }
+        }
+    }
+
+    fn visit_value(&self, key: &[u8], hash: CryptoHash, stats: &mut PartialStateStats) {
+        let Some(data) = self.recorded_storage.get(&hash) else {
+            stats.anomaly_missing_leaf += 1;
+            return;
+        };
+        let key_type = trie_key_parsers::get_key_type(key);
+        *stats.value_size_by_type.entry(key_type).or_insert(0) += data.len();
+        *stats.num_values_by_type.entry(key_type).or_insert(0) += 1;
+    }
+
+    pub fn stats(&self, root: CryptoHash) -> PartialStateStats {
+        let mut stats = PartialStateStats {
+            num_nodes: 0,
+            total_node_size: 0,
+            num_values_by_type: HashMap::new(),
+            value_size_by_type: HashMap::new(),
+            anomaly_missing_leaf: 0,
+        };
+        self.visit_node(&mut vec![], root, &mut stats);
+        stats
+    }
+}
+
+pub struct PartialStateStats {
+    pub num_nodes: usize,
+    pub total_node_size: usize,
+    pub num_values_by_type: HashMap<TrieKeyType, usize>,
+    pub value_size_by_type: HashMap<TrieKeyType, usize>,
+    pub anomaly_missing_leaf: usize,
+}
+
+impl PartialStateStats {
+    pub fn num_total_entries(&self) -> usize {
+        self.num_nodes + self.num_values_by_type.values().sum::<usize>()
+    }
+
+    pub fn total_size(&self) -> usize {
+        self.total_node_size + self.value_size_by_type.values().sum::<usize>()
     }
 }
 

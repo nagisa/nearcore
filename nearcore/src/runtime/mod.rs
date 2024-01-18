@@ -406,6 +406,7 @@ impl NightshadeRuntime {
         };
 
         let instant = Instant::now();
+        let prev_state_root = *trie.get_root();
         let apply_result = self
             .runtime
             .apply(
@@ -468,6 +469,7 @@ impl NightshadeRuntime {
                 block_hash,
                 apply_state.block_height,
             ),
+            old_root: prev_state_root,
             new_root: apply_result.state_root,
             outcomes: apply_result.outcomes,
             outgoing_receipts: apply_result.outgoing_receipts,

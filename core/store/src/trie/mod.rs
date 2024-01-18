@@ -51,7 +51,7 @@ mod shard_tries;
 mod state_parts;
 mod state_snapshot;
 mod trie_recording;
-mod trie_storage;
+pub mod trie_storage;
 #[cfg(test)]
 mod trie_tests;
 pub mod update;

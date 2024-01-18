@@ -142,6 +142,61 @@ pub(crate) static LARGEST_FINAL_HEIGHT: Lazy<IntGauge> = Lazy::new(|| {
     .unwrap()
 });
 
+pub(crate) static CHUNK_STATE_TRANSITION_DATA_SIZE: Lazy<HistogramVec> = Lazy::new(|| {
+    try_create_histogram_vec(
+        "near_chunk_state_transition_data_size",
+        "The size of a state transition data",
+        &["shard_id"],
+        Some(exponential_buckets(1000.0, 2.0, 16).unwrap()),
+    )
+    .unwrap()
+});
+pub(crate) static CHUNK_STATE_TRANSITION_DATA_NUM_ENTRIES: Lazy<HistogramVec> = Lazy::new(|| {
+    try_create_histogram_vec(
+        "near_chunk_state_transition_num_entries",
+        "Number of entries (nodes and values) of a state transition data",
+        &["shard_id"],
+        Some(exponential_buckets(1.0, 2.0, 20).unwrap()),
+    )
+    .unwrap()
+});
+pub(crate) static CHUNK_STATE_TRANSITION_DATA_NODE_SIZE: Lazy<HistogramVec> = Lazy::new(|| {
+    try_create_histogram_vec(
+        "near_chunk_state_transition_node_size",
+        "Size of (interior) nodes of a state transition data",
+        &["shard_id"],
+        Some(exponential_buckets(1000.0, 2.0, 16).unwrap()),
+    )
+    .unwrap()
+});
+pub(crate) static CHUNK_STATE_TRANSITION_DATA_NUM_NODES: Lazy<HistogramVec> = Lazy::new(|| {
+    try_create_histogram_vec(
+        "near_chunk_state_transition_num_nodes",
+        "Number of (interior) nodes of a state transition data",
+        &["shard_id"],
+        Some(exponential_buckets(1.0, 2.0, 20).unwrap()),
+    )
+    .unwrap()
+});
+pub(crate) static CHUNK_STATE_TRANSITION_DATA_VALUE_SIZE: Lazy<HistogramVec> = Lazy::new(|| {
+    try_create_histogram_vec(
+        "near_chunk_state_transition_value_size",
+        "Size of values of a state transition data",
+        &["shard_id", "key_type"],
+        Some(exponential_buckets(1000.0, 2.0, 16).unwrap()),
+    )
+    .unwrap()
+});
+pub(crate) static CHUNK_STATE_TRANSITION_DATA_NUM_VALUES: Lazy<HistogramVec> = Lazy::new(|| {
+    try_create_histogram_vec(
+        "near_chunk_state_transition_num_values",
+        "Number of values of a state transition data",
+        &["shard_id", "key_type"],
+        Some(exponential_buckets(1.0, 2.0, 20).unwrap()),
+    )
+    .unwrap()
+});
+
 pub(crate) enum ReshardingStatus {
     /// The ReshardingRequest was send to the SyncJobsActor.
     Scheduled,
