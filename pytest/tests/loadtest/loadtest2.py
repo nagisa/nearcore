@@ -357,6 +357,10 @@ def main():
         'Whether to start a dedicated cluster instead of connecting to an existing local node',
         action='store_true')
     parser.add_argument(
+        '--nodes',
+        type=str,
+        default='127.0.0.1')
+    parser.add_argument(
         '--contracts',
         default='0,2,4,6,8,a,c,e',
         help=
@@ -403,7 +407,7 @@ def main():
 
     else:
         nodes = [
-            cluster.RpcNode("127.0.0.1", 3030),
+            cluster.RpcNode(ip.split(':')[0] if ':' in ip else ip, ip.split(':')[1] if ':' in ip else 3030) for ip in args.nodes.split(',')
         ]
         # The `nearup` localnet setup stores the keys in this directory.
         key_path = args.contract_key
