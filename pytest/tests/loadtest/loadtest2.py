@@ -407,7 +407,7 @@ def main():
 
     else:
         nodes = [
-            cluster.RpcNode(ip.split(':')[0] if ':' in ip else ip, ip.split(':')[1] if ':' in ip else 3030) for ip in args.nodes.split(',')
+            cluster.RpcNode(ip.split(':')[0] if ':' in ip else ip, ip.split(':')[1] if ':' in ip else 3030) for ip in args.nodes.split(',') if ip
         ]
         # The `nearup` localnet setup stores the keys in this directory.
         key_path = args.contract_key
