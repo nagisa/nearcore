@@ -110,7 +110,7 @@ pub fn update_cold_db(
                         .with_label_values(&[<&str>::from(col)])
                         .start_timer();
                     if col == DBCol::State {
-                        copy_state_from_store(shard_layout, block_hash_key, cold_db, &hot_store)
+                        copy_state_from_store(block_hash_key, cold_db, &hot_store)
                     } else {
                         let keys = combine_keys(&key_type_to_keys, &col.key_type());
                         copy_from_store(cold_db, &hot_store, col, keys)
@@ -119,7 +119,7 @@ pub fn update_cold_db(
                 // Return first found error, or Ok(())
                 .reduce(
                     || Ok(()), // Ok(()) by default
-                    // First found Err, or Ok(())g
+                    // First found Err, or Ok(())
                     |left, right| -> io::Result<()> {
                         vec![left, right]
                             .into_iter()
@@ -166,7 +166,6 @@ fn rc_aware_set(
 // attempt to read every node from every shard. Here we know exactly what shard
 // the node belongs to.
 fn copy_state_from_store(
-    shard_layout: &ShardLayout,
     block_hash_key: &[u8],
     cold_db: &ColdDB,
     hot_store: &Store,
@@ -175,35 +174,58 @@ fn copy_state_from_store(
     let _span = tracing::debug_span!(target: "cold_store", "copy_state_from_store", %col);
     let instant = std::time::Instant::now();
 
-    let mut transaction = DBTransaction::new();
-    for shard_uid in shard_layout.shard_uids() {
-        debug_assert_eq!(
-            DBCol::TrieChanges.key_type(),
-            &[DBKeyType::BlockHash, DBKeyType::ShardUId]
-        );
-
-        let shard_uid_key = shard_uid.to_bytes();
-        let key = join_two_keys(&block_hash_key, &shard_uid_key);
-        let trie_changes: Option<TrieChanges> =
-            hot_store.get_ser::<TrieChanges>(DBCol::TrieChanges, &key)?;
-
-        let Some(trie_changes) = trie_changes else { continue };
-        for op in trie_changes.insertions() {
-            let key = join_two_keys(&shard_uid_key, op.hash().as_bytes());
-            let value = op.payload().to_vec();
-
-            tracing::trace!(target: "cold_store", pretty_key=?near_fmt::StorageKey(&key), "copying state node to colddb");
-            rc_aware_set(&mut transaction, DBCol::State, key, value);
+    let trie_changes_key_values = {
+        let mut result = vec![];
+        for iter_result in hot_store.iter_prefix(DBCol::TrieChanges, block_hash_key) {
+            crate::metrics::COLD_MIGRATION_READS
+                .with_label_values(&[<&str>::from(DBCol::TrieChanges)])
+                .inc();
+            result.push(iter_result?);
         }
-    }
+        result
+    };
 
     let read_duration = instant.elapsed();
+    tracing::trace!(target: "cold_store", ?read_duration, "starting processing TrieChanges");
 
-    let instant = std::time::Instant::now();
-    cold_db.write(transaction)?;
-    let write_duration = instant.elapsed();
+    trie_changes_key_values
+        .into_par_iter()
+        .map(|trie_changes_key_value: (Box<[u8]>, Box<[u8]>)| -> io::Result<()> {
+            let instant = std::time::Instant::now();
+            let mut transaction = DBTransaction::new();
 
-    tracing::trace!(target: "cold_store", ?read_duration, ?write_duration, "finished");
+            let (block_hash_shard_uid_key, trie_changes) = trie_changes_key_value;
+            let mut shard_uid_key = Vec::from(block_hash_shard_uid_key);
+            shard_uid_key.drain(..block_hash_key.len());
+            let trie_changes = TrieChanges::try_from_slice(&trie_changes)?;
+            for op in trie_changes.insertions() {
+                let key = join_two_keys(&shard_uid_key, op.hash().as_bytes());
+                let value = op.payload().to_vec();
+
+                tracing::trace!(target: "cold_store", pretty_key=?near_fmt::StorageKey(&key), "copying state node to colddb");
+                rc_aware_set(&mut transaction, DBCol::State, key, value);
+            }
+            let processing_duration = instant.elapsed();
+
+            let instant = std::time::Instant::now();
+            cold_db.write(transaction)?;
+            let write_duration = instant.elapsed();
+
+            tracing::trace!(target: "cold_store", ?processing_duration, ?write_duration, ?shard_uid_key, "finished");
+            Ok(())
+        })
+        // Return first found error, or Ok(())
+        .reduce(
+            || Ok(()), // Ok(()) by default
+            // First found Err, or Ok(())
+            |left, right| -> io::Result<()> {
+                vec![left, right]
+                    .into_iter()
+                    .filter(|res| res.is_err())
+                    .next()
+                    .unwrap_or(Ok(()))
+            },
+        )?;
 
     Ok(())
 }
