@@ -106,6 +106,9 @@ pub fn update_cold_db(
                 .into_par_iter() // Process every cold column as a separate task in thread pool in parallel.
                 // Copy column to cold db.
                 .map(|col: DBCol| -> io::Result<()> {
+                    let _timer = metrics::COLD_COPY_DURATION_BY_COLUMN
+                        .with_label_values(&[<&str>::from(col)])
+                        .start_timer();
                     if col == DBCol::State {
                         copy_state_from_store(shard_layout, block_hash_key, cold_db, &hot_store)
                     } else {

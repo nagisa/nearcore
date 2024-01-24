@@ -238,6 +238,15 @@ pub static COLD_COPY_DURATION: Lazy<Histogram> = Lazy::new(|| {
     )
     .unwrap()
 });
+pub static COLD_COPY_DURATION_BY_COLUMN: Lazy<HistogramVec> = Lazy::new(|| {
+    try_create_histogram_vec(
+        "near_cold_copy_duration_by_column",
+        "Time it takes to copy one height to cold storage for one column",
+        &["col"],
+        Some(exponential_buckets(0.001, 1.6, 20).unwrap()),
+    )
+    .unwrap()
+});
 
 pub(crate) static HAS_STATE_SNAPSHOT: Lazy<IntGauge> = Lazy::new(|| {
     try_create_int_gauge("near_has_state_snapshot", "Whether a node has a state snapshot open")
