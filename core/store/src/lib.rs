@@ -287,6 +287,27 @@ impl Store {
         Ok(value)
     }
 
+    pub fn multi_get(
+        &self,
+        column: DBCol,
+        keys: &Vec<&[u8]>,
+        sorted_input: bool,
+    ) -> io::Result<Vec<Option<DBSlice<'_>>>> {
+        let values = if column.is_rc() {
+            self.storage.multi_get_with_rc_stripped(column, keys, sorted_input)
+        } else {
+            self.storage.multi_get_raw_bytes(column, keys, sorted_input)
+        }?;
+        tracing::trace!(
+            target: "store",
+            db_op = "multi_get",
+            col = %column,
+            keys = ?keys.iter().map(|key| StorageKey(*key)).collect::<Vec<StorageKey>>(),
+            size = values.iter().map(|value| value.as_deref().map(<[u8]>::len).unwrap_or_default()).sum::<usize>(),
+        );
+        Ok(values)
+    }
+
     pub fn get_ser<T: BorshDeserialize>(&self, column: DBCol, key: &[u8]) -> io::Result<Option<T>> {
         self.get(column, key)?.as_deref().map(T::try_from_slice).transpose()
     }

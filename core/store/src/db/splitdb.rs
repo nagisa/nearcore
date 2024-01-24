@@ -86,6 +86,17 @@ impl Database for SplitDB {
         Ok(None)
     }
 
+    fn multi_get_raw_bytes(
+        &self,
+        _col: DBCol,
+        _keys: &Vec<&[u8]>,
+        _sorted_input: bool,
+    ) -> io::Result<Vec<Option<DBSlice<'_>>>> {
+        let msg = "multi_get is not implemented in split storage";
+        log_assert_fail!("{}", msg);
+        Ok(vec![])
+    }
+
     /// Returns value for given `key` forcing a reference count decoding.
     ///
     /// **Panics** if the column is not reference counted.

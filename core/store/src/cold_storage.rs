@@ -92,8 +92,13 @@ pub fn update_cold_db(
     let block_hash_vec = hot_store.get_or_err_for_cold(DBCol::BlockHeight, &height_key)?;
     let block_hash_key = block_hash_vec.as_slice();
 
-    let key_type_to_keys =
+    let mut key_type_to_keys =
         get_keys_from_store(&hot_store, shard_layout, &height_key, block_hash_key)?;
+    // Ensure that keys are sorted so that `combine_keys` also returns a sorted vector.
+    for (_, keys_vec) in key_type_to_keys.iter_mut() {
+        keys_vec.sort();
+    }
+
     let cold_columns = DBCol::iter().filter(|col| col.is_cold()).collect::<Vec<DBCol>>();
 
     // Create new thread pool with `num_threads`.
@@ -281,25 +286,15 @@ fn copy_from_store(
     let mut transaction = DBTransaction::new();
     let mut good_keys = 0;
     let total_keys = keys.len();
-    for key in keys {
-        // TODO: Look into using RocksDB’s multi_key function.  It
-        // might speed things up.  Currently our Database abstraction
-        // doesn’t offer interface for it so that would need to be
-        // added.
-        let data = hot_store.get_for_cold(col, &key)?;
-        if let Some(value) = data {
-            // TODO: As an optimisation, we might consider breaking the
-            // abstraction layer.  Since we’re always writing to cold database,
-            // rather than using `cold_db: &dyn Database` argument we could have
-            // `cold_db: &ColdDB` and then some custom function which lets us
-            // write raw bytes. This would also allow us to bypass stripping and
-            // re-adding the reference count.
-
+    for (key, value) in keys
+        .iter()
+        .zip(hot_store.multi_get(col, &keys.iter().map(|key| &**key).collect(), true)?.iter())
+    {
+        if let Some(value) = value {
             good_keys += 1;
-            rc_aware_set(&mut transaction, col, key, value);
+            rc_aware_set(&mut transaction, col, key.clone(), value.as_slice().to_vec());
         }
     }
-
     let read_duration = instant.elapsed();
 
     let instant = std::time::Instant::now();

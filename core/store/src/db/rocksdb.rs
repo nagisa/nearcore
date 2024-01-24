@@ -320,6 +320,36 @@ impl Database for RocksDB {
         Ok(result)
     }
 
+    fn multi_get_raw_bytes(
+        &self,
+        col: DBCol,
+        keys: &Vec<&[u8]>,
+        sorted_input: bool,
+    ) -> io::Result<Vec<Option<DBSlice<'_>>>> {
+        let timer = metrics::DATABASE_OP_LATENCY_HIST
+            .with_label_values(&["multiget", col.into()])
+            .start_timer();
+        let read_options = rocksdb_read_options();
+        let mut error = None;
+        let result = self
+            .db
+            .batched_multi_get_cf_opt(self.cf_handle(col)?, keys, sorted_input, &read_options)
+            .into_iter()
+            .map(|res| match res {
+                Err(e) => {
+                    error = Some(io::Error::other(e));
+                    None
+                }
+                Ok(value) => value.map(DBSlice::from_rocksdb_slice),
+            })
+            .collect();
+        if let Some(error) = error {
+            return Err(error);
+        }
+        timer.observe_duration();
+        Ok(result)
+    }
+
     fn iter_raw_bytes(&self, col: DBCol) -> DBIterator {
         Box::new(self.iter_raw_bytes_internal(col, None, None, None))
     }

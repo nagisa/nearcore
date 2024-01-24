@@ -37,6 +37,18 @@ impl Database for TestDB {
         Ok(self.db.read().unwrap()[col].get(key).cloned().map(DBSlice::from_vec))
     }
 
+    fn multi_get_raw_bytes(
+        &self,
+        col: DBCol,
+        keys: &Vec<&[u8]>,
+        _sorted_input: bool,
+    ) -> io::Result<Vec<Option<DBSlice<'_>>>> {
+        Ok(keys
+            .iter()
+            .map(|key| self.db.read().unwrap()[col].get(*key).cloned().map(DBSlice::from_vec))
+            .collect())
+    }
+
     fn iter<'a>(&'a self, col: DBCol) -> DBIterator<'a> {
         let iterator = self.iter_raw_bytes(col);
         refcount::iter_with_rc_logic(col, iterator)

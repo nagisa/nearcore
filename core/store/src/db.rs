@@ -169,6 +169,27 @@ pub trait Database: Sync + Send {
         Ok(self.get_raw_bytes(col, key)?.and_then(DBSlice::strip_refcount))
     }
 
+    fn multi_get_raw_bytes(
+        &self,
+        col: DBCol,
+        keys: &Vec<&[u8]>,
+        sorted_input: bool,
+    ) -> io::Result<Vec<Option<DBSlice<'_>>>>;
+
+    fn multi_get_with_rc_stripped(
+        &self,
+        col: DBCol,
+        keys: &Vec<&[u8]>,
+        sorted_input: bool,
+    ) -> io::Result<Vec<Option<DBSlice<'_>>>> {
+        assert!(col.is_rc());
+        Ok(self
+            .multi_get_raw_bytes(col, keys, sorted_input)?
+            .into_iter()
+            .map(|raw| raw.and_then(DBSlice::strip_refcount))
+            .collect())
+    }
+
     /// Iterate over all items in given column in lexicographical order sorted
     /// by the key.
     ///
