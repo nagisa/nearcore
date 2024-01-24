@@ -111,6 +111,10 @@ pub fn update_cold_db(
                         .start_timer();
                     if col == DBCol::State {
                         copy_state_from_store(block_hash_key, cold_db, &hot_store)
+                    } else if col.key_type().len() > 1
+                        && col.key_type().get(0) == Some(&DBKeyType::BlockHash)
+                    {
+                        copy_by_block_hash_from_store(block_hash_key, cold_db, &hot_store, col)
                     } else {
                         let keys = combine_keys(&key_type_to_keys, &col.key_type());
                         copy_from_store(cold_db, &hot_store, col, keys)
@@ -156,6 +160,33 @@ fn rc_aware_set(
             return size;
         }
     };
+}
+
+/// A specialized version of `copy_from_store` for the columns that have keys that start with block hash.
+/// This is mainly an optimisation for `StateChanges` column.
+fn copy_by_block_hash_from_store(
+    block_hash_key: &[u8],
+    cold_db: &ColdDB,
+    hot_store: &Store,
+    col: DBCol,
+) -> io::Result<()> {
+    let _span = tracing::debug_span!(target: "cold_store", "copy_by_block_hash_from_store", %col);
+    let instant = std::time::Instant::now();
+
+    let mut transaction = DBTransaction::new();
+    for iter_result in hot_store.iter_prefix(col, block_hash_key) {
+        crate::metrics::COLD_MIGRATION_READS.with_label_values(&[<&str>::from(col)]).inc();
+        let (key, value) = iter_result?;
+        rc_aware_set(&mut transaction, col, key.to_vec(), value.to_vec());
+    }
+    let read_duration = instant.elapsed();
+
+    let instant = std::time::Instant::now();
+    cold_db.write(transaction)?;
+    let write_duration = instant.elapsed();
+
+    tracing::trace!(target: "cold_store", ?col, ?read_duration, ?write_duration, "finished");
+    Ok(())
 }
 
 // A specialized version of copy_from_store for the State column. Finds all the
@@ -418,7 +449,11 @@ fn get_keys_from_store(
 
     for key_type in DBKeyType::iter() {
         if key_type == DBKeyType::TrieNodeOrValueHash {
-            // The TrieNodeOrValueHash is only used in the State column, which is handled separately.
+            // The TrieNodeOrValueHash is only used in the State column, which is handled in `copy_state_from_store`.
+            continue;
+        }
+        if key_type == DBKeyType::TrieKey {
+            // The TrieKey is only used in the StateChanges column, which is handled in `copy_by_block_hash_from_store`.
             continue;
         }
 
@@ -426,6 +461,9 @@ fn get_keys_from_store(
             key_type,
             match key_type {
                 DBKeyType::TrieNodeOrValueHash => {
+                    unreachable!();
+                }
+                DBKeyType::TrieKey => {
                     unreachable!();
                 }
                 DBKeyType::BlockHeight => vec![height_key.to_vec()],
@@ -441,20 +479,6 @@ fn get_keys_from_store(
                     .shard_uids()
                     .map(|shard_uid| shard_uid.to_bytes().to_vec())
                     .collect(),
-                // TODO: write StateChanges values to colddb directly, not to cache.
-                DBKeyType::TrieKey => {
-                    let mut keys = vec![];
-                    store.iter_prefix_with_callback_for_cold(
-                        DBCol::StateChanges,
-                        &block_hash_key,
-                        |full_key| {
-                            let mut full_key = Vec::from(full_key);
-                            full_key.drain(..block_hash_key.len());
-                            keys.push(full_key);
-                        },
-                    )?;
-                    keys
-                }
                 DBKeyType::TransactionHash => chunks
                     .iter()
                     .flat_map(|c| c.transactions().iter().map(|t| t.get_hash().as_bytes().to_vec()))
