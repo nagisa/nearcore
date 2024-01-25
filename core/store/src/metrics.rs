@@ -2,9 +2,9 @@ use crate::rocksdb_metrics::export_stats_as_metrics;
 use crate::{NodeStorage, Store, Temperature};
 use actix_rt::ArbiterHandle;
 use near_o11y::metrics::{
-    exponential_buckets, try_create_histogram, try_create_histogram_vec,
-    try_create_histogram_with_buckets, try_create_int_counter_vec, try_create_int_gauge,
-    try_create_int_gauge_vec, Histogram, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec,
+    exponential_buckets, try_create_histogram_vec, try_create_histogram_with_buckets,
+    try_create_int_counter_vec, try_create_int_gauge, try_create_int_gauge_vec, Histogram,
+    HistogramVec, IntCounterVec, IntGauge, IntGaugeVec,
 };
 use once_cell::sync::Lazy;
 
