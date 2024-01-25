@@ -232,9 +232,10 @@ pub static COLD_HEAD_HEIGHT: Lazy<IntGauge> = Lazy::new(|| {
     try_create_int_gauge("near_cold_head_height", "Height of the head of cold storage").unwrap()
 });
 pub static COLD_COPY_DURATION: Lazy<Histogram> = Lazy::new(|| {
-    try_create_histogram(
+    try_create_histogram_with_buckets(
         "near_cold_copy_duration",
         "Time it takes to copy one height to cold storage",
+        exponential_buckets(0.001, 1.6, 20).unwrap(),
     )
     .unwrap()
 });
@@ -243,7 +244,7 @@ pub static COLD_COPY_DURATION_BY_COLUMN: Lazy<HistogramVec> = Lazy::new(|| {
         "near_cold_copy_duration_by_column",
         "Time it takes to copy one height to cold storage for one column",
         &["col"],
-        Some(exponential_buckets(0.001, 1.6, 20).unwrap()),
+        Some(exponential_buckets(0.0003, 1.15, 20).unwrap()),
     )
     .unwrap()
 });
