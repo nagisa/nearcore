@@ -176,6 +176,8 @@ impl ProtocolFeature {
             ProtocolFeature::RestrictTla
             | ProtocolFeature::TestnetFewerBlockProducers
             | ProtocolFeature::SimpleNightshadeV2 => 64,
+            // For StatelessNet only.
+            ProtocolFeature::ChunkValidation => 65,
 
             // Nightly features
             #[cfg(feature = "protocol_feature_fix_staking_threshold")]
@@ -184,7 +186,6 @@ impl ProtocolFeature {
             ProtocolFeature::FixContractLoadingCost => 129,
             #[cfg(feature = "protocol_feature_reject_blocks_with_outdated_protocol_version")]
             ProtocolFeature::RejectBlocksWithOutdatedProtocolVersions => 132,
-            ProtocolFeature::ChunkValidation => 137,
             ProtocolFeature::EthImplicitAccounts => 138,
         }
     }
@@ -193,7 +194,7 @@ impl ProtocolFeature {
 /// Current protocol version used on the mainnet.
 /// Some features (e. g. FixStorageUsage) require that there is at least one epoch with exactly
 /// the corresponding version
-const STABLE_PROTOCOL_VERSION: ProtocolVersion = 64;
+const STABLE_PROTOCOL_VERSION: ProtocolVersion = 65;
 
 /// Largest protocol version supported by the current binary.
 pub const PROTOCOL_VERSION: ProtocolVersion = if cfg!(feature = "nightly_protocol") {
