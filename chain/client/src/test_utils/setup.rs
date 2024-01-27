@@ -176,6 +176,7 @@ pub fn setup(
         enable_doomslug,
         TEST_SEED,
         None,
+        None,
     )
     .unwrap();
     let client_actor = ClientActor::new(
@@ -960,6 +961,7 @@ pub fn setup_client_with_runtime(
         enable_doomslug,
         rng_seed,
         snapshot_callbacks,
+        None,
     )
     .unwrap();
     client.sync_status = SyncStatus::NoSync;

@@ -70,7 +70,7 @@ use near_primitives::version::PROTOCOL_VERSION;
 use near_primitives::views::{DetailedDebugStatus, ValidatorInfo};
 #[cfg(feature = "test_features")]
 use near_store::DBCol;
-use near_store::ShardUId;
+use near_store::{ShardUId, Store};
 use near_telemetry::TelemetryActor;
 use rand::seq::SliceRandom;
 use rand::{thread_rng, Rng};
@@ -2055,6 +2055,7 @@ pub fn start_client(
     sender: Option<broadcast::Sender<()>>,
     adv: crate::adversarial::Controls,
     config_updater: Option<ConfigUpdater>,
+    cold_store: Option<Store>,
 ) -> (Addr<ClientActor>, ArbiterHandle, ReshardingHandle) {
     let client_arbiter = Arbiter::new();
     let client_arbiter_handle = client_arbiter.handle();
@@ -2073,6 +2074,7 @@ pub fn start_client(
         true,
         random_seed_from_thread(),
         snapshot_callbacks,
+        cold_store,
     )
     .unwrap();
     let resharding_handle = client.chain.resharding_handle.clone();

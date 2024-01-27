@@ -82,7 +82,7 @@ use near_primitives::validator_signer::ValidatorSigner;
 use near_primitives::version::PROTOCOL_VERSION;
 use near_primitives::views::{CatchupStatusView, DroppedReason};
 use near_store::metadata::DbKind;
-use near_store::ShardUId;
+use near_store::{ShardUId, Store};
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -187,6 +187,8 @@ pub struct Client {
     /// Tracks current chunks that are ready to be included in block
     /// Also tracks banned chunk producers and filters out chunks produced by them
     pub chunk_inclusion_tracker: ChunkInclusionTracker,
+
+    pub cold_store: Option<Store>,
 }
 
 impl Client {
@@ -244,6 +246,7 @@ impl Client {
         enable_doomslug: bool,
         rng_seed: RngSeed,
         snapshot_callbacks: Option<SnapshotCallbacks>,
+        cold_store: Option<Store>,
     ) -> Result<Self, Error> {
         let doomslug_threshold_mode = if enable_doomslug {
             DoomslugThresholdMode::TwoThirds
@@ -382,6 +385,7 @@ impl Client {
             last_time_sync_block_requested: None,
             chunk_validator,
             chunk_inclusion_tracker: ChunkInclusionTracker::new(),
+            cold_store,
         })
     }
 
@@ -2475,7 +2479,7 @@ impl Client {
         // A RPC node should do regular garbage collection.
         if !self.config.archive {
             let tries = self.runtime_adapter.get_tries();
-            return self.chain.clear_data(tries, &self.config.gc);
+            return self.chain.clear_data(tries, &self.config.gc, &None);
         }
 
         // An archival node with split storage should perform garbage collection
@@ -2486,7 +2490,7 @@ impl Client {
         let kind = store.get_db_kind()?;
         if kind == Some(DbKind::Hot) {
             let tries = self.runtime_adapter.get_tries();
-            return self.chain.clear_data(tries, &self.config.gc);
+            return self.chain.clear_data(tries, &self.config.gc, &self.cold_store);
         }
 
         // An archival node with legacy storage or in the midst of migration to split

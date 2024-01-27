@@ -91,6 +91,7 @@ fn setup_network_node(
         None,
         adv.clone(),
         None,
+        None,
     )
     .0;
     let view_client_actor = start_view_client(

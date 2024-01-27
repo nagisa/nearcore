@@ -176,7 +176,11 @@ fn gc_fork_common(simple_chains: Vec<SimpleChain>, max_changes: usize) {
 
     // GC execution
     chain1
-        .clear_data(tries1.clone(), &GCConfig { gc_blocks_limit: 1000, ..GCConfig::default() })
+        .clear_data(
+            tries1.clone(),
+            &GCConfig { gc_blocks_limit: 1000, ..GCConfig::default() },
+            &None,
+        )
         .unwrap();
 
     let tries2 = get_chain_with_num_shards(num_shards).runtime_adapter.get_tries();
@@ -641,6 +645,7 @@ fn test_fork_far_away_from_epoch_end() {
                 gc_fork_clean_step: fork_clean_step,
                 ..GCConfig::default()
             },
+            &None,
         )
         .expect("Clear data failed");
 
@@ -719,7 +724,9 @@ fn test_clear_old_data() {
     }
 
     let trie = chain.runtime_adapter.get_tries();
-    chain.clear_data(trie, &GCConfig { gc_blocks_limit: 100, ..GCConfig::default() }).unwrap();
+    chain
+        .clear_data(trie, &GCConfig { gc_blocks_limit: 100, ..GCConfig::default() }, &None)
+        .unwrap();
 
     // epoch didn't change so no data is garbage collected.
     for i in 0..15 {
@@ -827,7 +834,7 @@ fn test_clear_old_data_fixed_height() {
     let trie = chain.runtime_adapter.get_tries();
     let mut store_update = chain.mut_chain_store().store_update();
     assert!(store_update
-        .clear_block_data(epoch_manager.as_ref(), *blocks[5].hash(), GCMode::Canonical(trie))
+        .clear_block_data(epoch_manager.as_ref(), *blocks[5].hash(), GCMode::Canonical(trie), &None)
         .is_ok());
     store_update.commit().unwrap();
 
@@ -901,7 +908,7 @@ fn test_clear_old_data_too_many_heights_common(gc_blocks_limit: NumBlocks) {
     for iter in 0..10 {
         println!("ITERATION #{:?}", iter);
         assert!(chain
-            .clear_data(trie.clone(), &GCConfig { gc_blocks_limit, ..GCConfig::default() })
+            .clear_data(trie.clone(), &GCConfig { gc_blocks_limit, ..GCConfig::default() }, &None)
             .is_ok());
 
         // epoch didn't change so no data is garbage collected.

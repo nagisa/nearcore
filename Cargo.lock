@@ -3457,6 +3457,7 @@ dependencies = [
  "near-client-primitives",
  "near-crypto",
  "near-epoch-manager",
+ "near-fmt",
  "near-network",
  "near-o11y",
  "near-performance-metrics",
