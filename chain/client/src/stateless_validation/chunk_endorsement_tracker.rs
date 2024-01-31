@@ -153,7 +153,7 @@ impl ChunkEndorsementTracker {
     }
 }
 
-fn record_endorsement_metrics(
+pub fn record_endorsement_metrics(
     shard_id: ShardId,
     endorsed_stake_ratio: f64,
     missing_endorsement_count: usize,

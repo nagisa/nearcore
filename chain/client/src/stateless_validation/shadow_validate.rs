@@ -5,6 +5,7 @@ use near_chain::{Block, BlockHeader};
 use near_chain_primitives::Error;
 use near_primitives::sharding::{ShardChunk, ShardChunkHeader};
 
+use crate::stateless_validation::chunk_endorsement_tracker::record_endorsement_metrics;
 use crate::stateless_validation::chunk_validator::{
     pre_validate_chunk_state_witness, validate_chunk_state_witness, validate_prepared_transactions,
 };
@@ -25,6 +26,12 @@ impl Client {
             block.chunks().iter().filter(|chunk| chunk.is_new_chunk(block.header().height()))
         {
             let chunk = self.chain.get_chunk_clone_from_header(chunk)?;
+            let rand_byte = chunk.chunk_hash().as_bytes()[0];
+            record_endorsement_metrics(
+                chunk.shard_id(),
+                rand_byte as f64 / 255.0,
+                if rand_byte > 200 { 0 } else { rand_byte as usize },
+            );
             let prev_chunk_header = prev_block_chunks.get(chunk.shard_id() as usize).unwrap();
             if let Err(err) =
                 self.shadow_validate_chunk(prev_block.header(), prev_chunk_header, &chunk)
