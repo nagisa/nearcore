@@ -42,7 +42,6 @@ use near_store::TrieStorage;
 use near_store::{
     DBCol, KeyLookupMode, Store, Trie, TrieCache, TrieCachingStorage, TrieConfig, TrieDBStorage,
 };
-use near_store::{DBCol, Store, Trie, TrieCache, TrieCachingStorage, TrieConfig, TrieDBStorage};
 use nearcore::NightshadeRuntimeExt;
 use nearcore::{NearConfig, NightshadeRuntime};
 use node_runtime::adapter::ViewRuntimeAdapter;
@@ -96,7 +95,8 @@ pub(crate) fn apply_block(
         let mut storage_config =
             RuntimeStorageConfig::new(*chunk_inner.prev_state_root(), use_flat_storage);
         if !use_flat_storage {
-            storage_config.source = StorageDataSource::DbTrieOnly;
+            todo!();
+            //storage_config.source = StorageDataSource::DbTrieOnly;
         }
 
         runtime
@@ -123,7 +123,8 @@ pub(crate) fn apply_block(
         let mut storage_config =
             RuntimeStorageConfig::new(*chunk_extra.state_root(), use_flat_storage);
         if !use_flat_storage {
-            storage_config.source = StorageDataSource::DbTrieOnly;
+            todo!()
+            // storage_config.source = StorageDataSource::DbTrieOnly;
         }
 
         runtime
