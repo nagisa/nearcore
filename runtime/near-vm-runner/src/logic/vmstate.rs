@@ -19,7 +19,7 @@ type Result<T> = ::std::result::Result<T, VMLogicError>;
 /// the compiler can deconstruct the access to each field of [`VMLogic`] and do
 /// more granular lifetime analysis.  In particular, this design is what allows
 /// us to forgo copying register value in [`VMLogic::read_register`].
-pub(super) struct Memory<'a>(&'a mut dyn MemoryLike);
+pub(super) struct Memory(Box<dyn MemoryLike>);
 
 macro_rules! memory_get {
     ($_type:ty, $name:ident) => {
@@ -48,9 +48,9 @@ macro_rules! memory_set {
     };
 }
 
-impl<'a> Memory<'a> {
-    pub(super) fn new(mem: &'a mut dyn MemoryLike) -> Self {
-        Self(mem)
+impl Memory {
+    pub(super) fn new<M: MemoryLike + 'static>(mem: M) -> Self {
+        Self(Box::new(mem))
     }
 
     /// Returns view of the guest memory.
@@ -237,9 +237,9 @@ impl Registers {
 /// of gas counter, memory and registers separately.  This allows `VMLogic` to
 /// borrow value from a register and then continue constructing mutable
 /// references to other fields in the structure..
-pub(super) fn get_memory_or_register<'a, 'b>(
+pub(super) fn get_memory_or_register<'b>(
     gas_counter: &mut GasCounter,
-    memory: &'b Memory<'a>,
+    memory: &'b Memory,
     registers: &'b Registers,
     ptr: u64,
     len: u64,

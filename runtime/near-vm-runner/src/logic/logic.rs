@@ -42,8 +42,6 @@ pub struct VMLogic<'a> {
     /// If this method execution is invoked directly as a callback by one or more contract calls the
     /// results of the methods that made the callback are stored in this collection.
     promise_results: &'a [PromiseResult],
-    /// Pointer to the guest memory.
-    memory: super::vmstate::Memory<'a>,
 
     /// Keeping track of the current account balance, which can decrease when we create promises
     /// and attach balance to them.
@@ -54,23 +52,24 @@ pub struct VMLogic<'a> {
     /// Storage usage of the current account at the moment
     current_storage_usage: StorageUsage,
     gas_counter: GasCounter,
+    /// Stores the amount of stack space remaining
+    remaining_stack: u64,
     /// Tracks size of the recorded trie storage proof.
     recorded_storage_counter: RecordedStorageCounter,
     /// What method returns.
     return_data: ReturnData,
     /// Logs written by the runtime.
     logs: Vec<String>,
-    /// Registers can be used by the guest to store blobs of data without moving them across
-    /// host-guest boundary.
-    registers: super::vmstate::Registers,
-
-    /// The DAG of promises, indexed by promise id.
-    promises: Vec<Promise>,
     /// Tracks the total log length. The sum of length of all logs.
     total_log_length: u64,
 
-    /// Stores the amount of stack space remaining
-    remaining_stack: u64,
+    /// The guest memory.
+    memory: super::vmstate::Memory,
+    /// Registers can be used by the guest to store blobs of data without moving them across
+    /// host-guest boundary.
+    registers: super::vmstate::Registers,
+    /// The DAG of promises, indexed by promise id.
+    promises: Vec<Promise>,
 }
 
 /// Promises API allows to create a DAG-structure that defines dependencies between smart contract
@@ -135,7 +134,7 @@ impl<'a> VMLogic<'a> {
         config: &'a Config,
         fees_config: &'a RuntimeFeesConfig,
         promise_results: &'a [PromiseResult],
-        memory: &'a mut dyn MemoryLike,
+        memory: impl MemoryLike + 'static,
     ) -> Self {
         // Overflow should be checked before calling VMLogic.
         let current_account_balance = context.account_balance + context.attached_deposit;
@@ -194,7 +193,7 @@ impl<'a> VMLogic<'a> {
     }
 
     #[cfg(test)]
-    pub(super) fn memory(&mut self) -> &mut super::vmstate::Memory<'a> {
+    pub(super) fn memory(&mut self) -> &mut super::vmstate::Memory {
         &mut self.memory
     }
 

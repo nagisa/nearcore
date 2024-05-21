@@ -155,6 +155,7 @@ impl WasmtimeVM {
 }
 
 impl crate::runner::VM for WasmtimeVM {
+    /*
     fn run(
         &self,
         _code_hash: CryptoHash,
@@ -251,6 +252,8 @@ impl crate::runner::VM for WasmtimeVM {
             Err(err) => Ok(VMOutcome::abort(logic, err.into_vm_error()?)),
         }
     }
+    */
+
 
     fn precompile(
         &self,
@@ -261,5 +264,19 @@ impl crate::runner::VM for WasmtimeVM {
         crate::logic::errors::CacheError,
     > {
         Ok(Ok(ContractPrecompilatonResult::CacheNotAvailable))
+    }
+
+    fn instantiate<'a>(
+        &self,
+        code_hash: CryptoHash,
+        code: Option<&ContractCode>,
+        method_name: &str,
+        cache: Option<&dyn ContractRuntimeCache>,
+        ext: &'a mut dyn External,
+        context: &'a VMContext,
+        fees_config: &'a RuntimeFeesConfig,
+        promise_results: &'a [PromiseResult],
+    ) -> Box<dyn 'a + crate::runner::Instantiated> {
+        todo!()
     }
 }

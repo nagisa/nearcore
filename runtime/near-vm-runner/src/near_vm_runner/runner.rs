@@ -25,12 +25,18 @@ use near_vm_engine::universal::{
 };
 use near_vm_types::{FunctionIndex, InstanceConfig, MemoryType, Pages, WASM_PAGE_SIZE};
 use near_vm_vm::{
-    Artifact, Instantiatable, LinearMemory, LinearTable, MemoryStyle, TrapCode, VMMemory,
+    Artifact, InstanceHandle, Instantiatable, LinearMemory, LinearTable, MemoryStyle, TrapCode,
+    VMMemory,
 };
 use std::mem::size_of;
 use std::sync::{Arc, OnceLock};
 
 type VMArtifact = Arc<UniversalArtifact>;
+
+enum InstanceData<'a> {
+    Instantiated { instance: InstanceHandle, entrypoint_index: FunctionIndex, logic: VMLogic<'a> },
+    Outcome(VMOutcome),
+}
 
 fn get_entrypoint_index(
     artifact: &UniversalArtifact,
@@ -95,18 +101,12 @@ fn translate_runtime_error(
 
 pub(crate) struct NearVM {
     pub(crate) config: Config,
-    pub(crate) engine: UniversalEngine,
+    pub(crate) target: near_vm_compiler::Target,
+    pub(crate) code_memory_pool: MemoryPool,
 }
 
 impl NearVM {
     pub(crate) fn new_for_target(config: Config, target: near_vm_compiler::Target) -> Self {
-        // We only support singlepass compiler at the moment.
-        assert_eq!(VM_CONFIG.compiler, NearVmCompiler::Singlepass);
-        let mut compiler = Singlepass::new();
-        compiler.set_9393_fix(!config.disable_9393_fix);
-        // We only support universal engine at the moment.
-        assert_eq!(VM_CONFIG.engine, NearVmEngine::Universal);
-
         static CODE_MEMORY_POOL_CELL: OnceLock<MemoryPool> = OnceLock::new();
         let code_memory_pool = CODE_MEMORY_POOL_CELL
             .get_or_init(|| {
@@ -125,17 +125,7 @@ impl NearVM {
                 })
             })
             .clone();
-
-        let features =
-            crate::features::WasmFeatures::from(config.limit_config.contract_prepare_version);
-        Self {
-            config,
-            engine: Universal::new(compiler)
-                .target(target)
-                .features(features.into())
-                .code_memory_pool(code_memory_pool)
-                .engine(),
-        }
+        Self { config, target, code_memory_pool }
     }
 
     pub(crate) fn new(config: Config) -> Self {
@@ -157,6 +147,22 @@ impl NearVM {
         Self::new_for_target(config, Target::new(Triple::host(), target_features))
     }
 
+    pub(crate) fn new_engine(&self) -> UniversalEngine {
+        // We only support singlepass compiler at the moment.
+        assert_eq!(VM_CONFIG.compiler, NearVmCompiler::Singlepass);
+        let mut compiler = Singlepass::new();
+        compiler.set_9393_fix(!self.config.disable_9393_fix);
+        // We only support universal engine at the moment.
+        assert_eq!(VM_CONFIG.engine, NearVmEngine::Universal);
+        let features =
+            crate::features::WasmFeatures::from(self.config.limit_config.contract_prepare_version);
+        Universal::new(compiler)
+            .target(self.target.clone())
+            .features(features.into())
+            .code_memory_pool(MemoryPool::clone(&self.code_memory_pool))
+            .engine()
+    }
+
     pub(crate) fn compile_uncached(
         &self,
         code: &ContractCode,
@@ -165,13 +171,13 @@ impl NearVM {
         let start = std::time::Instant::now();
         let prepared_code = prepare::prepare_contract(code.code(), &self.config, VMKind::NearVm)
             .map_err(CompilationError::PrepareError)?;
+        let engine = self.new_engine();
 
         debug_assert!(
-            matches!(self.engine.validate(&prepared_code), Ok(_)),
+            matches!(engine.validate(&prepared_code), Ok(_)),
             "near_vm failed to validate the prepared code"
         );
-        let executable = self
-            .engine
+        let executable = engine
             .compile_universal(&prepared_code, &self)
             .map_err(|err| {
                 tracing::error!(?err, "near_vm failed to compile the prepared code (this is defense-in-depth, the error was recovered from but should be reported to pagoda)");
@@ -210,18 +216,15 @@ impl NearVM {
         name = "NearVM::with_compiled_and_loaded",
         skip_all
     )]
-    fn with_compiled_and_loaded(
+    fn with_compiled_and_loaded<'a>(
         &self,
         code_hash: CryptoHash,
         code: Option<&ContractCode>,
         cache: &dyn ContractRuntimeCache,
-        ext: &mut dyn External,
-        context: &VMContext,
-        fees_config: &RuntimeFeesConfig,
-        promise_results: &[PromiseResult],
         method_name: &str,
-        closure: impl FnOnce(VMMemory, VMLogic<'_>, &VMArtifact) -> Result<VMOutcome, VMRunnerError>,
-    ) -> VMResult<VMOutcome> {
+        mut logic: VMLogic<'a>,
+        closure: impl FnOnce(VMLogic<'a>, &VMArtifact) -> Result<InstanceData<'a>, VMRunnerError>,
+    ) -> VMResult<InstanceData<'a>> {
         // (wasm code size, compilation result)
         type MemoryCacheType = (u64, Result<VMArtifact, CompilationError>);
         let to_any = |v: MemoryCacheType| -> Box<dyn std::any::Any + Send> { Box::new(v) };
@@ -270,7 +273,7 @@ impl NearVM {
                                     UniversalExecutableRef::deserialize(&serialized_module)
                                         .map_err(|_| CacheError::DeserializationError)?;
                                 let artifact = self
-                                    .engine
+                                    .new_engine()
                                     .load_universal_executable_ref(&executable)
                                     .map(Arc::new)
                                     .map_err(|err| VMRunnerError::LoadingError(err.to_string()))?;
@@ -287,7 +290,7 @@ impl NearVM {
                         code.code().len() as u64,
                         match self.compile_and_cache(code, cache)? {
                             Ok(executable) => Ok(self
-                                .engine
+                                .new_engine()
                                 .load_universal_executable(&executable)
                                 .map(Arc::new)
                                 .map_err(|err| VMRunnerError::LoadingError(err.to_string()))?),
@@ -309,30 +312,23 @@ impl NearVM {
 
         crate::metrics::record_compiled_contract_cache_lookup(is_cache_hit);
 
-        let mut memory = NearVmMemory::new(
-            self.config.limit_config.initial_memory_pages,
-            self.config.limit_config.max_memory_pages,
-        )
-        .expect("Cannot create memory for a contract call");
-        // FIXME: this mostly duplicates the `run_module` method.
-        // Note that we don't clone the actual backing memory, just increase the RC.
-        let vmmemory = memory.vm();
-        let mut logic =
-            VMLogic::new(ext, context, &self.config, fees_config, promise_results, &mut memory);
-
+        // FIXME: this makes no sense, we should move this into the closures above...?
         let result = logic.before_loading_executable(method_name, wasm_bytes);
         if let Err(e) = result {
-            return Ok(VMOutcome::abort(logic, e));
+            return Ok(InstanceData::Outcome(VMOutcome::abort(logic, e)));
         }
         match artifact_result {
             Ok(artifact) => {
                 let result = logic.after_loading_executable(wasm_bytes);
                 if let Err(e) = result {
-                    return Ok(VMOutcome::abort(logic, e));
+                    return Ok(InstanceData::Outcome(VMOutcome::abort(logic, e)));
                 }
-                closure(vmmemory, logic, &artifact)
+                closure(logic, &artifact)
             }
-            Err(e) => Ok(VMOutcome::abort(logic, FunctionCallError::CompilationError(e))),
+            Err(e) => Ok(InstanceData::Outcome(VMOutcome::abort(
+                logic,
+                FunctionCallError::CompilationError(e),
+            ))),
         }
     }
 
@@ -358,54 +354,54 @@ impl NearVM {
             offset_of!(near_vm_types::FastGasCounter, gas_limit)
         );
         let gas = import.vmlogic.gas_counter_pointer() as *mut near_vm_types::FastGasCounter;
-        unsafe {
-            let instance = {
-                let _span = tracing::debug_span!(target: "vm", "run_method/instantiate").entered();
-                // An important caveat is that the `'static` lifetime here refers to the lifetime
-                // of `VMLogic` reference to which is retained by the `InstanceHandle` we create.
-                // However this `InstanceHandle` only lives during the execution of this body, so
-                // we can be sure that `VMLogic` remains live and valid at any time.
-                // SAFETY: we ensure that the tables are valid during the lifetime of this instance
-                // by retaining an instance to `UniversalEngine` which holds the allocations.
-                let maybe_handle = Arc::clone(artifact).instantiate(
-                    &self,
-                    &mut import,
-                    Box::new(()),
-                    // SAFETY: We have verified that the `FastGasCounter` layout matches the
-                    // expected layout. `gas` remains dereferenceable throughout this function
-                    // by the virtue of it being contained within `import` which lives for the
-                    // entirety of this function.
-                    InstanceConfig::with_stack_limit(self.config.limit_config.max_stack_height)
-                        .with_counter(gas),
-                );
-                let handle = match maybe_handle {
-                    Ok(handle) => handle,
-                    Err(err) => {
-                        use near_vm_engine::InstantiationError::*;
-                        let abort = match err {
-                            Start(err) => translate_runtime_error(err, import.vmlogic)?,
-                            Link(e) => FunctionCallError::LinkError { msg: e.to_string() },
-                            CpuFeature(e) => panic!(
-                                "host doesn't support the CPU features needed to run contracts: {}",
-                                e
-                            ),
-                        };
-                        return Ok(Err(abort));
-                    }
-                };
-                // SAFETY: being called immediately after instantiation.
-                match handle.finish_instantiation() {
-                    Ok(handle) => handle,
-                    Err(trap) => {
-                        let abort = translate_runtime_error(
-                            near_vm_engine::RuntimeError::from_trap(trap),
-                            import.vmlogic,
-                        )?;
-                        return Ok(Err(abort));
-                    }
-                };
-                handle
+        let instance = unsafe {
+            let _span = tracing::debug_span!(target: "vm", "run_method/instantiate").entered();
+            // An important caveat is that the `'static` lifetime here refers to the lifetime
+            // of `VMLogic` reference to which is retained by the `InstanceHandle` we create.
+            // However this `InstanceHandle` only lives during the execution of this body, so
+            // we can be sure that `VMLogic` remains live and valid at any time.
+            // SAFETY: we ensure that the tables are valid during the lifetime of this instance
+            // by retaining an instance to `UniversalEngine` which holds the allocations.
+            let maybe_handle = Arc::clone(artifact).instantiate(
+                &self,
+                &mut import,
+                Box::new(()),
+                // SAFETY: We have verified that the `FastGasCounter` layout matches the
+                // expected layout. `gas` remains dereferenceable throughout this function
+                // by the virtue of it being contained within `import` which lives for the
+                // entirety of this function.
+                InstanceConfig::with_stack_limit(self.config.limit_config.max_stack_height)
+                    .with_counter(gas),
+            );
+            let handle = match maybe_handle {
+                Ok(handle) => handle,
+                Err(err) => {
+                    use near_vm_engine::InstantiationError::*;
+                    let abort = match err {
+                        Start(err) => translate_runtime_error(err, import.vmlogic)?,
+                        Link(e) => FunctionCallError::LinkError { msg: e.to_string() },
+                        CpuFeature(e) => panic!(
+                            "host doesn't support the CPU features needed to run contracts: {}",
+                            e
+                        ),
+                    };
+                    return Ok(Err(abort));
+                }
             };
+            // SAFETY: being called immediately after instantiation.
+            match handle.finish_instantiation() {
+                Ok(handle) => handle,
+                Err(trap) => {
+                    let abort = translate_runtime_error(
+                        near_vm_engine::RuntimeError::from_trap(trap),
+                        import.vmlogic,
+                    )?;
+                    return Ok(Err(abort));
+                }
+            };
+            handle
+        };
+        unsafe {
             if let Some(function) = instance.function_by_index(entrypoint) {
                 let _span = tracing::debug_span!(target: "vm", "run_method/call").entered();
                 // Signature for the entry point should be `() -> ()`. This is only a sanity check
@@ -588,41 +584,6 @@ impl<'a> finite_wasm::wasmparser::VisitOperator<'a> for GasCostCfg {
 }
 
 impl crate::runner::VM for NearVM {
-    fn run(
-        &self,
-        code_hash: CryptoHash,
-        code: Option<&ContractCode>,
-        method_name: &str,
-        ext: &mut dyn External,
-        context: &VMContext,
-        fees_config: &RuntimeFeesConfig,
-        promise_results: &[PromiseResult],
-        cache: Option<&dyn ContractRuntimeCache>,
-    ) -> Result<VMOutcome, VMRunnerError> {
-        let cache = cache.unwrap_or(&NoContractRuntimeCache);
-        self.with_compiled_and_loaded(
-            code_hash,
-            code,
-            cache,
-            ext,
-            context,
-            fees_config,
-            promise_results,
-            method_name,
-            |vmmemory, mut logic, artifact| {
-                let import = imports::near_vm::build(vmmemory, &mut logic, artifact.engine());
-                let entrypoint = match get_entrypoint_index(&*artifact, method_name) {
-                    Ok(index) => index,
-                    Err(e) => return Ok(VMOutcome::abort_but_nop_outcome_in_old_protocol(logic, e)),
-                };
-                match self.run_method(&artifact, import, entrypoint)? {
-                    Ok(()) => Ok(VMOutcome::ok(logic)),
-                    Err(err) => Ok(VMOutcome::abort(logic, err)),
-                }
-            },
-        )
-    }
-
     fn precompile(
         &self,
         code: &ContractCode,
@@ -634,6 +595,187 @@ impl crate::runner::VM for NearVM {
         Ok(self
             .compile_and_cache(code, cache)?
             .map(|_| ContractPrecompilatonResult::ContractCompiled))
+    }
+
+    fn prepare(
+        &self,
+        code_hash: CryptoHash,
+        code: Option<&ContractCode>,
+        cache: Option<&dyn ContractRuntimeCache>,
+        method_name: &str,
+    ) -> Box<dyn crate::runner::Prepared> {
+        // FastGasCounter in Nearcore must be reinterpret_cast-able to the one in NearVm.
+        assert_eq!(
+            size_of::<FastGasCounter>(),
+            size_of::<near_vm_types::FastGasCounter>() + size_of::<u64>()
+        );
+        assert_eq!(
+            offset_of!(FastGasCounter, burnt_gas),
+            offset_of!(near_vm_types::FastGasCounter, burnt_gas)
+        );
+        assert_eq!(
+            offset_of!(FastGasCounter, gas_limit),
+            offset_of!(near_vm_types::FastGasCounter, gas_limit)
+        );
+
+        let cache = cache.unwrap_or(&NoContractRuntimeCache);
+        let memory = NearVmMemory::new(
+            self.config.limit_config.initial_memory_pages,
+            self.config.limit_config.max_memory_pages,
+        )
+        .expect("Cannot create memory for a contract call");
+        // FIXME: this mostly duplicates the `run_module` method.
+        // Note that we don't clone the actual backing memory, just increase the RC.
+        let vmmemory = memory.vm();
+        let logic = VMLogic::new(ext, context, &self.config, fees_config, promise_results, memory);
+
+        let artifact = self.with_compiled_and_loaded(
+            code_hash,
+            code,
+            cache,
+            method_name,
+            logic,
+            |mut logic, artifact| Ok(Arc::clone(artifact)),
+        )?;
+        let entrypoint = match get_entrypoint_index(&*artifact, method_name) {
+            Ok(index) => index,
+            Err(e) => {
+                return Ok(InstanceData::Outcome(VMOutcome::abort_but_nop_outcome_in_old_protocol(
+                    logic, e,
+                )))
+            }
+        };
+
+        let f: Result<Result<_, FunctionCallError>, VMRunnerError> = 'ret: {
+            let mut import = imports::near_vm::build(vmmemory, &mut logic, artifact.engine());
+            let _span = tracing::debug_span!(target: "vm", "run_method").entered();
+            let gas = import.vmlogic.gas_counter_pointer() as *mut near_vm_types::FastGasCounter;
+            let instance = unsafe {
+                let _span = tracing::debug_span!(target: "vm", "run_method/instantiate").entered();
+                // An important caveat is that the `'static` lifetime here refers to the lifetime
+                // of `VMLogic` reference to which is retained by the `InstanceHandle` we create.
+                // However this `InstanceHandle` only lives during the execution of this body, so
+                // we can be sure that `VMLogic` remains live and valid at any time.
+                // SAFETY: we ensure that the tables are valid during the lifetime of this instance
+                // by retaining an instance to `UniversalEngine` which holds the allocations.
+                let maybe_handle = Arc::clone(artifact).instantiate(
+                    &&*self,
+                    &mut import,
+                    Box::new(()),
+                    // SAFETY: We have verified that the `FastGasCounter` layout matches the
+                    // expected layout. `gas` remains dereferenceable throughout this function
+                    // by the virtue of it being contained within `import` which lives for the
+                    // entirety of this function.
+                    InstanceConfig::with_stack_limit(self.config.limit_config.max_stack_height)
+                        .with_counter(gas),
+                );
+                let handle = match maybe_handle {
+                    Ok(handle) => handle,
+                    Err(err) => {
+                        use near_vm_engine::InstantiationError::*;
+                        let abort = match err {
+                            Start(err) => translate_runtime_error(err, import.vmlogic)?,
+                            Link(e) => FunctionCallError::LinkError { msg: e.to_string() },
+                            CpuFeature(e) => panic!(
+                                "host doesn't support the CPU features needed to run contracts: {}",
+                                e
+                            ),
+                        };
+                        break 'ret Ok(Err(abort));
+                    }
+                };
+                // SAFETY: being called immediately after instantiation.
+                match handle.finish_instantiation() {
+                    Ok(handle) => handle,
+                    Err(trap) => {
+                        let abort = translate_runtime_error(
+                            near_vm_engine::RuntimeError::from_trap(trap),
+                            import.vmlogic,
+                        )?;
+                        break 'ret Ok(Err(abort));
+                    }
+                };
+                handle
+            };
+            Ok(Ok((instance, entrypoint)))
+        };
+
+        Box::new(Ok(match f? {
+            Ok((instance, entrypoint_index)) => {
+                InstanceData::Instantiated { instance, entrypoint_index, logic }
+            }
+            Err(err) => InstanceData::Outcome(VMOutcome::abort(logic, err)),
+        }))
+    }
+}
+
+impl crate::runner::Prepared for VMResult<InstanceData<'_>> {
+    fn run(
+        self: Box<Self>,
+        method_name: &str,
+        ext: &mut dyn External,
+        context: &VMContext,
+        fees_config: &RuntimeFeesConfig,
+        promise_results: &[PromiseResult],
+    ) -> Result<VMOutcome, VMRunnerError> {
+        let (instance, entrypoint, mut logic) = match *self {
+            Err(e) => return Err(e),
+            Ok(InstanceData::Outcome(outcome)) => return Ok(outcome),
+            Ok(InstanceData::Instantiated { instance, entrypoint_index, logic }) => {
+                (instance, entrypoint_index, logic)
+            }
+        };
+
+        let f: Result<Result<(), FunctionCallError>, VMRunnerError> = 'ret: {
+            unsafe {
+                if let Some(function) = instance.function_by_index(entrypoint) {
+                    let _span = tracing::debug_span!(target: "vm", "run_method/call").entered();
+                    // Signature for the entry point should be `() -> ()`. This is only a sanity check
+                    // – this should've been already checked by `get_entrypoint_index`.
+                    // let signature = artifact
+                    //     .engine()
+                    //     .lookup_signature(function.signature)
+                    //     .expect("extern type should refer to valid signature");
+                    // let valid_signature = signature.params().is_empty() && signature.results().is_empty();
+                    let valid_signature = true;
+                    if valid_signature {
+                        let trampoline =
+                            function.call_trampoline.expect("externs always have a trampoline");
+                        // SAFETY: we double-checked the signature, and all of the remaining arguments
+                        // come from an exported function definition which must be valid since it comes
+                        // from near_vm itself.
+                        let res = instance.invoke_function(
+                            function.vmctx,
+                            trampoline,
+                            function.address,
+                            [].as_mut_ptr() as *mut _,
+                        );
+                        if let Err(trap) = res {
+                            let abort = translate_runtime_error(
+                                near_vm_engine::RuntimeError::from_trap(trap),
+                                &mut logic,
+                            )?;
+                            break 'ret Ok(Err(abort));
+                        }
+                    } else {
+                        panic!("signature should've already been checked by `get_entrypoint_index`")
+                    }
+                } else {
+                    panic!("signature should've already been checked by `get_entrypoint_index`")
+                }
+
+                {
+                    let _span =
+                        tracing::debug_span!(target: "vm", "run_method/drop_instance").entered();
+                    drop(instance)
+                }
+                Ok(Ok(()))
+            }
+        };
+        match f? {
+            Ok(()) => Ok(VMOutcome::ok(logic)),
+            Err(err) => Ok(VMOutcome::abort(logic, err)),
+        }
     }
 }
 

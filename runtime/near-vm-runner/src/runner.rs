@@ -25,6 +25,8 @@ use near_primitives_core::hash::CryptoHash;
 /// validators, even when a guest error occurs, or else their state will diverge.
 pub(crate) type VMResult<T = VMOutcome> = Result<T, VMRunnerError>;
 
+/*
+
 /// Validate and run the specified contract.
 ///
 /// This is the entry point for executing a NEAR protocol contract. Before the
@@ -84,7 +86,51 @@ pub fn run(
     Ok(outcome)
 }
 
+*/
+
 pub trait VM {
+    /// Conduct all the necessary and possible operations that lead up to execution of the user
+    /// code.
+    ///
+    /// This method exists in order to enable pipelining of the usual chunk apply flow. From the
+    /// standpoint of the protocol preparing a contract for execution is a side-effect free
+    /// operation. This allows us to get ready to execute the next contract while another one is
+    /// already getting prepared. To that effect no effectful storage operations may occur, for
+    /// example.
+    ///
+    /// Different implementations of the VMs expose different abilities as to how fine-grained
+    /// instance setup can be, but in no case this function may execute the `start` WebAssembly
+    /// function that's part of the usual instantiation flow.
+    ///
+    /// This method should attempt to do as much (expensive) work as possible up to that point. In
+    /// most implementations linking may need to delayed until the invocation of the `run` method.
+    ///
+    /// # Errors
+    ///
+    /// Any errors (e.g. compilation failures) that occur as part of this function should be
+    /// delayed and reported by the methods of the `Prepared` trait.
+    fn prepare(
+        &self,
+        code_hash: CryptoHash,
+        code: Option<&ContractCode>,
+        cache: Option<&dyn ContractRuntimeCache>,
+        method_name: &str,
+    ) -> Box<dyn Prepared>;
+
+    /// Precompile a WASM contract to a VM specific format and store the result
+    /// into the `cache`.
+    ///
+    /// Further calls to [`Self::run`] or [`Self::precompile`] with the same
+    /// `code`, `cache` and [`Config`] may reuse the results of this
+    /// precompilation step.
+    fn precompile(
+        &self,
+        code: &ContractCode,
+        cache: &dyn ContractRuntimeCache,
+    ) -> Result<Result<ContractPrecompilatonResult, CompilationError>, CacheError>;
+}
+
+pub trait Prepared {
     /// Validate and run the specified contract.
     ///
     /// This is the entry point for executing a NEAR protocol contract. Before
@@ -100,28 +146,13 @@ pub trait VM {
     /// The gas cost for contract preparation will be subtracted by the VM
     /// implementation.
     fn run(
-        &self,
-        code_hash: CryptoHash,
-        code: Option<&ContractCode>,
+        self: Box<Self>,
         method_name: &str,
         ext: &mut dyn External,
         context: &VMContext,
         fees_config: &RuntimeFeesConfig,
         promise_results: &[PromiseResult],
-        cache: Option<&dyn ContractRuntimeCache>,
     ) -> VMResult;
-
-    /// Precompile a WASM contract to a VM specific format and store the result
-    /// into the `cache`.
-    ///
-    /// Further calls to [`Self::run`] or [`Self::precompile`] with the same
-    /// `code`, `cache` and [`Config`] may reuse the results of this
-    /// precompilation step.
-    fn precompile(
-        &self,
-        code: &ContractCode,
-        cache: &dyn ContractRuntimeCache,
-    ) -> Result<Result<ContractPrecompilatonResult, CompilationError>, CacheError>;
 }
 
 pub trait VMKindExt {

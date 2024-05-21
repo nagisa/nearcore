@@ -36,7 +36,7 @@ pub use cache::{
 pub use code::ContractCode;
 pub use metrics::{report_metrics, reset_metrics};
 pub use profile::ProfileDataV3;
-pub use runner::{run, VM};
+pub use runner::VM;
 
 /// This is public for internal experimentation use only, and should otherwise be considered an
 /// implementation detail of `near-vm-runner`.

@@ -353,6 +353,7 @@ impl Wasmer0VM {
 }
 
 impl crate::runner::VM for Wasmer0VM {
+    /*
     fn run(
         &self,
         _code_hash: CryptoHash,
@@ -428,6 +429,7 @@ impl crate::runner::VM for Wasmer0VM {
             Err(err) => Ok(VMOutcome::abort(logic, err)),
         }
     }
+    */
 
     fn precompile(
         &self,
@@ -440,5 +442,19 @@ impl crate::runner::VM for Wasmer0VM {
         Ok(self
             .compile_and_cache(code, Some(cache))?
             .map(|_| ContractPrecompilatonResult::ContractCompiled))
+    }
+
+    fn instantiate<'a>(
+        &self,
+        code_hash: CryptoHash,
+        code: Option<&ContractCode>,
+        method_name: &str,
+        cache: Option<&dyn ContractRuntimeCache>,
+        ext: &'a mut dyn External,
+        context: &'a VMContext,
+        fees_config: &'a RuntimeFeesConfig,
+        promise_results: &'a [PromiseResult],
+    ) -> Box<dyn 'a + crate::runner::Prepared> {
+        todo!()
     }
 }
