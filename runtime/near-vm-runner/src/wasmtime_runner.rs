@@ -169,7 +169,7 @@ impl crate::runner::VM for WasmtimeVM {
         let mut config = self.default_wasmtime_config();
         let engine = get_engine(&mut config);
         let mut store = Store::new(&engine, ());
-        let mut memory = WasmtimeMemory::new(
+        let memory = WasmtimeMemory::new(
             &mut store,
             self.config.limit_config.initial_memory_pages,
             self.config.limit_config.max_memory_pages,
@@ -177,7 +177,7 @@ impl crate::runner::VM for WasmtimeVM {
         .unwrap();
         let memory_copy = memory.0;
         let mut logic =
-            VMLogic::new(ext, context, &self.config, fees_config, promise_results, &mut memory);
+            VMLogic::new(ext, context, &self.config, fees_config, promise_results, memory);
 
         let result = logic.before_loading_executable(method_name, code.code().len() as u64);
         if let Err(e) = result {
