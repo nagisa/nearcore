@@ -2480,9 +2480,53 @@ fn schedule_contract_preparation<'b, R: MaybeRefReceipt>(
             // some NEAR to a name that's about to be created.
             return false;
         };
-        // This returns `true` if work may have been scheduled (thus we currently prepare
-        // actions in at most 2 "interesting" receipts in parallel due to staggering.)
-        pipeline_manager.submit(peek, &receiver, None)
+        fn handle_receipt(
+            mgr: &mut ReceiptPreparationPipeline,
+            state_update: &TrieUpdate,
+            receiver: &Account,
+            account_id: &AccountId,
+            receipt: &Receipt,
+        ) -> bool {
+            match receipt.receipt() {
+                ReceiptEnum::Action(_) | ReceiptEnum::PromiseYield(_) => {
+                    // This returns `true` if work may have been scheduled (thus we currently prepare
+                    // actions in at most 2 "interesting" receipts in parallel due to staggering.)
+                    mgr.submit(receipt, &receiver, None)
+                }
+                ReceiptEnum::Data(dr) => {
+                    let key = TrieKey::PostponedReceiptId {
+                        receiver_id: account_id.clone(),
+                        data_id: dr.data_id,
+                    };
+                    let Ok(Some(rid)) = get::<CryptoHash>(state_update, &key) else {
+                        return false;
+                    };
+                    let key = TrieKey::PendingDataCount {
+                        receiver_id: account_id.clone(),
+                        receipt_id: rid,
+                    };
+                    let Ok(Some(data_count)) = get::<u32>(state_update, &key) else {
+                        return false;
+                    };
+                    if data_count > 1 {
+                        return false;
+                    }
+                    let Ok(Some(pr)) = get_postponed_receipt(state_update, account_id, rid) else {
+                        return false;
+                    };
+                    return handle_receipt(mgr, state_update, receiver, account_id, &pr);
+                }
+                ReceiptEnum::PromiseResume(dr) => {
+                    let Ok(Some(yr)) =
+                        get_promise_yield_receipt(state_update, account_id, dr.data_id)
+                    else {
+                        return false;
+                    };
+                    return handle_receipt(mgr, state_update, receiver, account_id, &yr);
+                }
+            }
+        }
+        handle_receipt(pipeline_manager, state_update, &receiver, account_id, peek)
     })?;
     Some(scheduled_receipt_offset.saturating_add(1))
 }
