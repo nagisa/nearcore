@@ -478,12 +478,20 @@ pub(crate) static PIPELINING_ACTIONS_FOUND_PREPARED: LazyLock<IntCounter> = Lazy
 pub(crate) static PIPELINING_ACTIONS_WAITING_TIME: LazyLock<Counter> = LazyLock::new(|| {
     try_create_counter(
         "near_pipelininig_waiting_seconds_total",
-        "Time spent waiting for the results of the pipeline.",
+        "Time spent waiting for the task results to be ready.",
     )
     .unwrap()
 });
 
-pub(crate) static PIPELINING_ACTIONS_THREAD_WORKING_TIME: LazyLock<Counter> = LazyLock::new(|| {
+pub(crate) static PIPELINING_ACTIONS_TASK_DELAY_TIME: LazyLock<Counter> = LazyLock::new(|| {
+    try_create_counter(
+        "near_pipelininig_delay_seconds_total",
+        "Time spent waiting for the preparation task to be scheduled on thread pool.",
+    )
+    .unwrap()
+});
+
+pub(crate) static PIPELINING_ACTIONS_TASK_WORKING_TIME: LazyLock<Counter> = LazyLock::new(|| {
     try_create_counter(
         "near_pipelininig_working_seconds_total",
         "Time spent working to produce the results for work scheduled on the pipeline.",

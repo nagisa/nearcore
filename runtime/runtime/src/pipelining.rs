@@ -4,7 +4,8 @@ use crate::ext::RuntimeContractExt;
 use crate::metrics::{
     PIPELINING_ACTIONS_FOUND_PREPARED, PIPELINING_ACTIONS_NOT_SUBMITTED,
     PIPELINING_ACTIONS_PREPARED_IN_MAIN_THREAD, PIPELINING_ACTIONS_SUBMITTED,
-    PIPELINING_ACTIONS_THREAD_WORKING_TIME, PIPELINING_ACTIONS_WAITING_TIME,
+    PIPELINING_ACTIONS_TASK_DELAY_TIME, PIPELINING_ACTIONS_TASK_WORKING_TIME,
+    PIPELINING_ACTIONS_WAITING_TIME,
 };
 use near_parameters::RuntimeConfig;
 use near_primitives::account::Account;
@@ -156,8 +157,8 @@ impl ReceiptPreparationPipeline {
                     let status = Mutex::new(PrepareTaskStatus::Pending);
                     let task = Arc::new(PrepareTask { status, condvar: Condvar::new() });
                     let method_name = function_call.method_name.clone();
-                    let start = Instant::now();
                     PIPELINING_ACTIONS_SUBMITTED.inc_by(1);
+                    let start = Instant::now();
                     entry.insert(Arc::clone(&task));
                     // FIXME: don't spawn all tasks at once. We want to keep some capacity for
                     // other things and also to control (in a way) the concurrency here.
@@ -166,6 +167,8 @@ impl ReceiptPreparationPipeline {
                             let mut status = task.status.lock().expect("mutex lock");
                             std::mem::replace(&mut *status, PrepareTaskStatus::Working)
                         };
+                        PIPELINING_ACTIONS_TASK_DELAY_TIME.inc_by(start.elapsed().as_secs_f64());
+                        let start = Instant::now();
                         match &task_status {
                             PrepareTaskStatus::Pending => {}
                             PrepareTaskStatus::Working => return,
@@ -188,8 +191,7 @@ impl ReceiptPreparationPipeline {
 
                         let mut status = task.status.lock().expect("mutex lock");
                         *status = PrepareTaskStatus::Prepared(contract);
-                        PIPELINING_ACTIONS_THREAD_WORKING_TIME
-                            .inc_by(start.elapsed().as_secs_f64());
+                        PIPELINING_ACTIONS_TASK_WORKING_TIME.inc_by(start.elapsed().as_secs_f64());
                         task.condvar.notify_all();
                     });
                     any_function_calls = true;
