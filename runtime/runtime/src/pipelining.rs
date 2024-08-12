@@ -65,6 +65,8 @@ pub(crate) struct ReceiptPreparationPipeline {
 
     /// Storage for WASM code.
     storage: ContractStorage,
+
+    submit_channel: std::sync::mpsc::Sender<Arc<PrepareTask>>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -79,7 +81,14 @@ struct PrepareTask {
 }
 
 enum PrepareTaskStatus {
-    Pending,
+    Pending {
+        created: Instant,
+        cache: Option<Box<dyn ContractRuntimeCache>>,
+        gas_counter: GasCounter,
+        code_hash: CryptoHash,
+        account_id: AccountId,
+        method_name: String,
+    },
     Working,
     Prepared(Box<dyn PreparedContract>),
     Finished,
@@ -93,6 +102,47 @@ impl ReceiptPreparationPipeline {
         protocol_version: u32,
         storage: ContractStorage,
     ) -> Self {
+        let (submit_channel, receive_channel) = std::sync::mpsc::channel::<Arc<PrepareTask>>();
+        let wasm_config = Arc::clone(&config.wasm_config);
+        let storage_clone = storage.clone();
+        let chain_id_clone = chain_id.clone();
+        let _ = std::thread::spawn(move || loop {
+            let Ok(task) = receive_channel.recv() else { return };
+            let task_status = {
+                let mut status = task.status.lock().expect("mutex lock");
+                std::mem::replace(&mut *status, PrepareTaskStatus::Working)
+            };
+            let start = Instant::now();
+            let PrepareTaskStatus::Pending {
+                created,
+                cache,
+                gas_counter,
+                code_hash,
+                account_id,
+                method_name,
+            } = task_status
+            else {
+                return;
+            };
+            PIPELINING_ACTIONS_TASK_DELAY_TIME.inc_by(created.elapsed().as_secs_f64());
+            let contract = prepare_function_call(
+                &storage_clone,
+                cache.as_deref(),
+                &chain_id_clone,
+                protocol_version,
+                Arc::clone(&wasm_config),
+                gas_counter,
+                code_hash,
+                &account_id,
+                &method_name,
+            );
+
+            let mut status = task.status.lock().expect("mutex lock");
+            *status = PrepareTaskStatus::Prepared(contract);
+            PIPELINING_ACTIONS_TASK_WORKING_TIME.inc_by(start.elapsed().as_secs_f64());
+            task.condvar.notify_all();
+        });
+
         Self {
             map: Default::default(),
             block_accounts: Default::default(),
@@ -101,6 +151,7 @@ impl ReceiptPreparationPipeline {
             chain_id,
             protocol_version,
             storage,
+            submit_channel,
         }
     }
 
@@ -148,52 +199,60 @@ impl ReceiptPreparationPipeline {
                         // TODO: Warning?
                         std::collections::btree_map::Entry::Occupied(_) => continue,
                     };
-                    let config = Arc::clone(&self.config.wasm_config);
+                    // let config = Arc::clone(&self.config.wasm_config);
                     let cache = self.contract_cache.as_ref().map(|c| c.handle());
-                    let storage = self.storage.clone();
-                    let chain_id = self.chain_id.clone();
-                    let protocol_version = self.protocol_version;
+                    // let storage = self.storage.clone();
+                    // let chain_id = self.chain_id.clone();
+                    // let protocol_version = self.protocol_version;
                     let code_hash = account.code_hash();
-                    let status = Mutex::new(PrepareTaskStatus::Pending);
-                    let task = Arc::new(PrepareTask { status, condvar: Condvar::new() });
+                    let created = Instant::now();
                     let method_name = function_call.method_name.clone();
-                    PIPELINING_ACTIONS_SUBMITTED.inc_by(1);
-                    let start = Instant::now();
+                    let status = Mutex::new(PrepareTaskStatus::Pending {
+                        created,
+                        cache,
+                        gas_counter,
+                        code_hash,
+                        account_id,
+                        method_name,
+                    });
+                    let task = Arc::new(PrepareTask { status, condvar: Condvar::new() });
                     entry.insert(Arc::clone(&task));
+                    let _ = self.submit_channel.send(task);
+                    PIPELINING_ACTIONS_SUBMITTED.inc_by(1);
                     // FIXME: don't spawn all tasks at once. We want to keep some capacity for
                     // other things and also to control (in a way) the concurrency here.
-                    rayon::spawn_fifo(move || {
-                        let task_status = {
-                            let mut status = task.status.lock().expect("mutex lock");
-                            std::mem::replace(&mut *status, PrepareTaskStatus::Working)
-                        };
-                        PIPELINING_ACTIONS_TASK_DELAY_TIME.inc_by(start.elapsed().as_secs_f64());
-                        let start = Instant::now();
-                        match &task_status {
-                            PrepareTaskStatus::Pending => {}
-                            PrepareTaskStatus::Working => return,
-                            // TODO: seeing Prepared here may mean there's double spawning for the
-                            // same receipt index. Maybe output a warning?
-                            PrepareTaskStatus::Prepared(..) => return,
-                            PrepareTaskStatus::Finished => return,
-                        };
-                        let contract = prepare_function_call(
-                            &storage,
-                            cache.as_deref(),
-                            &chain_id,
-                            protocol_version,
-                            config,
-                            gas_counter,
-                            code_hash,
-                            &account_id,
-                            &method_name,
-                        );
+                    // rayon::spawn_fifo(move || {
+                    //     let task_status = {
+                    //         let mut status = task.status.lock().expect("mutex lock");
+                    //         std::mem::replace(&mut *status, PrepareTaskStatus::Working)
+                    //     };
+                    //     PIPELINING_ACTIONS_TASK_DELAY_TIME.inc_by(start.elapsed().as_secs_f64());
+                    //     let start = Instant::now();
+                    //     match &task_status {
+                    //         PrepareTaskStatus::Pending => {}
+                    //         PrepareTaskStatus::Working => return,
+                    //         // TODO: seeing Prepared here may mean there's double spawning for the
+                    //         // same receipt index. Maybe output a warning?
+                    //         PrepareTaskStatus::Prepared(..) => return,
+                    //         PrepareTaskStatus::Finished => return,
+                    //     };
+                    //     let contract = prepare_function_call(
+                    //         &storage,
+                    //         cache.as_deref(),
+                    //         &chain_id,
+                    //         protocol_version,
+                    //         config,
+                    //         gas_counter,
+                    //         code_hash,
+                    //         &account_id,
+                    //         &method_name,
+                    //     );
 
-                        let mut status = task.status.lock().expect("mutex lock");
-                        *status = PrepareTaskStatus::Prepared(contract);
-                        PIPELINING_ACTIONS_TASK_WORKING_TIME.inc_by(start.elapsed().as_secs_f64());
-                        task.condvar.notify_all();
-                    });
+                    //     let mut status = task.status.lock().expect("mutex lock");
+                    //     *status = PrepareTaskStatus::Prepared(contract);
+                    //     PIPELINING_ACTIONS_TASK_WORKING_TIME.inc_by(start.elapsed().as_secs_f64());
+                    //     task.condvar.notify_all();
+                    // });
                     any_function_calls = true;
                 }
                 // No need to handle this receipt as it only generates other new receipts.
@@ -268,11 +327,16 @@ impl ReceiptPreparationPipeline {
         loop {
             let current = std::mem::replace(&mut *status_guard, PrepareTaskStatus::Working);
             match current {
-                PrepareTaskStatus::Pending => {
+                PrepareTaskStatus::Pending {
+                    gas_counter,
+                    code_hash,
+                    account_id,
+                    method_name,
+                    cache,
+                    ..
+                } => {
                     *status_guard = PrepareTaskStatus::Finished;
                     drop(status_guard);
-
-                    let gas_counter = self.gas_counter(view_config.as_ref(), function_call.gas);
                     tracing::trace!(
                         target: "runtime::pipelining",
                         message="function call preparation on the main thread",
@@ -281,14 +345,14 @@ impl ReceiptPreparationPipeline {
                     );
                     let contract = prepare_function_call(
                         &self.storage,
-                        self.contract_cache.as_deref(),
+                        cache.as_deref(),
                         &self.chain_id,
                         self.protocol_version,
                         Arc::clone(&self.config.wasm_config),
                         gas_counter,
                         code_hash,
                         &account_id,
-                        &function_call.method_name,
+                        &method_name,
                     );
                     PIPELINING_ACTIONS_PREPARED_IN_MAIN_THREAD.inc_by(1);
                     return contract;
