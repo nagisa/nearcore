@@ -1678,6 +1678,11 @@ impl Runtime {
             &processing_state.state_update,
             &mut prep_lookahead_iter,
         );
+        _ = schedule_contract_preparation(
+            &mut processing_state.pipeline_manager,
+            &processing_state.state_update,
+            &mut prep_lookahead_iter,
+        );
 
         for receipt in local_receipts.iter() {
             if processing_state.total.compute >= compute_limit
@@ -1849,6 +1854,11 @@ impl Runtime {
         // Advance the preparation by one step (stagger it) so that we're preparing one interesting
         // receipt in advance.
         let mut next_schedule_after = schedule_contract_preparation(
+            &mut processing_state.pipeline_manager,
+            &processing_state.state_update,
+            &mut prep_lookahead_iter,
+        );
+        _ = schedule_contract_preparation(
             &mut processing_state.pipeline_manager,
             &processing_state.state_update,
             &mut prep_lookahead_iter,
