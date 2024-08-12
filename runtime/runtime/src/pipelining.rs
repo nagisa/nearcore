@@ -2,10 +2,10 @@
 
 use crate::ext::RuntimeContractExt;
 use crate::metrics::{
-    PIPELINING_ACTIONS_FOUND_PREPARED, PIPELINING_ACTIONS_NOT_SUBMITTED,
-    PIPELINING_ACTIONS_PREPARED_IN_MAIN_THREAD, PIPELINING_ACTIONS_SUBMITTED,
-    PIPELINING_ACTIONS_TASK_DELAY_TIME, PIPELINING_ACTIONS_TASK_WORKING_TIME,
-    PIPELINING_ACTIONS_WAITING_TIME,
+    PIPELINING_ACTIONS_FOUND_PREPARED, PIPELINING_ACTIONS_MAIN_THREAD_WORKING_TIME,
+    PIPELINING_ACTIONS_NOT_SUBMITTED, PIPELINING_ACTIONS_PREPARED_IN_MAIN_THREAD,
+    PIPELINING_ACTIONS_SUBMITTED, PIPELINING_ACTIONS_TASK_DELAY_TIME,
+    PIPELINING_ACTIONS_TASK_WORKING_TIME, PIPELINING_ACTIONS_WAITING_TIME,
 };
 use near_parameters::RuntimeConfig;
 use near_primitives::account::Account;
@@ -301,6 +301,7 @@ impl ReceiptPreparationPipeline {
         };
         let key = PrepareTaskKey { receipt_id: receipt.get_hash(), action_index };
         let Some(task) = self.map.get(&key) else {
+            let start = Instant::now();
             let gas_counter = self.gas_counter(view_config.as_ref(), function_call.gas);
             if !self.block_accounts.contains(account_id) {
                 tracing::debug!(
@@ -322,6 +323,7 @@ impl ReceiptPreparationPipeline {
                 &account_id,
                 &function_call.method_name,
             );
+            PIPELINING_ACTIONS_MAIN_THREAD_WORKING_TIME.inc_by(start.elapsed().as_secs_f64());
         };
         let mut status_guard = task.status.lock().unwrap();
         loop {
@@ -337,6 +339,7 @@ impl ReceiptPreparationPipeline {
                 } => {
                     *status_guard = PrepareTaskStatus::Finished;
                     drop(status_guard);
+                    let start = Instant::now();
                     tracing::trace!(
                         target: "runtime::pipelining",
                         message="function call preparation on the main thread",
@@ -355,6 +358,8 @@ impl ReceiptPreparationPipeline {
                         &method_name,
                     );
                     PIPELINING_ACTIONS_PREPARED_IN_MAIN_THREAD.inc_by(1);
+                    PIPELINING_ACTIONS_MAIN_THREAD_WORKING_TIME
+                        .inc_by(start.elapsed().as_secs_f64());
                     return contract;
                 }
                 PrepareTaskStatus::Working => {

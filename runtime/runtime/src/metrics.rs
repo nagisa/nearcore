@@ -483,6 +483,15 @@ pub(crate) static PIPELINING_ACTIONS_WAITING_TIME: LazyLock<Counter> = LazyLock:
     .unwrap()
 });
 
+pub(crate) static PIPELINING_ACTIONS_MAIN_THREAD_WORKING_TIME: LazyLock<Counter> =
+    LazyLock::new(|| {
+        try_create_counter(
+            "near_pipelininig_main_thread_seconds_total",
+            "Time spent preparing contracts on the main thread (for whatever reason.)",
+        )
+        .unwrap()
+    });
+
 pub(crate) static PIPELINING_ACTIONS_TASK_DELAY_TIME: LazyLock<Counter> = LazyLock::new(|| {
     try_create_counter(
         "near_pipelininig_delay_seconds_total",
