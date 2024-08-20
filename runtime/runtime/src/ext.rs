@@ -379,7 +379,7 @@ impl<'a> Contract for RuntimeContractExt<'a> {
         let account_id = self.account_id;
         let code_hash = self.hash();
         let chain_id = self.chain_id;
-        if checked_feature!("stable", EthImplicitAccounts, version)
+        if checked_feature!("stable", EthImplicitAccounts, self.current_protocol_version)
             && account_id.get_account_type() == AccountType::EthImplicitAccount
             && code_hash_matches_wallet_contract(chain_id, &code_hash)
         {
