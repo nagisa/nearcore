@@ -84,6 +84,9 @@ impl<'a, M: ArenaMemory> ChildrenView<'a, M> {
 
     /// Converts to a Children struct used in RawTrieNode.
     pub fn to_children(&self) -> Children {
+        let region = ittapi::Region::new("to_children");
+        let _region = region.mark();
+
         let mut nodes = [None; 16];
         if self.mask == 0 {
             return Children(nodes);

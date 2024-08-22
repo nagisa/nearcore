@@ -3381,6 +3381,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49f1f14873335454500d59611f1cf4a4b0f786f9ac11f4312a78e4cf2566695b"
 
 [[package]]
+name = "ittapi"
+version = "0.4.0"
+source = "git+https://github.com/intel/ittapi.git#8e526a82cc805665ef4513399aaea8a5dccfd66f"
+dependencies = [
+ "anyhow",
+ "ittapi-sys",
+ "log",
+]
+
+[[package]]
+name = "ittapi-sys"
+version = "0.4.0"
+source = "git+https://github.com/intel/ittapi.git#8e526a82cc805665ef4513399aaea8a5dccfd66f"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "jobserver"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4953,6 +4971,7 @@ dependencies = [
  "insta",
  "itertools",
  "itoa",
+ "ittapi",
  "lru 0.12.3",
  "near-chain",
  "near-chain-configs",
