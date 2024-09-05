@@ -582,4 +582,15 @@ mod tests {
         );
         assert!(matches!(result, Err("mikan")));
     }
+
+    #[test]
+    fn check_hash_between_70_and_71() {
+        let config_store = near_parameters::RuntimeConfigStore::new(None);
+        let p70_cfg = &config_store.get_config(70).wasm_config;
+        let p71_cfg = &config_store.get_config(71).wasm_config;
+        let code_hash = CryptoHash::default();
+        let p70_ck = super::get_contract_cache_key(code_hash, p70_cfg);
+        let p71_ck = super::get_contract_cache_key(code_hash, p71_cfg);
+        assert_eq!(p70_ck, p71_ck);
+    }
 }
