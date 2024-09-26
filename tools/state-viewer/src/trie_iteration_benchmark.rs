@@ -245,16 +245,16 @@ impl TrieIterationBenchmarkCmd {
             // The only exception is the ACCESS_KEY and dedicated method
             // partial_parse_account_id_from_access_key should be used.
             col::ACCESS_KEY => Self::partial_parse_account_id_from_access_key(&key, "ACCESS KEY"),
-            col::CONTRACT_DATA => Self::partial_parse_account_id(col, &key, "CONTRACT DATA"),
-            col::RECEIVED_DATA => Self::partial_parse_account_id(col, &key, "RECEIVED DATA"),
+            col::CONTRACT_DATA => Self::partial_parse_account_id(&key, "CONTRACT DATA"),
+            col::RECEIVED_DATA => Self::partial_parse_account_id(&key, "RECEIVED DATA"),
             col::POSTPONED_RECEIPT_ID => {
-                Self::partial_parse_account_id(col, &key, "POSTPONED RECEIPT ID")
+                Self::partial_parse_account_id(&key, "POSTPONED RECEIPT ID")
             }
             col::PENDING_DATA_COUNT => {
-                Self::partial_parse_account_id(col, &key, "PENDING DATA COUNT")
+                Self::partial_parse_account_id(&key, "PENDING DATA COUNT")
             }
             col::POSTPONED_RECEIPT => {
-                Self::partial_parse_account_id(col, &key, "POSTPONED RECEIPT")
+                Self::partial_parse_account_id(&key, "POSTPONED RECEIPT")
             }
             _ => unreachable!(),
         };
@@ -280,8 +280,8 @@ impl TrieIterationBenchmarkCmd {
         result
     }
 
-    fn partial_parse_account_id(col: u8, key: &Vec<u8>, col_name: &str) -> bool {
-        match parse_account_id_from_trie_key_with_separator(col, &key, "") {
+    fn partial_parse_account_id(key: &Vec<u8>, col_name: &str) -> bool {
+        match parse_account_id_from_trie_key_with_separator(&key, "") {
             Ok(account_id) => {
                 tracing::trace!(
                     target: "trie-iteration-benchmark",

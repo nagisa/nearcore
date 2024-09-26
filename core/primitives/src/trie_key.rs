@@ -92,7 +92,7 @@ pub mod col {
 }
 
 /// Describes the key of a specific key-value record in a state trie.
-#[derive(Debug, Clone, PartialEq, Eq, BorshDeserialize, BorshSerialize, ProtocolSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, ProtocolSchema)]
 pub enum TrieKey {
     /// Used to store `primitives::account::Account` struct for a given `AccountId`.
     Account { account_id: AccountId },
@@ -145,6 +145,146 @@ pub enum TrieKey {
     BufferedReceipt { receiving_shard: ShardId, index: u64 },
 }
 
+impl TrieKey {
+    fn borsh_serialize_account<W: std::io::Write>(
+        &self,
+        account_id: &AccountId,
+        discriminant: u8,
+        writer: &mut W,
+    ) -> std::io::Result<()> {
+        BorshSerialize::serialize(&u8::MAX, writer)?;
+        BorshSerialize::serialize(account_id, writer)?;
+        BorshSerialize::serialize(&discriminant, writer)?;
+        Ok(())
+    }
+    fn borsh_serialize_regular<W: std::io::Write>(
+        &self,
+        discriminant: u8,
+        writer: &mut W,
+    ) -> std::io::Result<()> {
+        BorshSerialize::serialize(&discriminant, writer)?;
+        Ok(())
+    }
+}
+
+impl BorshSerialize for TrieKey {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        match self {
+            TrieKey::Account { account_id } => self.borsh_serialize_account(account_id, 0, writer),
+            TrieKey::ContractCode { account_id } => {
+                self.borsh_serialize_account(account_id, 1, writer)
+            }
+            TrieKey::AccessKey { account_id, public_key } => {
+                self.borsh_serialize_account(account_id, 2, writer)?;
+                BorshSerialize::serialize(public_key, writer)
+            }
+            TrieKey::ReceivedData { receiver_id, data_id } => {
+                self.borsh_serialize_account(receiver_id, 3, writer)?;
+                BorshSerialize::serialize(data_id, writer)
+            }
+            TrieKey::PostponedReceiptId { receiver_id, data_id } => {
+                self.borsh_serialize_account(receiver_id, 4, writer)?;
+                BorshSerialize::serialize(data_id, writer)
+            }
+            TrieKey::PendingDataCount { receiver_id, receipt_id } => {
+                self.borsh_serialize_account(receiver_id, 5, writer)?;
+                BorshSerialize::serialize(receipt_id, writer)
+            }
+            TrieKey::PostponedReceipt { receiver_id, receipt_id } => {
+                self.borsh_serialize_account(receiver_id, 6, writer)?;
+                BorshSerialize::serialize(receipt_id, writer)
+            }
+            TrieKey::DelayedReceiptIndices => self.borsh_serialize_regular(7, writer),
+            TrieKey::DelayedReceipt { index } => {
+                self.borsh_serialize_regular(8, writer)?;
+                BorshSerialize::serialize(index, writer)
+            }
+            TrieKey::ContractData { account_id, key } => {
+                self.borsh_serialize_account(account_id, 9, writer)?;
+                BorshSerialize::serialize(key, writer)
+            }
+            TrieKey::PromiseYieldIndices => self.borsh_serialize_regular(10, writer),
+            TrieKey::PromiseYieldTimeout { index } => {
+                self.borsh_serialize_regular(11, writer)?;
+                BorshSerialize::serialize(index, writer)
+            }
+            TrieKey::PromiseYieldReceipt { receiver_id, data_id } => {
+                self.borsh_serialize_account(receiver_id, 12, writer)?;
+                BorshSerialize::serialize(data_id, writer)
+            }
+            TrieKey::BufferedReceiptIndices => self.borsh_serialize_regular(13, writer),
+            TrieKey::BufferedReceipt { receiving_shard, index } => {
+                self.borsh_serialize_regular(14, writer)?;
+                BorshSerialize::serialize(receiving_shard, writer)?;
+                BorshSerialize::serialize(index, writer)
+            }
+        }
+    }
+}
+
+impl BorshDeserialize for TrieKey {
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let tag = <u8 as BorshDeserialize>::deserialize_reader(reader)?;
+        match tag {
+            0xff => {
+                let account_id = <AccountId as BorshDeserialize>::deserialize_reader(reader)?;
+                let tag = <u8 as BorshDeserialize>::deserialize_reader(reader)?;
+                match tag {
+                    0 => Ok(Self::Account { account_id }),
+                    1 => Ok(Self::ContractCode { account_id }),
+                    2 => Ok(Self::AccessKey {
+                        account_id,
+                        public_key: BorshDeserialize::deserialize_reader(reader)?,
+                    }),
+                    3 => Ok(Self::ReceivedData {
+                        receiver_id: account_id,
+                        data_id: BorshDeserialize::deserialize_reader(reader)?,
+                    }),
+                    4 => Ok(Self::PostponedReceiptId {
+                        receiver_id: account_id,
+                        data_id: BorshDeserialize::deserialize_reader(reader)?,
+                    }),
+                    5 => Ok(Self::PendingDataCount {
+                        receiver_id: account_id,
+                        receipt_id: BorshDeserialize::deserialize_reader(reader)?,
+                    }),
+                    6 => Ok(Self::PostponedReceipt {
+                        receiver_id: account_id,
+                        receipt_id: BorshDeserialize::deserialize_reader(reader)?,
+                    }),
+                    9 => Ok(Self::ContractData {
+                        account_id,
+                        key: BorshDeserialize::deserialize_reader(reader)?,
+                    }),
+                    12 => Ok(Self::PromiseYieldReceipt {
+                        receiver_id: account_id,
+                        data_id: BorshDeserialize::deserialize_reader(reader)?,
+                    }),
+                    _ => Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("unexpected variant tag: {}", tag),
+                    )),
+                }
+            }
+            7 => Ok(Self::DelayedReceiptIndices),
+            8 => Ok(Self::DelayedReceipt { index: BorshDeserialize::deserialize_reader(reader)? }),
+            10 => Ok(Self::PromiseYieldIndices),
+            11 => Ok(Self::PromiseYieldTimeout {
+                index: BorshDeserialize::deserialize_reader(reader)?,
+            }),
+            13 => Ok(Self::BufferedReceiptIndices),
+            14 => Ok(Self::BufferedReceipt {
+                receiving_shard: BorshDeserialize::deserialize_reader(reader)?,
+                index: BorshDeserialize::deserialize_reader(reader)?,
+            }),
+            _ => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("unexpected variant tag: {}", tag),
+            )),
+        }
+    }
+}
+
 /// Provides `len` function.
 ///
 /// This trait exists purely so that we can do `col::ACCOUNT.len()` rather than
@@ -163,31 +303,31 @@ impl Byte for u8 {
 impl TrieKey {
     pub fn len(&self) -> usize {
         match self {
-            TrieKey::Account { account_id } => col::ACCOUNT.len() + account_id.len(),
-            TrieKey::ContractCode { account_id } => col::CONTRACT_CODE.len() + account_id.len(),
+            TrieKey::Account { account_id } => 1 + col::ACCOUNT.len() + account_id.len(),
+            TrieKey::ContractCode { account_id } => 1 + col::CONTRACT_CODE.len() + account_id.len(),
             TrieKey::AccessKey { account_id, public_key } => {
-                col::ACCESS_KEY.len() * 2 + account_id.len() + public_key.len()
+                1 + col::ACCESS_KEY.len() * 2 + account_id.len() + public_key.len()
             }
             TrieKey::ReceivedData { receiver_id, data_id } => {
-                col::RECEIVED_DATA.len()
+                1 + col::RECEIVED_DATA.len()
                     + receiver_id.len()
                     + ACCOUNT_DATA_SEPARATOR.len()
                     + data_id.as_ref().len()
             }
             TrieKey::PostponedReceiptId { receiver_id, data_id } => {
-                col::POSTPONED_RECEIPT_ID.len()
+                1 + col::POSTPONED_RECEIPT_ID.len()
                     + receiver_id.len()
                     + ACCOUNT_DATA_SEPARATOR.len()
                     + data_id.as_ref().len()
             }
             TrieKey::PendingDataCount { receiver_id, receipt_id } => {
-                col::PENDING_DATA_COUNT.len()
+                1 + col::PENDING_DATA_COUNT.len()
                     + receiver_id.len()
                     + ACCOUNT_DATA_SEPARATOR.len()
                     + receipt_id.as_ref().len()
             }
             TrieKey::PostponedReceipt { receiver_id, receipt_id } => {
-                col::POSTPONED_RECEIPT.len()
+                1 + col::POSTPONED_RECEIPT.len()
                     + receiver_id.len()
                     + ACCOUNT_DATA_SEPARATOR.len()
                     + receipt_id.as_ref().len()
@@ -201,13 +341,13 @@ impl TrieKey {
                 col::PROMISE_YIELD_TIMEOUT.len() + size_of::<u64>()
             }
             TrieKey::PromiseYieldReceipt { receiver_id, data_id } => {
-                col::PROMISE_YIELD_RECEIPT.len()
+                1 + col::PROMISE_YIELD_RECEIPT.len()
                     + receiver_id.len()
                     + ACCOUNT_DATA_SEPARATOR.len()
                     + data_id.as_ref().len()
             }
             TrieKey::ContractData { account_id, key } => {
-                col::CONTRACT_DATA.len()
+                1 + col::CONTRACT_DATA.len()
                     + account_id.len()
                     + ACCOUNT_DATA_SEPARATOR.len()
                     + key.len()
@@ -227,40 +367,47 @@ impl TrieKey {
         buf.reserve(self.len());
         match self {
             TrieKey::Account { account_id } => {
-                buf.push(col::ACCOUNT);
+                buf.push(0xFF);
                 buf.extend(account_id.as_bytes());
+                buf.push(col::ACCOUNT);
             }
             TrieKey::ContractCode { account_id } => {
-                buf.push(col::CONTRACT_CODE);
+                buf.push(0xFF);
                 buf.extend(account_id.as_bytes());
+                buf.push(col::CONTRACT_CODE);
             }
             TrieKey::AccessKey { account_id, public_key } => {
-                buf.push(col::ACCESS_KEY);
+                buf.push(0xFF);
                 buf.extend(account_id.as_bytes());
+                buf.push(col::ACCESS_KEY);
                 buf.push(ACCESS_KEY_SEPARATOR);
                 buf.extend(borsh::to_vec(&public_key).unwrap());
             }
             TrieKey::ReceivedData { receiver_id, data_id } => {
-                buf.push(col::RECEIVED_DATA);
+                buf.push(0xFF);
                 buf.extend(receiver_id.as_bytes());
+                buf.push(col::RECEIVED_DATA);
                 buf.push(ACCOUNT_DATA_SEPARATOR);
                 buf.extend(data_id.as_ref());
             }
             TrieKey::PostponedReceiptId { receiver_id, data_id } => {
-                buf.push(col::POSTPONED_RECEIPT_ID);
+                buf.push(0xFF);
                 buf.extend(receiver_id.as_bytes());
+                buf.push(col::POSTPONED_RECEIPT_ID);
                 buf.push(ACCOUNT_DATA_SEPARATOR);
                 buf.extend(data_id.as_ref());
             }
             TrieKey::PendingDataCount { receiver_id, receipt_id } => {
-                buf.push(col::PENDING_DATA_COUNT);
+                buf.push(0xFF);
                 buf.extend(receiver_id.as_bytes());
+                buf.push(col::PENDING_DATA_COUNT);
                 buf.push(ACCOUNT_DATA_SEPARATOR);
                 buf.extend(receipt_id.as_ref());
             }
             TrieKey::PostponedReceipt { receiver_id, receipt_id } => {
-                buf.push(col::POSTPONED_RECEIPT);
+                buf.push(0xFF);
                 buf.extend(receiver_id.as_bytes());
+                buf.push(col::POSTPONED_RECEIPT);
                 buf.push(ACCOUNT_DATA_SEPARATOR);
                 buf.extend(receipt_id.as_ref());
             }
@@ -272,8 +419,9 @@ impl TrieKey {
                 buf.extend(&index.to_le_bytes());
             }
             TrieKey::ContractData { account_id, key } => {
-                buf.push(col::CONTRACT_DATA);
+                buf.push(0xFF);
                 buf.extend(account_id.as_bytes());
+                buf.push(col::CONTRACT_DATA);
                 buf.push(ACCOUNT_DATA_SEPARATOR);
                 buf.extend(key);
             }
@@ -285,8 +433,9 @@ impl TrieKey {
                 buf.extend(&index.to_le_bytes());
             }
             TrieKey::PromiseYieldReceipt { receiver_id, data_id } => {
-                buf.push(col::PROMISE_YIELD_RECEIPT);
+                buf.push(0xFF);
                 buf.extend(receiver_id.as_bytes());
+                buf.push(col::PROMISE_YIELD_RECEIPT);
                 buf.push(ACCOUNT_DATA_SEPARATOR);
                 buf.extend(data_id.as_ref());
             }
@@ -338,7 +487,7 @@ pub mod trie_key_parsers {
         raw_key: &[u8],
         account_id: &AccountId,
     ) -> Result<PublicKey, std::io::Error> {
-        let prefix_len = col::ACCESS_KEY.len() * 2 + account_id.len();
+        let prefix_len = 1 + col::ACCESS_KEY.len() * 2 + account_id.len();
         if raw_key.len() < prefix_len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -352,7 +501,8 @@ pub mod trie_key_parsers {
         raw_key: &'a [u8],
         account_id: &AccountId,
     ) -> Result<&'a [u8], std::io::Error> {
-        let prefix_len = col::CONTRACT_DATA.len() + account_id.len() + ACCOUNT_DATA_SEPARATOR.len();
+        let prefix_len =
+            1 + col::CONTRACT_DATA.len() + account_id.len() + ACCOUNT_DATA_SEPARATOR.len();
         if raw_key.len() < prefix_len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -362,17 +512,14 @@ pub mod trie_key_parsers {
         Ok(&raw_key[prefix_len..])
     }
 
-    pub fn parse_account_id_prefix<'a>(
-        column: u8,
-        raw_key: &'a [u8],
-    ) -> Result<&'a [u8], std::io::Error> {
-        let prefix = std::slice::from_ref(&column);
-        if let Some(tail) = raw_key.strip_prefix(prefix) {
+    pub fn parse_account_id_prefix<'a>(raw_key: &'a [u8]) -> Result<&'a [u8], std::io::Error> {
+        let prefix = [0xff];
+        if let Some(tail) = raw_key.strip_prefix(&prefix) {
             Ok(tail)
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "raw key is does not start with a proper column marker",
+                "raw key does not start with an account_id marker",
             ))
         }
     }
@@ -412,7 +559,7 @@ pub mod trie_key_parsers {
     pub fn parse_account_id_from_contract_data_key(
         raw_key: &[u8],
     ) -> Result<AccountId, std::io::Error> {
-        let account_id_prefix = parse_account_id_prefix(col::CONTRACT_DATA, raw_key)?;
+        let account_id_prefix = parse_account_id_prefix(raw_key)?;
         if let Some(account_id) = next_token(account_id_prefix, ACCOUNT_DATA_SEPARATOR) {
             parse_account_id_from_slice(account_id, "ContractData")
         } else {
@@ -424,14 +571,14 @@ pub mod trie_key_parsers {
     }
 
     pub fn parse_account_id_from_account_key(raw_key: &[u8]) -> Result<AccountId, std::io::Error> {
-        let account_id = parse_account_id_prefix(col::ACCOUNT, raw_key)?;
+        let account_id = parse_account_id_prefix(raw_key)?;
         parse_account_id_from_slice(account_id, "Account")
     }
 
     pub fn parse_account_id_from_access_key_key(
         raw_key: &[u8],
     ) -> Result<AccountId, std::io::Error> {
-        let account_id_prefix = parse_account_id_prefix(col::ACCESS_KEY, raw_key)?;
+        let account_id_prefix = parse_account_id_prefix(raw_key)?;
         if let Some(account_id) = next_token(account_id_prefix, ACCESS_KEY_SEPARATOR) {
             parse_account_id_from_slice(account_id, "AccessKey")
         } else {
@@ -445,7 +592,7 @@ pub mod trie_key_parsers {
     pub fn parse_account_id_from_contract_code_key(
         raw_key: &[u8],
     ) -> Result<AccountId, std::io::Error> {
-        let account_id = parse_account_id_prefix(col::CONTRACT_CODE, raw_key)?;
+        let account_id = parse_account_id_prefix(raw_key)?;
         parse_account_id_from_slice(account_id, "ContractCode")
     }
 
@@ -461,14 +608,14 @@ pub mod trie_key_parsers {
         raw_key: &[u8],
     ) -> Result<Option<AccountId>, std::io::Error> {
         for (col, col_name) in col::COLUMNS_WITH_ACCOUNT_ID_IN_KEY {
-            if parse_account_id_prefix(col, raw_key).is_err() {
+            if parse_account_id_prefix(raw_key).is_err() {
                 continue;
             }
             let account_id = match col {
                 col::ACCOUNT => parse_account_id_from_account_key(raw_key)?,
                 col::CONTRACT_CODE => parse_account_id_from_contract_code_key(raw_key)?,
                 col::ACCESS_KEY => parse_account_id_from_access_key_key(raw_key)?,
-                _ => parse_account_id_from_trie_key_with_separator(col, raw_key, col_name)?,
+                _ => parse_account_id_from_trie_key_with_separator(raw_key, col_name)?,
             };
             return Ok(Some(account_id));
         }
@@ -476,11 +623,10 @@ pub mod trie_key_parsers {
     }
 
     pub fn parse_account_id_from_trie_key_with_separator(
-        col: u8,
         raw_key: &[u8],
         col_name: &str,
     ) -> Result<AccountId, std::io::Error> {
-        let account_id_prefix = parse_account_id_prefix(col, raw_key)?;
+        let account_id_prefix = parse_account_id_prefix(raw_key)?;
         if let Some(account_id) = next_token(account_id_prefix, ACCOUNT_DATA_SEPARATOR) {
             parse_account_id_from_slice(account_id, col_name)
         } else {
@@ -494,7 +640,7 @@ pub mod trie_key_parsers {
     pub fn parse_account_id_from_received_data_key(
         raw_key: &[u8],
     ) -> Result<AccountId, std::io::Error> {
-        parse_account_id_from_trie_key_with_separator(col::RECEIVED_DATA, raw_key, "ReceivedData")
+        parse_account_id_from_trie_key_with_separator(raw_key, "ReceivedData")
     }
 
     pub fn parse_data_id_from_received_data_key(
@@ -518,21 +664,23 @@ pub mod trie_key_parsers {
 
     pub fn get_raw_prefix_for_access_keys(account_id: &AccountId) -> Vec<u8> {
         let mut res = Vec::with_capacity(col::ACCESS_KEY.len() * 2 + account_id.len());
-        res.push(col::ACCESS_KEY);
+        res.push(0xff);
         res.extend(account_id.as_bytes());
+        res.push(col::ACCESS_KEY);
         res.push(col::ACCESS_KEY);
         res
     }
 
     pub fn get_raw_prefix_for_contract_data(account_id: &AccountId, prefix: &[u8]) -> Vec<u8> {
         let mut res = Vec::with_capacity(
-            col::CONTRACT_DATA.len()
+            1 + col::CONTRACT_DATA.len()
                 + account_id.len()
                 + ACCOUNT_DATA_SEPARATOR.len()
                 + prefix.len(),
         );
-        res.push(col::CONTRACT_DATA);
+        res.push(0xff);
         res.extend(account_id.as_bytes());
+        res.push(col::CONTRACT_DATA);
         res.push(ACCOUNT_DATA_SEPARATOR);
         res.extend(prefix);
         res

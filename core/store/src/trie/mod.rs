@@ -1069,7 +1069,7 @@ impl Trie {
                 return true;
             }
         }
-        if let Ok(account_id_prefix) = parse_account_id_prefix(column, &node_key) {
+        if let Ok(account_id_prefix) = parse_account_id_prefix(&node_key) {
             if Self::is_out_of_account_id_bounds(account_id_prefix, from, to) {
                 return true;
             }
