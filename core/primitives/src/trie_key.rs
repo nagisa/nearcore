@@ -73,7 +73,7 @@ pub mod col {
         (PROMISE_YIELD_RECEIPT, "PromiseYieldReceipt"),
     ];
 
-    pub const ALL_COLUMNS_WITH_NAMES: [(u8, &'static str); 14] = [
+    pub const ALL_COLUMNS_WITH_NAMES: [(u8, &'static str); 15] = [
         (ACCOUNT, "Account"),
         (CONTRACT_CODE, "ContractCode"),
         (ACCESS_KEY, "AccessKey"),
@@ -88,6 +88,7 @@ pub mod col {
         (PROMISE_YIELD_RECEIPT, "PromiseYieldReceipt"),
         (BUFFERED_RECEIPT_INDICES, "BufferedReceiptIndices"),
         (BUFFERED_RECEIPT, "BufferedReceipt"),
+        (0xff, "AccountIdBased"),
     ];
 }
 
