@@ -2,12 +2,9 @@ use crate::account::{AccessKey, Account};
 use crate::hash::{hash, CryptoHash};
 use crate::receipt::{Receipt, ReceivedData};
 use crate::trie_key::trie_key_parsers::{
-    parse_account_id_from_access_key_key, parse_account_id_from_account_key,
-    parse_account_id_from_contract_code_key, parse_account_id_from_contract_data_key,
-    parse_account_id_from_received_data_key, parse_data_id_from_received_data_key,
-    parse_data_key_from_contract_data_key, parse_public_key_from_access_key_key,
+    parse_account_id_from_access_key_key, parse_account_id_from_account_key, parse_account_id_from_contract_code_key, parse_account_id_from_contract_data_key, parse_account_id_from_raw_key, parse_account_id_from_received_data_key, parse_data_id_from_received_data_key, parse_data_key_from_contract_data_key, parse_public_key_from_access_key_key
 };
-use crate::trie_key::{col, TrieKey};
+use crate::trie_key::{col, TrieKey, ACCESS_KEY_SEPARATOR, ACCOUNT_DATA_SEPARATOR};
 use crate::types::{AccountId, StoreKey, StoreValue};
 use borsh::BorshDeserialize;
 use near_crypto::PublicKey;
@@ -102,6 +99,57 @@ impl StateRecord {
             col::DELAYED_RECEIPT_OR_INDICES => {
                 let receipt = Receipt::try_from_slice(&value)?;
                 Some(StateRecord::DelayedReceipt(Box::new(receipt)))
+            }
+            0xff => {
+                if let Some(index) = key.iter().position(|v| *v == ACCOUNT_DATA_SEPARATOR || *v == ACCESS_KEY_SEPARATOR) {
+                    let column = key[index + 1];
+                    println!("col {}", column);
+                    match column {
+                        col::CONTRACT_DATA => {
+                            let account_id = parse_account_id_from_contract_data_key(&key)?;
+                            let data_key =
+                                parse_data_key_from_contract_data_key(&key, &account_id)?;
+                            Some(StateRecord::Data {
+                                account_id,
+                                data_key: data_key.to_vec().into(),
+                                value: value.into(),
+                            })
+                        }
+                        col::ACCESS_KEY => {
+                            let access_key = AccessKey::try_from_slice(&value)?;
+                            let account_id = parse_account_id_from_access_key_key(&key)?;
+                            let public_key =
+                                parse_public_key_from_access_key_key(&key, &account_id)?;
+                            Some(StateRecord::AccessKey { account_id, public_key, access_key })
+                        }
+                        col::RECEIVED_DATA => {
+                            let data = ReceivedData::try_from_slice(&value)?.data;
+                            let account_id = parse_account_id_from_received_data_key(&key)?;
+                            let data_id = parse_data_id_from_received_data_key(&key, &account_id)?;
+                            Some(StateRecord::ReceivedData { account_id, data_id, data })
+                        }
+                        _ => {
+                            println!("key {:?} is unreachable", key);
+                            None
+                        },
+                    }
+                } else {
+                    println!("col {:?}", key.last());
+                    match key.last() {
+                        Some(&col::ACCOUNT) => Some(StateRecord::Account {
+                            account_id: parse_account_id_from_account_key(&key)?,
+                            account: Account::try_from_slice(&value)?,
+                        }),
+                        Some(&col::CONTRACT_CODE) => Some(StateRecord::Contract {
+                            account_id: parse_account_id_from_contract_code_key(&key)?,
+                            code: value,
+                        }),
+                        _ => {
+                            println!("key {:?} is unreachable", key);
+                            None
+                        }
+                    }
+                }
             }
             _ => {
                 println!("key[0]: {} is unreachable", key[0]);
