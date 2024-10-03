@@ -187,7 +187,7 @@ pub fn pre_validate_chunk_state_witness(
     state_witness: &ChunkStateWitness,
     chain: &Chain,
     epoch_manager: &dyn EpochManagerAdapter,
-    runtime_adapter: &dyn RuntimeAdapter,
+    _runtime_adapter: &dyn RuntimeAdapter,
 ) -> Result<PreValidationOutput, Error> {
     let store = chain.chain_store();
 
@@ -240,42 +240,42 @@ pub fn pre_validate_chunk_state_witness(
     }
 
     // Verify that all proposed transactions are valid.
-    let new_transactions = &state_witness.new_transactions;
-    if !new_transactions.is_empty() {
-        let transactions_validation_storage_config = RuntimeStorageConfig {
-            state_root: state_witness.chunk_header.prev_state_root(),
-            use_flat_storage: true,
-            source: StorageDataSource::Recorded(PartialStorage {
-                nodes: state_witness.new_transactions_validation_state.clone(),
-            }),
-            state_patch: Default::default(),
-        };
+    // let new_transactions = &state_witness.new_transactions;
+    // if !new_transactions.is_empty() {
+    //     let transactions_validation_storage_config = RuntimeStorageConfig {
+    //         state_root: state_witness.chunk_header.prev_state_root(),
+    //         use_flat_storage: true,
+    //         source: StorageDataSource::Recorded(PartialStorage {
+    //             nodes: state_witness.new_transactions_validation_state.clone(),
+    //         }),
+    //         state_patch: Default::default(),
+    //     };
 
-        match validate_prepared_transactions(
-            chain,
-            runtime_adapter,
-            &state_witness.chunk_header,
-            transactions_validation_storage_config,
-            &new_transactions,
-            &state_witness.transactions,
-        ) {
-            Ok(result) => {
-                if result.transactions.len() != new_transactions.len() {
-                    return Err(Error::InvalidChunkStateWitness(format!(
-                        "New transactions validation failed. {} transactions out of {} proposed transactions were valid.",
-                        result.transactions.len(),
-                        new_transactions.len(),
-                    )));
-                }
-            }
-            Err(error) => {
-                return Err(Error::InvalidChunkStateWitness(format!(
-                    "New transactions validation failed: {}",
-                    error,
-                )));
-            }
-        };
-    }
+    //     match validate_prepared_transactions(
+    //         chain,
+    //         runtime_adapter,
+    //         &state_witness.chunk_header,
+    //         transactions_validation_storage_config,
+    //         &new_transactions,
+    //         &state_witness.transactions,
+    //     ) {
+    //         Ok(result) => {
+    //             if result.transactions.len() != new_transactions.len() {
+    //                 return Err(Error::InvalidChunkStateWitness(format!(
+    //                     "New transactions validation failed. {} transactions out of {} proposed transactions were valid.",
+    //                     result.transactions.len(),
+    //                     new_transactions.len(),
+    //                 )));
+    //             }
+    //         }
+    //         Err(error) => {
+    //             return Err(Error::InvalidChunkStateWitness(format!(
+    //                 "New transactions validation failed: {}",
+    //                 error,
+    //             )));
+    //         }
+    //     };
+    // }
 
     let main_transition_params = if last_chunk_block.header().is_genesis() {
         let epoch_id = last_chunk_block.header().epoch_id();

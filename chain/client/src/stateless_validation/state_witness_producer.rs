@@ -86,7 +86,7 @@ impl Client {
         prev_block_header: &BlockHeader,
         prev_chunk_header: &ShardChunkHeader,
         chunk: &ShardChunk,
-        transactions_storage_proof: Option<PartialState>,
+        _transactions_storage_proof: Option<PartialState>,
     ) -> Result<ChunkStateWitness, Error> {
         let chunk_header = chunk.cloned_header();
         let epoch_id =
@@ -94,19 +94,6 @@ impl Client {
         let prev_chunk = self.chain.get_chunk(&prev_chunk_header.chunk_hash())?;
         let (main_state_transition, implicit_transitions, applied_receipts_hash) =
             self.collect_state_transition_data(&chunk_header, prev_chunk_header)?;
-
-        let new_transactions = chunk.transactions().to_vec();
-        let new_transactions_validation_state = if new_transactions.is_empty() {
-            PartialState::default()
-        } else {
-            // With stateless validation chunk producer uses recording reads when validating transactions.
-            // The storage proof must be available here.
-            transactions_storage_proof.ok_or_else(|| {
-                let message = "Missing storage proof for transactions validation";
-                log_assert_fail!("{message}");
-                Error::Other(message.to_owned())
-            })?
-        };
 
         let source_receipt_proofs =
             self.collect_source_receipt_proofs(prev_block_header, prev_chunk_header)?;
@@ -123,8 +110,6 @@ impl Client {
             applied_receipts_hash,
             prev_chunk.transactions().to_vec(),
             implicit_transitions,
-            new_transactions,
-            new_transactions_validation_state,
         );
         Ok(witness)
     }
