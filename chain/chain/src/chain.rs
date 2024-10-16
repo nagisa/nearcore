@@ -26,10 +26,7 @@ pub use crate::update_shard::{
     ShardContext, StorageContext,
 };
 use crate::update_shard::{process_shard_update, ShardUpdateReason, ShardUpdateResult};
-use crate::validate::{
-    validate_challenge, validate_chunk_proofs, validate_chunk_with_chunk_extra,
-    validate_transactions_order,
-};
+use crate::validate::{validate_challenge, validate_chunk_proofs, validate_chunk_with_chunk_extra};
 use crate::{
     byzantine_assert, create_light_client_block_view, BlockStatus, ChainGenesis, Doomslug,
     Provenance,
@@ -3130,47 +3127,6 @@ impl Chain {
         Ok(())
     }
 
-    /// Validates basic correctness of array of transactions included in chunk.
-    /// Doesn't require state.
-    fn validate_chunk_transactions(
-        &self,
-        block: &Block,
-        prev_block_header: &BlockHeader,
-        chunk: &ShardChunk,
-    ) -> Result<(), Error> {
-        if !validate_transactions_order(chunk.transactions()) {
-            let merkle_paths = Block::compute_chunk_headers_root(block.chunks().iter()).1;
-            let epoch_id = block.header().epoch_id();
-            let shard_layout = self.epoch_manager.get_shard_layout(&epoch_id)?;
-            let shard_id = chunk.shard_id();
-            let shard_index = shard_layout.get_shard_index(shard_id);
-
-            let chunk_proof = ChunkProofs {
-                block_header: borsh::to_vec(&block.header()).expect("Failed to serialize"),
-                merkle_proof: merkle_paths[shard_index].clone(),
-                chunk: MaybeEncodedShardChunk::Decoded(chunk.clone()).into(),
-            };
-            return Err(Error::InvalidChunkProofs(Box::new(chunk_proof)));
-        }
-
-        let protocol_version =
-            self.epoch_manager.get_epoch_protocol_version(block.header().epoch_id())?;
-        if checked_feature!("stable", AccessKeyNonceRange, protocol_version) {
-            let transaction_validity_period = self.transaction_validity_period;
-            for transaction in chunk.transactions() {
-                self.chain_store()
-                    .check_transaction_validity_period(
-                        prev_block_header,
-                        transaction.transaction.block_hash(),
-                        transaction_validity_period,
-                    )
-                    .map_err(|_| Error::from(Error::InvalidTransactions))?;
-            }
-        };
-
-        Ok(())
-    }
-
     pub fn transaction_validity_check<'a>(
         &'a self,
         prev_block_header: BlockHeader,
@@ -3776,7 +3732,7 @@ impl Chain {
                     }
                 })?;
 
-                self.validate_chunk_transactions(&block, prev_block.header(), &chunk)?;
+                // self.validate_chunk_transactions(&block, prev_block.header(), &chunk)?;
 
                 // we can't use hash from the current block here yet because the incoming receipts
                 // for this block is not stored yet
