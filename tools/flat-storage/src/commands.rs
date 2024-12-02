@@ -15,6 +15,7 @@ use near_store::adapter::StoreAdapter;
 use near_store::flat::{
     FlatStateChanges, FlatStateDelta, FlatStateDeltaMetadata, FlatStorageStatus,
 };
+use near_store::trie::OptimizedValueRef;
 use near_store::{DBCol, Mode, NodeStorage, ShardUId, Store, StoreOpener};
 use nearcore::{load_config, NearConfig, NightshadeRuntime, NightshadeRuntimeExt};
 use std::collections::{HashMap, HashSet};
@@ -537,14 +538,20 @@ impl FlatStorageCommand {
                     // to pre-state-root for this block.
                     let prev_value = trie
                         .get_optimized_ref(trie_key, near_store::KeyLookupMode::Trie)?
-                        .map(|value_ref| {
-                            near_primitives::state::FlatStateValue::Ref(value_ref.into_value_ref())
-                        });
-                    let value = flat_store
-                        .get(shard_uid, trie_key)?
-                        .map(|val| near_primitives::state::FlatStateValue::Ref(val.to_value_ref()));
-                    if prev_value != value {
-                        prev_delta.insert(trie_key.to_vec(), prev_value);
+                        .map(|val| {
+                            Ok::<_, near_store::StorageError>(match val {
+                                OptimizedValueRef::Ref(r) => (r.clone(), FlatStateValue::Ref(r)),
+                                OptimizedValueRef::AvailableValue(_) => {
+                                    let v = FlatStateValue::Inlined(trie.deref_optimized(&val)?);
+                                    (v.to_value_ref(), v)
+                                }
+                            })
+                        })
+                        .transpose()?;
+                    let value =
+                        flat_store.get(shard_uid, trie_key)?.map(|val| (val.to_value_ref()));
+                    if prev_value.as_ref().map(|v| &v.0) != value.as_ref() {
+                        prev_delta.insert(trie_key.to_vec(), prev_value.map(|v| v.1));
                     }
                 }
             }
