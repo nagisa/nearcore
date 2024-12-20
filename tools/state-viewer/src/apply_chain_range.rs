@@ -201,6 +201,7 @@ fn apply_block_from_range(
                 ),
                 &receipts,
                 chunk.transactions(),
+                todo!(),
             )
             .unwrap()
     } else {
@@ -228,6 +229,7 @@ fn apply_block_from_range(
                 ),
                 &[],
                 &[],
+                todo!(),
             )
             .unwrap()
     };

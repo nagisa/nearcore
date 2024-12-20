@@ -5,7 +5,7 @@ use crate::tests::{
     create_receipt_for_create_account, create_receipt_with_actions, set_sha256_cost,
     MAX_ATTACHED_GAS,
 };
-use crate::total_prepaid_exec_fees;
+use crate::{total_prepaid_exec_fees, MockChainProvider};
 use crate::{ApplyResult, ApplyState, Runtime, ValidatorAccountsUpdate};
 use assert_matches::assert_matches;
 use near_crypto::{InMemorySigner, KeyType, PublicKey, Signer};
@@ -151,6 +151,7 @@ fn test_apply_no_op() {
             &[],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -184,6 +185,7 @@ fn test_apply_check_balance_validation_rewards() {
             )],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -213,6 +215,7 @@ fn test_apply_refund_receipts() {
                 prev_receipts,
                 &[],
                 &epoch_info_provider,
+            &MockChainProvider,
                 Default::default(),
             )
             .unwrap();
@@ -257,6 +260,7 @@ fn test_apply_delayed_receipts_feed_all_at_once() {
                 prev_receipts,
                 &[],
                 &epoch_info_provider,
+            &MockChainProvider,
                 Default::default(),
             )
             .unwrap();
@@ -302,6 +306,7 @@ fn test_apply_delayed_receipts_add_more_using_chunks() {
                 prev_receipts,
                 &[],
                 &epoch_info_provider,
+            &MockChainProvider,
                 Default::default(),
             )
             .unwrap();
@@ -355,6 +360,7 @@ fn test_apply_delayed_receipts_adjustable_gas_limit() {
                 prev_receipts,
                 &[],
                 &epoch_info_provider,
+            &MockChainProvider,
                 Default::default(),
             )
             .unwrap();
@@ -516,6 +522,7 @@ fn test_apply_delayed_receipts_local_tx() {
             &receipts[0..2],
             &local_transactions[0..4],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -565,6 +572,7 @@ fn test_apply_delayed_receipts_local_tx() {
             &receipts[2..3],
             &local_transactions[4..5],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -607,6 +615,7 @@ fn test_apply_delayed_receipts_local_tx() {
             &receipts[3..4],
             &local_transactions[5..9],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -658,6 +667,7 @@ fn test_apply_delayed_receipts_local_tx() {
             &receipts[4..5],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -692,6 +702,7 @@ fn test_apply_delayed_receipts_local_tx() {
             &receipts[5..6],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -734,6 +745,7 @@ fn test_apply_deficit_gas_for_transfer() {
             &receipts,
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -791,6 +803,7 @@ fn test_apply_deficit_gas_for_function_call_covered() {
             &receipts,
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -858,6 +871,7 @@ fn test_apply_deficit_gas_for_function_call_partial() {
             &receipts,
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -894,6 +908,7 @@ fn test_delete_key_add_key() {
             &receipts,
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -937,6 +952,7 @@ fn test_delete_key_underflow() {
             &receipts,
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -976,6 +992,7 @@ fn test_contract_precompilation() {
             &receipts,
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1049,6 +1066,7 @@ fn test_compute_usage_limit() {
             ],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1073,6 +1091,7 @@ fn test_compute_usage_limit() {
             &[],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1116,6 +1135,7 @@ fn test_compute_usage_limit_with_failed_receipt() {
             &[deploy_contract_receipt.clone(), first_call_receipt.clone()],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1162,6 +1182,7 @@ fn test_main_storage_proof_size_soft_limit() {
             ],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1204,6 +1225,7 @@ fn test_main_storage_proof_size_soft_limit() {
             ],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1267,6 +1289,7 @@ fn test_exclude_contract_code_from_witness() {
             ],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1309,6 +1332,7 @@ fn test_exclude_contract_code_from_witness() {
             ],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1381,6 +1405,7 @@ fn test_exclude_contract_code_from_witness_with_failed_call() {
             ],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1422,6 +1447,7 @@ fn test_exclude_contract_code_from_witness_with_failed_call() {
             ],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1512,6 +1538,7 @@ fn test_deploy_and_call_different_contracts() {
             &[first_deploy_receipt, second_deploy_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1539,6 +1566,7 @@ fn test_deploy_and_call_different_contracts() {
             &[first_call_receipt, second_call_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1618,6 +1646,7 @@ fn test_deploy_and_call_different_contracts_with_failed_call() {
             &[first_deploy_receipt, second_deploy_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1645,6 +1674,7 @@ fn test_deploy_and_call_different_contracts_with_failed_call() {
             &[first_call_receipt, second_call_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1722,6 +1752,7 @@ fn test_deploy_and_call_in_apply() {
             &[first_deploy_receipt, second_deploy_receipt, first_call_receipt, second_call_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1801,6 +1832,7 @@ fn test_deploy_and_call_in_apply_with_failed_call() {
             &[first_deploy_receipt, second_deploy_receipt, first_call_receipt, second_call_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1856,6 +1888,7 @@ fn test_deploy_existing_contract_to_different_account() {
             &[first_deploy_receipt, first_call_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1898,6 +1931,7 @@ fn test_deploy_existing_contract_to_different_account() {
             &[second_deploy_receipt, second_call_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1947,6 +1981,7 @@ fn test_deploy_and_call_in_same_receipt() {
             &[receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -1996,6 +2031,7 @@ fn test_deploy_and_call_in_same_receipt_with_failed_call() {
             &[receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2032,6 +2068,7 @@ fn test_call_account_without_contract() {
             &[receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2076,6 +2113,7 @@ fn test_contract_accesses_when_validating_chunk() {
             &[deploy_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2102,6 +2140,7 @@ fn test_contract_accesses_when_validating_chunk() {
             &[call_receipt.clone()],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2123,6 +2162,7 @@ fn test_contract_accesses_when_validating_chunk() {
             &[call_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2170,6 +2210,7 @@ fn test_exclude_existing_contract_code_for_deploy_action() {
             &[deploy_receipt1],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2194,6 +2235,7 @@ fn test_exclude_existing_contract_code_for_deploy_action() {
             &[deploy_receipt2],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2271,6 +2313,7 @@ fn test_exclude_existing_contract_code_for_delete_account_action() {
             &[create_account_receipt, deploy_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2295,6 +2338,7 @@ fn test_exclude_existing_contract_code_for_delete_account_action() {
             &[delete_account_receipt],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2347,6 +2391,7 @@ fn test_empty_apply() {
             &receipts,
             &transactions,
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2389,6 +2434,7 @@ fn test_congestion_delayed_receipts_accounting() {
             &receipts,
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2492,6 +2538,7 @@ fn test_congestion_buffering() {
                 prev_receipts,
                 &[],
                 &epoch_info_provider,
+            &MockChainProvider,
                 Default::default(),
             )
             .unwrap();
@@ -2553,6 +2600,7 @@ fn test_congestion_buffering() {
                 prev_receipts,
                 &[],
                 &epoch_info_provider,
+            &MockChainProvider,
                 Default::default(),
             )
             .unwrap();
@@ -2635,6 +2683,7 @@ fn check_congestion_info_bootstrapping(is_new_chunk: bool, want: Option<Congesti
             &[],
             &[],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2699,6 +2748,7 @@ fn test_deploy_and_call_local_receipt() {
             &[],
             &[tx],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();
@@ -2770,6 +2820,7 @@ fn test_deploy_and_call_local_receipts() {
             &[],
             &[tx1, tx2],
             &epoch_info_provider,
+            &MockChainProvider,
             Default::default(),
         )
         .unwrap();

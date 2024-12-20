@@ -463,7 +463,8 @@ impl Handler<NetworkAdversarialMessage> for ClientActorInner {
             }
             NetworkAdversarialMessage::AdvSwitchToHeight(height) => {
                 info!(target: "adversary", "Switching to height {:?}", height);
-                let mut chain_store_update = self.client.chain.mut_chain_store().store_update();
+                let mut chain_store = self.client.chain.chain_store.lock().unwrap();
+                let mut chain_store_update = chain_store.store_update();
                 chain_store_update.save_largest_target_height(height);
                 chain_store_update
                     .adv_save_latest_known(height)
@@ -1304,7 +1305,8 @@ impl ClientActorInner {
 
         // Important to save the largest approval target height before sending approvals, so
         // that if the node crashes in the meantime, we cannot get slashed on recovery
-        let mut chain_store_update = self.client.chain.mut_chain_store().store_update();
+        let mut chain_store = self.client.chain.chain_store.lock().unwrap();
+        let mut chain_store_update = chain_store.store_update();
         chain_store_update
             .save_largest_target_height(self.client.doomslug.get_largest_target_height());
 
@@ -1314,6 +1316,7 @@ impl ClientActorInner {
                 if self.client.is_validator(&head.epoch_id, &head.last_block_hash, &signer)
                     || self.client.is_validator(&head.next_epoch_id, &head.last_block_hash, &signer)
                 {
+                    drop(chain_store);
                     for approval in approvals {
                         if let Err(e) = self.client.send_block_approval(
                             &self.client.doomslug.get_tip().0,
@@ -2055,7 +2058,8 @@ impl ClientActorInner {
                 error!(target: "client", ?err, ?block_hash, "Failed to save a block during state sync");
             } else {
                 // save_block() does not increase refcount, and for extra blocks we need to increase the refcount manually.
-                let mut store_update = self.client.chain.mut_chain_store().store_update();
+                let mut chain_store = self.client.chain.chain_store.lock().unwrap();
+                let mut store_update = chain_store.store_update();
                 store_update.inc_block_refcount(&block_hash).unwrap();
                 store_update.commit().unwrap();
             }

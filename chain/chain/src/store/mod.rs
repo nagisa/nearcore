@@ -502,7 +502,8 @@ impl ChainStore {
     }
 
     pub fn store_update(&mut self) -> ChainStoreUpdate<'_> {
-        ChainStoreUpdate::new(self)
+        todo!()
+        // ChainStoreUpdate::new(self)
     }
 
     pub fn iterate_state_sync_infos(&self) -> Result<Vec<(CryptoHash, StateSyncInfo)>, Error> {
@@ -2720,17 +2721,17 @@ mod tests {
     #[test]
     fn test_tx_validity_long_fork() {
         let transaction_validity_period = 5;
-        let mut chain = get_chain(Clock::real());
+        let chain = get_chain(Clock::real());
         let genesis = chain.get_block_by_height(0).unwrap();
         let signer = Arc::new(create_test_signer("test1"));
         let short_fork = [TestBlockBuilder::new(Clock::real(), &genesis, signer.clone()).build()];
-        let mut store_update = chain.mut_chain_store().store_update();
+        let mut chain_store = chain.chain_store.lock().unwrap();
+        let mut store_update = chain_store.store_update();
         store_update.save_block_header(short_fork[0].header().clone()).unwrap();
         store_update.commit().unwrap();
 
         let short_fork_head = short_fork[0].header().clone();
-        assert!(chain
-            .mut_chain_store()
+        assert!(chain_store
             .check_transaction_validity_period(
                 &short_fork_head,
                 genesis.hash(),
@@ -2740,7 +2741,7 @@ mod tests {
         let mut long_fork = vec![];
         let mut prev_block = genesis;
         for i in 1..(transaction_validity_period + 3) {
-            let mut store_update = chain.mut_chain_store().store_update();
+            let mut store_update = chain_store.store_update();
             let block =
                 TestBlockBuilder::new(Clock::real(), &prev_block, signer.clone()).height(i).build();
             prev_block = block.clone();
@@ -2753,8 +2754,7 @@ mod tests {
         }
         let valid_base_hash = long_fork[1].hash();
         let cur_header = &long_fork.last().unwrap().header();
-        assert!(chain
-            .mut_chain_store()
+        assert!(chain_store
             .check_transaction_validity_period(
                 cur_header,
                 valid_base_hash,
@@ -2763,7 +2763,7 @@ mod tests {
             .is_ok());
         let invalid_base_hash = long_fork[0].hash();
         assert_eq!(
-            chain.mut_chain_store().check_transaction_validity_period(
+            chain_store.check_transaction_validity_period(
                 cur_header,
                 invalid_base_hash,
                 transaction_validity_period
@@ -2775,13 +2775,14 @@ mod tests {
     #[test]
     fn test_tx_validity_normal_case() {
         let transaction_validity_period = 5;
-        let mut chain = get_chain(Clock::real());
+        let chain = get_chain(Clock::real());
         let genesis = chain.get_block_by_height(0).unwrap();
         let signer = Arc::new(create_test_signer("test1"));
         let mut blocks = vec![];
         let mut prev_block = genesis;
+        let mut chain_store = chain.chain_store.lock().unwrap();
         for i in 1..(transaction_validity_period + 2) {
-            let mut store_update = chain.mut_chain_store().store_update();
+            let mut store_update = chain_store.store_update();
             let block =
                 TestBlockBuilder::new(Clock::real(), &prev_block, signer.clone()).height(i).build();
             prev_block = block.clone();
@@ -2794,8 +2795,7 @@ mod tests {
         }
         let valid_base_hash = blocks[1].hash();
         let cur_header = &blocks.last().unwrap().header();
-        assert!(chain
-            .mut_chain_store()
+        assert!(chain_store
             .check_transaction_validity_period(
                 cur_header,
                 valid_base_hash,
@@ -2806,14 +2806,14 @@ mod tests {
             .height(transaction_validity_period + 3)
             .build();
 
-        let mut store_update = chain.mut_chain_store().store_update();
+        let mut store_update = chain_store.store_update();
         store_update.save_block_header(new_block.header().clone()).unwrap();
         store_update
             .update_height_if_not_challenged(new_block.header().height(), *new_block.hash())
             .unwrap();
         store_update.commit().unwrap();
         assert_eq!(
-            chain.mut_chain_store().check_transaction_validity_period(
+            chain_store.check_transaction_validity_period(
                 new_block.header(),
                 valid_base_hash,
                 transaction_validity_period
@@ -2825,14 +2825,15 @@ mod tests {
     #[test]
     fn test_tx_validity_off_by_one() {
         let transaction_validity_period = 5;
-        let mut chain = get_chain(Clock::real());
+        let chain = get_chain(Clock::real());
         let genesis = chain.get_block_by_height(0).unwrap();
         let genesis_hash = *genesis.hash();
         let signer = Arc::new(create_test_signer("test1"));
         let mut short_fork = vec![];
         let mut prev_block = genesis.clone();
+        let mut chain_store = chain.chain_store.lock().unwrap();
         for i in 1..(transaction_validity_period + 2) {
-            let mut store_update = chain.mut_chain_store().store_update();
+            let mut store_update = chain_store.store_update();
             let block =
                 TestBlockBuilder::new(Clock::real(), &prev_block, signer.clone()).height(i).build();
             prev_block = block.clone();
@@ -2843,7 +2844,7 @@ mod tests {
 
         let short_fork_head = short_fork.last().unwrap().header().clone();
         assert_eq!(
-            chain.mut_chain_store().check_transaction_validity_period(
+            chain_store.check_transaction_validity_period(
                 &short_fork_head,
                 &genesis_hash,
                 transaction_validity_period
@@ -2853,7 +2854,7 @@ mod tests {
         let mut long_fork = vec![];
         let mut prev_block = genesis;
         for i in 1..(transaction_validity_period * 5) {
-            let mut store_update = chain.mut_chain_store().store_update();
+            let mut store_update = chain_store.store_update();
             let block =
                 TestBlockBuilder::new(Clock::real(), &prev_block, signer.clone()).height(i).build();
             prev_block = block.clone();
@@ -2863,7 +2864,7 @@ mod tests {
         }
         let long_fork_head = &long_fork.last().unwrap().header();
         assert_eq!(
-            chain.mut_chain_store().check_transaction_validity_period(
+            chain_store.check_transaction_validity_period(
                 long_fork_head,
                 &genesis_hash,
                 transaction_validity_period
@@ -2874,7 +2875,7 @@ mod tests {
 
     #[test]
     fn test_cache_invalidation() {
-        let mut chain = get_chain(Clock::real());
+        let chain = get_chain(Clock::real());
         let genesis = chain.get_block_by_height(0).unwrap();
         let signer = Arc::new(create_test_signer("test1"));
         let block1 = TestBlockBuilder::new(Clock::real(), &genesis, signer.clone()).build();
@@ -2882,7 +2883,8 @@ mod tests {
         block2.mut_header().set_epoch_id(EpochId(hash(&[1, 2, 3])));
         block2.mut_header().resign(&*signer);
 
-        let mut store_update = chain.mut_chain_store().store_update();
+        let mut chain_store = chain.chain_store.lock().unwrap();
+        let mut store_update = chain_store.store_update();
         store_update.chain_store_cache_update.height_to_hashes.insert(1, Some(hash(&[1])));
         store_update
             .chain_store_cache_update
@@ -2890,11 +2892,10 @@ mod tests {
             .insert(*block1.header().hash(), block1.clone());
         store_update.commit().unwrap();
 
-        let block_hash = chain.mut_chain_store().height.get(&index_to_bytes(1).to_vec());
-        let epoch_id_to_hash =
-            chain.mut_chain_store().block_hash_per_height.get(&index_to_bytes(1).to_vec());
+        let block_hash = chain_store.height.get(&index_to_bytes(1).to_vec());
+        let epoch_id_to_hash = chain_store.block_hash_per_height.get(&index_to_bytes(1).to_vec());
 
-        let mut store_update = chain.mut_chain_store().store_update();
+        let mut store_update = chain_store.store_update();
         store_update.chain_store_cache_update.height_to_hashes.insert(1, Some(hash(&[2])));
         store_update
             .chain_store_cache_update
@@ -2902,9 +2903,8 @@ mod tests {
             .insert(*block2.header().hash(), block2.clone());
         store_update.commit().unwrap();
 
-        let block_hash1 = chain.mut_chain_store().height.get(&index_to_bytes(1).to_vec());
-        let epoch_id_to_hash1 =
-            chain.mut_chain_store().block_hash_per_height.get(&index_to_bytes(1).to_vec());
+        let block_hash1 = chain_store.height.get(&index_to_bytes(1).to_vec());
+        let epoch_id_to_hash1 = chain_store.block_hash_per_height.get(&index_to_bytes(1).to_vec());
 
         assert_ne!(block_hash, block_hash1);
         assert_ne!(epoch_id_to_hash, epoch_id_to_hash1);

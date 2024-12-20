@@ -28,7 +28,7 @@ impl Chain {
             .iter_deprecated()
             .map(|chunk| (chunk.shard_id(), chunk.height_created()))
             .collect::<Vec<_>>();
-        clear_before_last_final_block(chain_store, &final_block_chunk_created_heights)?;
+        clear_before_last_final_block(&chain_store, &final_block_chunk_created_heights)?;
         Ok(())
     }
 }

@@ -26,7 +26,7 @@ use near_store::{ShardTries, ShardUId, StateSnapshotConfig, TrieUpdate};
 use near_store::{TrieCache, TrieCachingStorage, TrieConfig};
 use near_vm_runner::logic::LimitConfig;
 use near_vm_runner::FilesystemContractRuntimeCache;
-use node_runtime::{ApplyState, Runtime};
+use node_runtime::{ApplyState, MockChainProvider, Runtime};
 use std::collections::HashMap;
 use std::iter;
 use std::sync::Arc;
@@ -357,6 +357,7 @@ impl Testbed<'_> {
                 &self.prev_receipts,
                 transactions,
                 &self.epoch_info_provider,
+                &MockChainProvider,
                 Default::default(),
             )
             .unwrap();

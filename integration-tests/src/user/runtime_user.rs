@@ -26,6 +26,7 @@ use near_primitives::views::{
 use near_store::adapter::StoreUpdateAdapter;
 use near_store::{ShardTries, TrieUpdate};
 use node_runtime::state_viewer::TrieViewer;
+use node_runtime::MockChainProvider;
 use node_runtime::{state_viewer::ViewApplyState, ApplyState, Runtime};
 
 use crate::user::{User, POISONED_LOCK_ERR};
@@ -113,6 +114,7 @@ impl RuntimeUser {
                     &receipts,
                     &txs,
                     &self.epoch_info_provider,
+                    &MockChainProvider,
                     Default::default(),
                 )
                 .map_err(|e| match e {

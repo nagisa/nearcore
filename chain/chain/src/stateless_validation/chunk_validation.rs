@@ -337,7 +337,7 @@ pub fn pre_validate_chunk_state_witness(
         blocks_after_last_last_chunk,
         last_chunk_shard_layout,
         last_chunk_shard_id,
-    } = get_state_witness_block_range(store, epoch_manager, state_witness)?;
+    } = get_state_witness_block_range(&store, epoch_manager, state_witness)?;
     let last_chunk_shard_index = last_chunk_shard_layout.get_shard_index(last_chunk_shard_id)?;
 
     let receipts_to_apply = validate_source_receipt_proofs(
@@ -587,6 +587,7 @@ pub fn validate_chunk_state_witness(
     pre_validation_output: PreValidationOutput,
     epoch_manager: &dyn EpochManagerAdapter,
     runtime_adapter: &dyn RuntimeAdapter,
+    chain_provider: &dyn node_runtime::ChainProvider,
     main_state_transition_cache: &MainStateTransitionCache,
 ) -> Result<(), Error> {
     let _timer = crate::stateless_validation::metrics::CHUNK_STATE_WITNESS_VALIDATION_TIME
@@ -619,6 +620,7 @@ pub fn validate_chunk_state_witness(
                     new_chunk_data,
                     ShardContext { shard_uid, should_apply_chunk: true },
                     runtime_adapter,
+                    chain_provider,
                 )?;
                 let outgoing_receipts = std::mem::take(&mut main_apply_result.outgoing_receipts);
                 let chunk_extra =
@@ -703,6 +705,7 @@ pub fn validate_chunk_state_witness(
                     old_chunk_data,
                     shard_context,
                     runtime_adapter,
+                    chain_provider,
                 )?;
                 (shard_uid, apply_result.new_root)
             }
@@ -812,6 +815,9 @@ impl Chain {
         );
         let epoch_manager = self.epoch_manager.clone();
         let runtime_adapter = self.runtime_adapter.clone();
+        let prev_block_header =
+            self.get_block_header(witness.chunk_header.prev_block_hash()).unwrap();
+        let chain_provider = self.runtime_provider(prev_block_header);
         Arc::new(RayonAsyncComputationSpawner).spawn("shadow_validate", move || {
             // processing_done_tracker must survive until the processing is finished.
             let _processing_done_tracker_capture: Option<ProcessingDoneTracker> =
@@ -824,6 +830,7 @@ impl Chain {
                 pre_validation_result,
                 epoch_manager.as_ref(),
                 runtime_adapter.as_ref(),
+                &chain_provider,
                 &MainStateTransitionCache::default(),
             ) {
                 Ok(()) => {

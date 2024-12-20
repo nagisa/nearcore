@@ -486,6 +486,7 @@ impl<'a> ChainUpdate<'a> {
         shard_id: ShardId,
         sync_hash: CryptoHash,
         shard_state_header: ShardStateSyncResponseHeader,
+        chain_provider: &dyn node_runtime::ChainProvider,
     ) -> Result<ShardUId, Error> {
         let _span =
             tracing::debug_span!(target: "sync", "chain_update_set_state_finalize", ?shard_id, ?sync_hash).entered();
@@ -552,6 +553,7 @@ impl<'a> ChainUpdate<'a> {
             },
             &receipts,
             chunk.transactions(),
+            chain_provider,
         )?;
 
         let (outcome_root, outcome_proofs) =
@@ -619,6 +621,7 @@ impl<'a> ChainUpdate<'a> {
         height: BlockHeight,
         shard_id: ShardId,
         sync_hash: CryptoHash,
+        chain_provider: &dyn node_runtime::ChainProvider,
     ) -> Result<bool, Error> {
         let _span =
             tracing::debug_span!(target: "sync", "set_state_finalize_on_height", height, ?shard_id)
@@ -660,6 +663,7 @@ impl<'a> ChainUpdate<'a> {
             ),
             &[],
             &[],
+            chain_provider,
         )?;
         let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
         let store_update = flat_storage_manager.save_flat_state_changes(

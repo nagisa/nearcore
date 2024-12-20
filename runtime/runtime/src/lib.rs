@@ -1421,8 +1421,10 @@ impl Runtime {
         incoming_receipts: &[Receipt],
         transactions: &[SignedTransaction],
         epoch_info_provider: &dyn EpochInfoProvider,
+        chain_provider: &dyn ChainProvider,
         state_patch: SandboxStatePatch,
     ) -> Result<ApplyResult, RuntimeError> {
+        let _ = chain_provider; // TODO
         // state_patch must be empty unless this is sandbox build.  Thanks to
         // conditional compilation this always resolves to true so technically
         // the check is not necessary.  It’s defence in depth to make sure any
@@ -2549,6 +2551,18 @@ impl<'a> ApplyProcessingState<'a> {
             incoming_receipts,
             delayed_receipts,
         }
+    }
+}
+
+pub trait ChainProvider {
+    fn check_transaction_validity(&self, transaction: &SignedTransaction) -> bool;
+}
+
+pub struct MockChainProvider;
+
+impl ChainProvider for MockChainProvider {
+    fn check_transaction_validity(&self, _: &SignedTransaction) -> bool {
+        true
     }
 }
 

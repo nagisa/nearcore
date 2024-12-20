@@ -681,7 +681,8 @@ impl EpochSync {
 
         self.verify_proof(&proof, epoch_manager)?;
 
-        let mut store_update = chain.chain_store.store().store_update();
+        let mut chain_store = chain.chain_store.lock().unwrap();
+        let mut store_update = chain_store.store().store_update();
 
         // Store the EpochSyncProof, so that this node can derive a more recent EpochSyncProof
         // to faciliate epoch sync of other nodes.
@@ -690,7 +691,7 @@ impl EpochSync {
         let proof = proof.into_v1();
 
         let last_header = proof.current_epoch.first_block_header_in_epoch;
-        let mut update = chain.mut_chain_store().store_update();
+        let mut update = chain_store.store_update();
         update.save_block_header_no_update_tree(last_header.clone())?;
         update.save_block_header_no_update_tree(
             proof.current_epoch.last_block_header_in_prev_epoch,
@@ -990,7 +991,7 @@ impl Handler<EpochSyncRequestMessage> for ClientActorInner {
             // Temporary killswitch for the rare case there were issues with this network request.
             return;
         }
-        let store = self.client.chain.chain_store.store().clone();
+        let store = self.client.chain.chain_store.lock().unwrap().store().clone();
         let network_adapter = self.client.network_adapter.clone();
         let requester_peer_id = msg.from_peer;
         let cache = self.client.epoch_sync.last_epoch_sync_response_cache.clone();

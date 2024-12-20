@@ -86,6 +86,8 @@ fn slow_test_sync_from_genesis() {
                 .client
                 .chain
                 .chain_store
+                .lock()
+                .unwrap()
                 .store()
                 .clone(),
             None,

@@ -110,7 +110,7 @@ impl ChunkValidator {
 
         if let Ok(prev_chunk_extra) = chain.get_chunk_extra(prev_block_hash, &shard_uid) {
             match validate_chunk_with_chunk_extra(
-                chain.chain_store(),
+                &chain.chain_store(),
                 self.epoch_manager.as_ref(),
                 prev_block_hash,
                 &prev_chunk_extra,
@@ -143,6 +143,8 @@ impl ChunkValidator {
         let runtime_adapter = self.runtime_adapter.clone();
         let cache = self.main_state_transition_result_cache.clone();
         let signer = signer.clone();
+        let prev_block_header = chain.get_block_header(prev_block_hash).unwrap();
+        let chain_provider = chain.runtime_provider(prev_block_header);
         self.validation_spawner.spawn("stateless_validation", move || {
             // processing_done_tracker must survive until the processing is finished.
             let _processing_done_tracker_capture: Option<ProcessingDoneTracker> =
@@ -153,6 +155,7 @@ impl ChunkValidator {
                 pre_validation_result,
                 epoch_manager.as_ref(),
                 runtime_adapter.as_ref(),
+                &chain_provider,
                 &cache,
             ) {
                 Ok(()) => {
@@ -249,7 +252,7 @@ impl Client {
         self.send_state_witness_ack(&witness, &signer);
 
         if self.config.save_latest_witnesses {
-            self.chain.chain_store.save_latest_chunk_state_witness(&witness)?;
+            self.chain.chain_store.lock().unwrap().save_latest_chunk_state_witness(&witness)?;
         }
 
         match self.chain.get_block(witness.chunk_header.prev_block_hash()) {

@@ -111,7 +111,7 @@ impl TestEnv {
             // on the hot storage. In order to determine if split storage is enabled
             // *and* that the migration to split storage is finished we can check
             // the store kind. It's only set to hot after the migration is finished.
-            let store = self.clients[0].chain.chain_store().store();
+            let store = self.clients[0].chain.chain_store().store().clone();
             let kind = store.get_db_kind().unwrap();
             if kind == Some(DbKind::Hot) {
                 self.clients[id]

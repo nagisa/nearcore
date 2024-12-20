@@ -291,7 +291,7 @@ impl Client {
             chain.genesis().clone(),
             async_computation_spawner.clone(),
             config.epoch_sync.clone(),
-            chain.chain_store.store(),
+            chain.chain_store.lock().unwrap().store(),
         );
         let header_sync = HeaderSync::new(
             clock.clone(),
@@ -1499,7 +1499,7 @@ impl Client {
             .record_chunk_collected(partial_chunk.height_created(), shard_index);
 
         // TODO(#10569) We would like a proper error handling here instead of `expect`.
-        persist_chunk(partial_chunk, shard_chunk, self.chain.mut_chain_store())
+        persist_chunk(partial_chunk, shard_chunk, &mut self.chain.mut_chain_store())
             .expect("Could not persist chunk");
         // We're marking chunk as accepted.
         self.chain.blocks_with_missing_chunks.accept_chunk(&chunk_header.chunk_hash());
@@ -1510,7 +1510,8 @@ impl Client {
     /// Called asynchronously when the ShardsManager finishes processing a chunk but the chunk
     /// is invalid.
     pub fn on_invalid_chunk(&mut self, encoded_chunk: EncodedShardChunk) {
-        let mut update = self.chain.mut_chain_store().store_update();
+        let mut chain_store = self.chain.chain_store.lock().unwrap();
+        let mut update = chain_store.store_update();
         update.save_invalid_chunk(encoded_chunk);
         if let Err(err) = update.commit() {
             error!(target: "client", ?err, "Error saving invalid chunk");
@@ -1910,7 +1911,7 @@ impl Client {
         persist_chunk(
             partial_chunk.clone(),
             Some(shard_chunk.clone()),
-            self.chain.mut_chain_store(),
+            &mut self.chain.mut_chain_store(),
         )?;
 
         let chunk_header = encoded_chunk.cloned_header();
@@ -2099,7 +2100,13 @@ impl Client {
         let parent_hash = match inner {
             ApprovalInner::Endorsement(parent_hash) => *parent_hash,
             ApprovalInner::Skip(parent_height) => {
-                match self.chain.chain_store().get_all_block_hashes_by_height(*parent_height) {
+                let block_hashes = self
+                    .chain
+                    .chain_store
+                    .lock()
+                    .unwrap()
+                    .get_all_block_hashes_by_height(*parent_height);
+                match block_hashes {
                     Ok(hashes) => {
                         // If there is more than one block at the height, all of them will be
                         // eligible to build the next block on, so we just pick one.
@@ -2510,7 +2517,8 @@ impl Client {
 
         if let Some(sync_hash) = self.chain.get_sync_hash(epoch_first_block)? {
             state_sync_info.sync_hash = Some(sync_hash);
-            let mut update = self.chain.mut_chain_store().store_update();
+            let mut chain_store = self.chain.chain_store.lock().unwrap();
+            let mut update = chain_store.store_update();
             // note that iterate_state_sync_infos() collects everything into a Vec, so we're not
             // actually writing to the DB while actively iterating this column
             update.add_state_sync_info(StateSyncInfo::V1(state_sync_info.clone()));
@@ -2545,9 +2553,11 @@ impl Client {
         let _span = debug_span!(target: "sync", "run_catchup").entered();
         let me = signer.as_ref().map(|x| x.validator_id().clone());
 
-        for (epoch_first_block, mut state_sync_info) in
-            self.chain.chain_store().iterate_state_sync_infos()?
-        {
+        let iterator = {
+            let chain_store = self.chain.chain_store.lock().unwrap();
+            chain_store.iterate_state_sync_infos()?
+        };
+        for (epoch_first_block, mut state_sync_info) in iterator {
             assert_eq!(&epoch_first_block, state_sync_info.epoch_first_block());
 
             let block_header = self.chain.get_block(&epoch_first_block)?.header().clone();

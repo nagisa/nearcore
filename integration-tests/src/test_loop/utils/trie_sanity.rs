@@ -346,7 +346,7 @@ pub fn check_state_shard_uid_mapping_after_resharding(client: &Client, parent_sh
         epoch_config.shard_layout.get_children_shards_uids(parent_shard_uid.shard_id()).unwrap();
     assert_eq!(children_shard_uids.len(), 2);
 
-    let store = client.chain.chain_store.store().trie_store();
+    let store = client.chain.chain_store.lock().unwrap().store().trie_store();
     for kv in store.store().iter_raw_bytes(DBCol::State) {
         let (key, value) = kv.unwrap();
         let shard_uid = ShardUId::try_from_slice(&key[0..8]).unwrap();

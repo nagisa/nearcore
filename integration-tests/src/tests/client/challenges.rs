@@ -69,7 +69,7 @@ fn test_invalid_chunk_state() {
         let mut chunk_extra = ChunkExtra::clone(
             &env.clients[0].chain.get_chunk_extra(&block_hash, &ShardUId::single_shard()).unwrap(),
         );
-        let store = env.clients[0].chain.mut_chain_store();
+        let mut store = env.clients[0].chain.mut_chain_store();
         let mut store_update = store.store_update();
         assert_ne!(chunk_extra.state_root(), &Trie::EMPTY_ROOT);
         *chunk_extra.state_root_mut() = Trie::EMPTY_ROOT;

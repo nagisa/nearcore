@@ -586,7 +586,7 @@ impl ViewClientActorInner {
                     Ok(TxStatusView { execution_outcome: Some(res), status })
                 }
                 Err(near_chain::Error::DBNotFoundErr(_)) => {
-                    if let Ok(Some(transaction)) = self.chain.chain_store.get_transaction(&tx_hash)
+                    if let Ok(Some(transaction)) = self.chain.chain_store.lock().unwrap().get_transaction(&tx_hash)
                     {
                         let transaction: SignedTransactionView =
                             SignedTransaction::clone(&transaction).into();
@@ -1045,7 +1045,7 @@ impl Handler<GetNextLightClientBlock> for ViewClientActorInner {
             let ret = Chain::create_light_client_block(
                 &head_header,
                 self.epoch_manager.as_ref(),
-                self.chain.chain_store(),
+                &*self.chain.chain_store.lock().unwrap(),
             )?;
 
             if ret.inner_lite.height <= last_height {
@@ -1559,7 +1559,7 @@ impl Handler<GetSplitStorageInfo> for ViewClientActorInner {
     ) -> Result<SplitStorageInfoView, GetSplitStorageInfoError> {
         tracing::debug!(target: "client", ?msg);
 
-        let store = self.chain.chain_store().store();
+        let store = self.chain.chain_store().store().clone();
         let head = store.get_ser::<Tip>(DBCol::BlockMisc, HEAD_KEY)?;
         let final_head = store.get_ser::<Tip>(DBCol::BlockMisc, FINAL_HEAD_KEY)?;
         let cold_head = store.get_ser::<Tip>(DBCol::BlockMisc, COLD_HEAD_KEY)?;

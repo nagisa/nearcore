@@ -157,6 +157,7 @@ impl StandaloneRuntime {
                 receipts,
                 transactions,
                 &self.epoch_info_provider,
+                &node_runtime::MockChainProvider,
                 Default::default(),
             )
             .unwrap();

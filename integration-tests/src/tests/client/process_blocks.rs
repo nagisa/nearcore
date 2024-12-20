@@ -1901,7 +1901,8 @@ fn test_gc_tail_update() {
     env.clients[1].chain.reset_data_pre_state_sync(*sync_block.hash()).unwrap();
     env.clients[1].chain.save_block(prev_prev_sync_block.into()).unwrap();
     env.clients[1].chain.save_block(prev_sync_block.into()).unwrap();
-    let mut store_update = env.clients[1].chain.mut_chain_store().store_update();
+    let mut chain_store = env.clients[1].chain.chain_store.lock().unwrap();
+    let mut store_update = chain_store.store_update();
     store_update.inc_block_refcount(&prev_prev_sync_hash).unwrap();
     store_update.inc_block_refcount(&prev_sync_hash).unwrap();
     store_update.save_block(sync_block.clone());

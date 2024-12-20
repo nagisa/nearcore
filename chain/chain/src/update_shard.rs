@@ -13,6 +13,7 @@ use near_primitives::sharding::ShardChunkHeader;
 use near_primitives::transaction::SignedTransaction;
 use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::Gas;
+use node_runtime::ChainProvider;
 
 /// Result of updating a shard for some block when it has a new chunk for this
 /// shard.
@@ -86,6 +87,7 @@ pub struct StorageContext {
 pub fn process_shard_update(
     parent_span: &tracing::Span,
     runtime: &dyn RuntimeAdapter,
+    chain_provider: &dyn ChainProvider,
     shard_update_reason: ShardUpdateReason,
     shard_context: ShardContext,
 ) -> Result<ShardUpdateResult, Error> {
@@ -96,6 +98,7 @@ pub fn process_shard_update(
             data,
             shard_context,
             runtime,
+            chain_provider,
         )?),
         ShardUpdateReason::OldChunk(data) => ShardUpdateResult::OldChunk(apply_old_chunk(
             ApplyChunkReason::UpdateTrackedShard,
@@ -103,6 +106,7 @@ pub fn process_shard_update(
             data,
             shard_context,
             runtime,
+            chain_provider,
         )?),
     })
 }
@@ -115,6 +119,7 @@ pub fn apply_new_chunk(
     data: NewChunkData,
     shard_context: ShardContext,
     runtime: &dyn RuntimeAdapter,
+    chain_provider: &dyn ChainProvider,
 ) -> Result<NewChunkResult, Error> {
     let NewChunkData {
         chunk_header,
@@ -154,6 +159,7 @@ pub fn apply_new_chunk(
         block,
         &receipts,
         &transactions,
+        chain_provider,
     ) {
         Ok(apply_result) => {
             Ok(NewChunkResult { gas_limit, shard_uid: shard_context.shard_uid, apply_result })
@@ -171,6 +177,7 @@ pub fn apply_old_chunk(
     data: OldChunkData,
     shard_context: ShardContext,
     runtime: &dyn RuntimeAdapter,
+    chain_provider: &dyn ChainProvider,
 ) -> Result<OldChunkResult, Error> {
     let OldChunkData { prev_chunk_extra, block, storage_context } = data;
     let shard_id = shard_context.shard_uid.shard_id();
@@ -201,6 +208,7 @@ pub fn apply_old_chunk(
         block,
         &[],
         &[],
+        chain_provider,
     ) {
         Ok(apply_result) => Ok(OldChunkResult { shard_uid: shard_context.shard_uid, apply_result }),
         Err(err) => Err(err),

@@ -84,7 +84,7 @@ impl Client {
             validated_transactions.storage_proof,
         )?;
         if self.config.save_latest_witnesses {
-            self.chain.chain_store.save_latest_chunk_state_witness(&state_witness)?;
+            self.chain.chain_store.lock().unwrap().save_latest_chunk_state_witness(&state_witness)?;
         }
         self.chain.shadow_validate_state_witness(
             state_witness,

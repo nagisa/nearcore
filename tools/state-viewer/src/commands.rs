@@ -123,6 +123,7 @@ pub(crate) fn apply_block(
                 ),
                 &receipts,
                 chunk.transactions(),
+                todo!(),
             )
             .unwrap()
     } else {
@@ -149,6 +150,7 @@ pub(crate) fn apply_block(
                 ),
                 &[],
                 &[],
+                todo!(),
             )
             .unwrap()
     };

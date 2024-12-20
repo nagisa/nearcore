@@ -247,7 +247,7 @@ fn test_bad_congestion_info_impl(mode: BadCongestionInfoMode) {
     let client = &env.clients[0];
     let prev_chunk_extra = client.chain.get_chunk_extra(prev_block_hash, &shard_uid).unwrap();
     let result: Result<(), near_chain::Error> = validate_chunk_with_chunk_extra(
-        &client.chain.chain_store,
+        &client.chain.chain_store.lock().unwrap(),
         client.epoch_manager.as_ref(),
         prev_block_hash,
         &prev_chunk_extra,

@@ -120,6 +120,8 @@ fn setup_initial_blockchain(
                 .client
                 .chain
                 .chain_store
+                .lock()
+                .unwrap()
                 .store()
                 .clone(),
         );
@@ -268,6 +270,8 @@ fn bootstrap_node_via_epoch_sync(setup: TestNetworkSetup, source_node: usize) ->
                 .client
                 .chain
                 .chain_store
+                .lock()
+                .unwrap()
                 .store()
                 .clone(),
         );

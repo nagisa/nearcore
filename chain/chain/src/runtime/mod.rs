@@ -173,6 +173,7 @@ impl NightshadeRuntime {
         block: ApplyChunkBlockContext,
         receipts: &[Receipt],
         transactions: &[SignedTransaction],
+        chain_provider: &dyn node_runtime::ChainProvider,
         state_patch: SandboxStatePatch,
     ) -> Result<ApplyChunkResult, Error> {
         let ApplyChunkBlockContext {
@@ -319,6 +320,7 @@ impl NightshadeRuntime {
                 receipts,
                 transactions,
                 self.epoch_manager.as_ref(),
+                chain_provider,
                 state_patch,
             )
             .map_err(|e| match e {
@@ -839,6 +841,7 @@ impl RuntimeAdapter for NightshadeRuntime {
         block: ApplyChunkBlockContext,
         receipts: &[Receipt],
         transactions: &[SignedTransaction],
+        chain_provider: &dyn node_runtime::ChainProvider,
     ) -> Result<ApplyChunkResult, Error> {
         let shard_id = chunk.shard_id;
         let _timer = metrics::APPLYING_CHUNKS_TIME
@@ -892,6 +895,7 @@ impl RuntimeAdapter for NightshadeRuntime {
             block,
             receipts,
             transactions,
+            chain_provider,
             storage_config.state_patch,
         ) {
             Ok(result) => Ok(result),

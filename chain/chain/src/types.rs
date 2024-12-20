@@ -42,6 +42,7 @@ use near_store::flat::FlatStorageManager;
 use near_store::{PartialStorage, ShardTries, Store, Trie, WrappedTrieChanges};
 use near_vm_runner::ContractCode;
 use near_vm_runner::ContractRuntimeCache;
+use node_runtime::ChainProvider;
 use num_rational::Rational32;
 use tracing::instrument;
 
@@ -473,6 +474,7 @@ pub trait RuntimeAdapter: Send + Sync {
         block: ApplyChunkBlockContext,
         receipts: &[Receipt],
         transactions: &[SignedTransaction],
+        chain_provider: &dyn ChainProvider,
     ) -> Result<ApplyChunkResult, Error>;
 
     /// Query runtime with given `path` and `data`.

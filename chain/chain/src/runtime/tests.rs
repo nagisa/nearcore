@@ -270,6 +270,7 @@ impl TestEnv {
                 },
                 receipts,
                 transactions,
+                &node_runtime::MockChainProvider,
             )
             .unwrap()
     }
