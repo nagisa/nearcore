@@ -211,7 +211,7 @@ mod trie_storage_tests {
     use crate::adapter::trie_store::TrieStoreAdapter;
     use crate::test_utils::create_test_store;
     use crate::trie::TrieRefcountAddition;
-    use crate::trie::accounting_cache::TrieAccountingCache;
+    use crate::trie::accounting_cache::TrieAccessTracker;
     use crate::trie::iterator::TrieIterator;
     use crate::trie::trie_storage::{TrieCache, TrieCachingStorage, TrieDBStorage};
     use crate::{TrieChanges, TrieConfig};
@@ -260,7 +260,7 @@ mod trie_storage_tests {
         let trie_cache = TrieCache::new(&TrieConfig::default(), shard_uid, false);
         let trie_caching_storage =
             TrieCachingStorage::new(store, trie_cache.clone(), shard_uid, false, None);
-        let mut accounting_cache = TrieAccountingCache::new(None);
+        let mut accounting_cache = TrieAccessTracker::new();
         let key = hash(&value);
         assert_eq!(trie_cache.get(&key), None);
 
@@ -306,7 +306,7 @@ mod trie_storage_tests {
         let trie_cache = TrieCache::new(&TrieConfig::default(), shard_uid, false);
         let trie_caching_storage =
             TrieCachingStorage::new(store, trie_cache.clone(), shard_uid, false, None);
-        let mut accounting_cache = TrieAccountingCache::new(None);
+        let mut accounting_cache = TrieAccessTracker::new();
         let key = hash(&value);
 
         accounting_cache.enable_switch().set(true);
@@ -332,7 +332,7 @@ mod trie_storage_tests {
         let trie_cache = TrieCache::new(&TrieConfig::default(), shard_uid, false);
         let trie_caching_storage =
             TrieCachingStorage::new(store, trie_cache.clone(), shard_uid, false, None);
-        let mut accounting_cache = TrieAccountingCache::new(None);
+        let mut accounting_cache = TrieAccessTracker::new();
         let value = &values[0];
         let key = hash(&value);
 
@@ -394,7 +394,7 @@ mod trie_storage_tests {
         let trie_cache = TrieCache::new(&trie_config, shard_uid, false);
         let trie_caching_storage =
             TrieCachingStorage::new(store, trie_cache.clone(), shard_uid, false, None);
-        let mut accounting_cache = TrieAccountingCache::new(None);
+        let mut accounting_cache = TrieAccessTracker::new();
 
         let value = &values[0];
         let key = hash(&value);

@@ -1,4 +1,4 @@
-use self::accounting_cache::TrieAccountingCache;
+use self::accounting_cache::TrieAccessTracker;
 use self::mem::flexible_data::value::ValueView;
 use self::trie_storage::TrieMemoryPartialStorage;
 use crate::StorageError;
@@ -201,12 +201,11 @@ pub struct Trie {
     /// (which can be toggled on the fly), trie nodes that have been looked up
     /// once will be guaranteed to be cached, and further reads to these nodes
     /// will encounter less gas cost.
-    accounting_cache: Mutex<TrieAccountingCache>,
+    access_tracker: Mutex<TrieAccessTracker>,
     /// If present, we're capturing all trie nodes that have been accessed
     /// during the lifetime of this Trie struct. This is used to produce a
     /// state proof so that the same access pattern can be replayed using only
     /// the captured result.
-    // FIXME: make `TrieRecorder` internally MT-safe, instead of locking the entire structure.
     recorder: Option<RwLock<TrieRecorder>>,
     /// If true, access to trie nodes (not values) charges gas and affects the
     /// accounting cache. If false, access to trie nodes will not charge gas or
@@ -543,12 +542,7 @@ impl Trie {
         root: StateRoot,
         flat_storage_chunk_view: Option<FlatStorageChunkView>,
     ) -> Self {
-        let accounting_cache = match storage.as_caching_storage() {
-            Some(caching_storage) => {
-                TrieAccountingCache::new(Some((caching_storage.shard_uid, caching_storage.is_view)))
-            }
-            None => TrieAccountingCache::new(None),
-        };
+        let access_tracker = TrieAccessTracker::new();
         // Technically the charge_gas_for_trie_node_access should be set based
         // on the flat storage protocol feature. When flat storage is enabled
         // the trie node access should be free and the charge flag should be set
@@ -561,7 +555,7 @@ impl Trie {
             root,
             charge_gas_for_trie_node_access,
             flat_storage_chunk_view,
-            accounting_cache: Mutex::new(accounting_cache),
+            access_tracker: Mutex::new(access_tracker),
             recorder: None,
         }
     }
@@ -734,7 +728,7 @@ impl Trie {
         side_effects: bool,
     ) -> Result<Arc<[u8]>, StorageError> {
         let result = if side_effects && use_accounting_cache {
-            self.accounting_cache
+            self.access_tracker
                 .lock()
                 .unwrap()
                 .retrieve_raw_bytes_with_accounting(hash, &*self.storage)?
@@ -1293,11 +1287,8 @@ impl Trie {
             let mut accessed_nodes = Vec::new();
             let mem_value = lock.lookup(&self.root, key, Some(&mut accessed_nodes))?;
             if charge_gas_for_trie_node_access {
-                for (node_hash, serialized_node) in &accessed_nodes {
-                    self.accounting_cache
-                        .lock()
-                        .unwrap()
-                        .retroactively_account(*node_hash, serialized_node.clone());
+                for (node_hash, _) in &accessed_nodes {
+                    self.access_tracker.lock().unwrap().retroactively_account(*node_hash);
                 }
             }
             if let Some(recorder) = &self.recorder {
@@ -1495,10 +1486,7 @@ impl Trie {
             OptimizedValueRef::AvailableValue(ValueAccessToken { value }) => {
                 let value_hash = hash(value);
                 let arc_value: Arc<[u8]> = value.clone().into();
-                self.accounting_cache
-                    .lock()
-                    .unwrap()
-                    .retroactively_account(value_hash, arc_value.clone());
+                self.access_tracker.lock().unwrap().retroactively_account(value_hash);
                 if let Some(recorder) = &self.recorder {
                     recorder.write().expect("no poison").record(&value_hash, arc_value);
                 }
@@ -1657,7 +1645,7 @@ impl Trie {
     }
 
     pub fn get_trie_nodes_count(&self) -> TrieNodesCount {
-        self.accounting_cache.lock().unwrap().get_trie_nodes_count()
+        self.access_tracker.lock().unwrap().get_trie_nodes_count()
     }
 
     /// Splits the trie, separating entries by the boundary account.

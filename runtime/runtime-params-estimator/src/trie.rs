@@ -4,7 +4,7 @@ use crate::utils::{aggregate_per_block_measurements, overhead_per_measured_block
 use near_parameters::ExtCosts;
 use near_primitives::hash::hash;
 use near_store::TrieCachingStorage;
-use near_store::trie::accounting_cache::TrieAccountingCache;
+use near_store::trie::accounting_cache::TrieAccessTracker;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static SINK: AtomicUsize = AtomicUsize::new(0);
@@ -248,7 +248,7 @@ fn read_node_from_accounting_cache_ext(
 
             // Create a new cache and load nodes into it as preparation.
             let caching_storage = testbed.trie_caching_storage();
-            let mut accounting_cache = TrieAccountingCache::new(None);
+            let mut accounting_cache = TrieAccessTracker::new();
             accounting_cache.enable_switch().set(true);
             let _dummy_sum = read_raw_nodes_from_storage(
                 &caching_storage,
@@ -293,7 +293,7 @@ fn read_node_from_accounting_cache_ext(
 /// compiler.
 fn read_raw_nodes_from_storage(
     caching_storage: &TrieCachingStorage,
-    accounting_cache: &mut TrieAccountingCache,
+    accounting_cache: &mut TrieAccessTracker,
     keys: &[near_primitives::hash::CryptoHash],
 ) -> usize {
     keys.iter()

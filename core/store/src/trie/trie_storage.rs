@@ -365,7 +365,6 @@ impl TrieMemoryPartialStorage {
 pub struct TrieCachingStorage {
     pub(crate) store: TrieStoreAdapter,
     pub(crate) shard_uid: ShardUId,
-    pub(crate) is_view: bool,
 
     /// Caches ever requested items for the shard `shard_uid`. Used to speed up DB operations, presence of any item is
     /// not guaranteed.
@@ -423,7 +422,7 @@ impl TrieCachingStorage {
             prefetch_retry: metrics::PREFETCH_RETRY.with_label_values(&metrics_labels[..1]),
             prefetch_conflict: metrics::PREFETCH_CONFLICT.with_label_values(&metrics_labels[..1]),
         };
-        TrieCachingStorage { store, shard_uid, is_view, shard_cache, prefetch_api, metrics }
+        TrieCachingStorage { store, shard_uid, shard_cache, prefetch_api, metrics }
     }
 
     /// Reads value if it is not in shard cache. Handles dropping the cache

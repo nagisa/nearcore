@@ -1,18 +1,15 @@
 use super::TrieNodesCount;
-use crate::{TrieStorage, metrics};
-use near_o11y::metrics::prometheus;
-use near_o11y::metrics::prometheus::core::{GenericCounter, GenericGauge};
+use crate::TrieStorage;
 use near_primitives::errors::StorageError;
 use near_primitives::hash::CryptoHash;
-use near_primitives::shard_layout::ShardUId;
-use std::collections::HashMap;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic;
 
 /// Switch that controls whether the `TrieAccountingCache` is enabled.
-pub struct TrieAccountingCacheSwitch(Arc<thread_local::ThreadLocal<atomic::AtomicBool>>);
+pub struct TrieAccessTrackerSwitch(Arc<thread_local::ThreadLocal<atomic::AtomicBool>>);
 
-impl TrieAccountingCacheSwitch {
+impl TrieAccessTrackerSwitch {
     pub fn set(&self, enabled: bool) {
         self.0.get_or(Default::default).store(enabled, atomic::Ordering::Relaxed);
     }
@@ -52,13 +49,12 @@ impl TrieAccountingCacheSwitch {
 /// Note that in general, it is NOT true that all storage access is either a
 /// db read or mem read. It can also be a flat storage read, which is not
 /// tracked via TrieAccountingCache.
-pub struct TrieAccountingCache {
-    /// Whether the cache is enabled. By default it is not, but it can be
-    /// turned on or off on the fly.
-    enable: TrieAccountingCacheSwitch,
+pub struct TrieAccessTracker {
+    /// Whether the cache is enabled. By default it is not, but it can be turned on or off on the fly.
+    enable: TrieAccessTrackerSwitch,
     /// Cache of trie node hash -> trie node body, or a leaf value hash ->
     /// leaf value.
-    cache: HashMap<CryptoHash, Arc<[u8]>>,
+    keys: BTreeSet<CryptoHash>,
     /// The number of times a key was accessed by reading from the underlying
     /// storage. (This does not necessarily mean it was accessed from *disk*,
     /// as the underlying storage layer may have a best-effort cache.)
@@ -66,44 +62,23 @@ pub struct TrieAccountingCache {
     /// The number of times a key was accessed when it was deterministically
     /// already cached during the processing of this chunk.
     mem_read_nodes: u64,
-    /// Prometheus metrics. It's optional - in testing it can be None.
-    metrics: Option<TrieAccountingCacheMetrics>,
 }
 
-struct TrieAccountingCacheMetrics {
-    accounting_cache_hits: GenericCounter<prometheus::core::AtomicU64>,
-    accounting_cache_misses: GenericCounter<prometheus::core::AtomicU64>,
-    accounting_cache_size: GenericGauge<prometheus::core::AtomicI64>,
-}
-
-impl TrieAccountingCache {
+impl TrieAccessTracker {
     /// Constructs a new accounting cache. By default it is not enabled.
     /// The optional parameter is passed in if prometheus metrics are desired.
-    pub fn new(shard_uid_and_is_view: Option<(ShardUId, bool)>) -> Self {
-        let metrics = shard_uid_and_is_view.map(|(shard_uid, is_view)| {
-            let mut buffer = itoa::Buffer::new();
-            let shard_id = buffer.format(shard_uid.shard_id);
-
-            let metrics_labels: [&str; 2] = [&shard_id, if is_view { "1" } else { "0" }];
-            TrieAccountingCacheMetrics {
-                accounting_cache_hits: metrics::CHUNK_CACHE_HITS.with_label_values(&metrics_labels),
-                accounting_cache_misses: metrics::CHUNK_CACHE_MISSES
-                    .with_label_values(&metrics_labels),
-                accounting_cache_size: metrics::CHUNK_CACHE_SIZE.with_label_values(&metrics_labels),
-            }
-        });
-        let switch = TrieAccountingCacheSwitch(Default::default());
+    pub fn new() -> Self {
+        let switch = TrieAccessTrackerSwitch(Default::default());
         Self {
             enable: switch,
-            cache: Default::default(),
+            keys: Default::default(),
             db_read_nodes: Default::default(),
             mem_read_nodes: Default::default(),
-            metrics,
         }
     }
 
-    pub fn enable_switch(&self) -> TrieAccountingCacheSwitch {
-        TrieAccountingCacheSwitch(Arc::clone(&self.enable.0))
+    pub fn enable_switch(&self) -> TrieAccessTrackerSwitch {
+        TrieAccessTrackerSwitch(Arc::clone(&self.enable.0))
     }
 
     /// Retrieve raw bytes from the cache if it exists, otherwise retrieve it
@@ -113,42 +88,32 @@ impl TrieAccountingCache {
         hash: &CryptoHash,
         storage: &dyn TrieStorage,
     ) -> Result<Arc<[u8]>, StorageError> {
-        if let Some(node) = self.cache.get(hash) {
-            self.mem_read_nodes += 1;
-            if let Some(metrics) = &self.metrics {
-                metrics.accounting_cache_hits.inc();
-            }
-            Ok(node.clone())
+        let db_read = if self.enable.enabled() {
+            self.keys.insert(hash.clone())
         } else {
+            !self.keys.contains(hash)
+        };
+        if db_read {
             self.db_read_nodes += 1;
-            if let Some(metrics) = &self.metrics {
-                metrics.accounting_cache_misses.inc();
-            }
-            let node = storage.retrieve_raw_bytes(hash)?;
-
-            if self.enable.enabled() {
-                self.cache.insert(*hash, node.clone());
-                if let Some(metrics) = &self.metrics {
-                    metrics.accounting_cache_size.set(self.cache.len() as i64);
-                }
-            }
-            Ok(node)
+        } else {
+            self.mem_read_nodes += 1;
         }
+        let node = storage.retrieve_raw_bytes(hash)?;
+        Ok(node)
     }
 
     /// Used to retroactively account for a node or value that was already accessed
     /// through other means (e.g. flat storage read).
-    pub fn retroactively_account(&mut self, hash: CryptoHash, data: Arc<[u8]>) {
-        if self.cache.contains_key(&hash) {
-            self.mem_read_nodes += 1;
+    pub fn retroactively_account(&mut self, hash: CryptoHash) {
+        let db_read = if self.enable.enabled() {
+            self.keys.insert(hash.clone())
         } else {
+            !self.keys.contains(&hash)
+        };
+        if db_read {
             self.db_read_nodes += 1;
-        }
-        if self.enable.enabled() {
-            self.cache.insert(hash, data);
-            if let Some(metrics) = &self.metrics {
-                metrics.accounting_cache_size.set(self.cache.len() as i64);
-            }
+        } else {
+            self.mem_read_nodes += 1;
         }
     }
 
