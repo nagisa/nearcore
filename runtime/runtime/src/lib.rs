@@ -57,7 +57,7 @@ use near_primitives_core::apply::ApplyChunkReason;
 use near_store::trie::receipts_column_helper::DelayedReceiptQueue;
 use near_store::trie::update::TrieUpdateResult;
 use near_store::{
-    KeyLookupMode, PartialStorage, StorageError, Trie, TrieAccess, TrieChanges, TrieUpdate, get,
+    LookupMode, PartialStorage, StorageError, Trie, TrieAccess, TrieChanges, TrieUpdate, get,
     get_account, get_postponed_receipt, get_promise_yield_receipt, get_pure, get_received_data,
     has_received_data, remove_account, remove_postponed_receipt, remove_promise_yield_receipt, set,
     set_access_key, set_account, set_postponed_receipt, set_promise_yield_receipt,
@@ -502,7 +502,7 @@ impl Runtime {
                         let identifier = GlobalContractIdentifier::AccountId(account_id.clone());
                         let key = TrieKey::GlobalContractCode { identifier: identifier.into() };
                         let value_ref = state_update
-                            .get_ref(&key, KeyLookupMode::FlatStorage)?
+                            .get_ref(&key, LookupMode::FLAT_STORAGE)?
                             .ok_or_else(|| {
                                 let TrieKey::GlobalContractCode { identifier } = key else {
                                     unreachable!()
@@ -1174,7 +1174,12 @@ impl Runtime {
                 // If not, then we will postpone this receipt for later.
                 let mut pending_data_count: u32 = 0;
                 for data_id in &action_receipt.input_data_ids {
-                    if !has_received_data(state_update, account_id, *data_id)? {
+                    if !has_received_data(
+                        state_update,
+                        account_id,
+                        *data_id,
+                        LookupMode::FLAT_STORAGE,
+                    )? {
                         pending_data_count += 1;
                         // The data for a given data_id is not available, so we save a link to this
                         // receipt_id for the pending data_id into the state.
@@ -2477,7 +2482,7 @@ fn resolve_promise_yield_timeouts(
             receiver_id: queue_entry.account_id.clone(),
             data_id: queue_entry.data_id,
         };
-        if state_update.contains_key(&promise_yield_key)? {
+        if state_update.contains_key(&promise_yield_key, LookupMode::FLAT_STORAGE)? {
             let new_receipt_id = create_receipt_id_from_receipt_id(
                 processing_state.protocol_version,
                 &queue_entry.data_id,

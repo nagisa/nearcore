@@ -423,7 +423,7 @@ async fn load_state_parts(
 fn print_state_part(state_root: &StateRoot, _part_id: PartId, data: &[u8]) {
     let trie_nodes: PartialState = BorshDeserialize::try_from_slice(data).unwrap();
     let trie =
-        Trie::from_recorded_storage(PartialStorage { nodes: trie_nodes }, *state_root, false);
+        Trie::from_recorded_storage(PartialStorage { nodes: trie_nodes }, *state_root);
     trie.print_recursive(
         &mut std::io::stdout().lock(),
         &state_root,
@@ -536,8 +536,7 @@ async fn dump_state_parts(
 /// Returns the first `StateRecord` encountered while iterating over a sub-trie in the state part.
 fn get_first_state_record(state_root: &StateRoot, data: &[u8]) -> Option<StateRecord> {
     let trie_nodes = BorshDeserialize::try_from_slice(data).unwrap();
-    let trie =
-        Trie::from_recorded_storage(PartialStorage { nodes: trie_nodes }, *state_root, false);
+    let trie = Trie::from_recorded_storage(PartialStorage { nodes: trie_nodes }, *state_root);
 
     for (key, value) in trie.disk_iter().unwrap().flatten() {
         if let Some(sr) = StateRecord::from_raw_key_value(&key, value) {

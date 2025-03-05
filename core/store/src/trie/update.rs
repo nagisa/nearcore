@@ -1,10 +1,9 @@
 pub use self::iterator::TrieUpdateIterator;
-use super::accounting_cache::TrieAccessTrackerSwitch;
 use super::{OptimizedValueRef, Trie, TrieWithReadLock};
 use crate::StorageError;
 use crate::contract::ContractStorage;
 use crate::trie::TrieAccess;
-use crate::trie::{KeyLookupMode, TrieChanges};
+use crate::trie::{LookupMode, TrieChanges};
 use near_primitives::account::AccountContract;
 use near_primitives::apply::ApplyChunkReason;
 use near_primitives::hash::{CryptoHash, hash};
@@ -12,7 +11,7 @@ use near_primitives::stateless_validation::contract_distribution::ContractUpdate
 use near_primitives::trie_key::{GlobalContractCodeIdentifier, TrieKey};
 use near_primitives::types::{
     AccountId, RawStateChange, RawStateChanges, RawStateChangesWithTrieKey, StateChangeCause,
-    StateRoot, TrieCacheMode,
+    StateRoot,
 };
 use near_primitives::version::ProtocolFeature;
 use near_vm_runner::ContractCode;
@@ -63,10 +62,10 @@ impl<'a> TrieUpdateValuePtr<'a> {
         }
     }
 
-    pub fn deref_value(&self) -> Result<Vec<u8>, StorageError> {
+    pub fn deref_value(&self, mode: LookupMode) -> Result<Vec<u8>, StorageError> {
         match self {
             TrieUpdateValuePtr::MemoryRef(value) => Ok(value.to_vec()),
-            TrieUpdateValuePtr::Ref(trie, value_ref) => Ok(trie.deref_optimized(value_ref)?),
+            TrieUpdateValuePtr::Ref(trie, value_ref) => Ok(trie.deref_optimized(value_ref, mode)?),
         }
     }
 }
@@ -103,7 +102,7 @@ impl TrieUpdate {
     pub fn get_ref(
         &self,
         key: &TrieKey,
-        mode: KeyLookupMode,
+        mode: LookupMode,
     ) -> Result<Option<TrieUpdateValuePtr<'_>>, StorageError> {
         let key = key.to_vec();
         if let Some(value_ref) = self.get_ref_from_updates(&key) {
@@ -114,24 +113,6 @@ impl TrieUpdate {
             .trie
             .get_optimized_ref(&key, mode)?
             .map(|optimized_value_ref| TrieUpdateValuePtr::Ref(&self.trie, optimized_value_ref));
-        Ok(result)
-    }
-
-    pub fn get_ref_no_side_effects(
-        &self,
-        key: &TrieKey,
-        mode: KeyLookupMode,
-    ) -> Result<Option<TrieUpdateValuePtr<'_>>, StorageError> {
-        let key = key.to_vec();
-        if let Some(value_ref) = self.get_ref_from_updates(&key) {
-            return Ok(value_ref);
-        }
-
-        let result = self
-            .trie
-            .get_optimized_ref_no_side_effects(&key, mode)?
-            .map(|optimized_value_ref| TrieUpdateValuePtr::Ref(&self.trie, optimized_value_ref));
-
         Ok(result)
     }
 
@@ -146,7 +127,7 @@ impl TrieUpdate {
         None
     }
 
-    pub fn contains_key(&self, key: &TrieKey) -> Result<bool, StorageError> {
+    pub fn contains_key(&self, key: &TrieKey, mode: LookupMode) -> Result<bool, StorageError> {
         let key = key.to_vec();
         if self.prospective.contains_key(&key) {
             return Ok(true);
@@ -155,7 +136,7 @@ impl TrieUpdate {
                 return Ok(data.is_some());
             }
         }
-        self.trie.contains_key(&key)
+        self.trie.contains_key_mode(&key, mode)
     }
 
     pub fn set(&mut self, trie_key: TrieKey, value: Vec<u8>) {
@@ -201,7 +182,7 @@ impl TrieUpdate {
         code_hash: CryptoHash,
     ) -> Result<Option<usize>, StorageError> {
         let key = TrieKey::ContractCode { account_id };
-        let value_ptr = self.get_ref(&key, KeyLookupMode::FlatStorage)?;
+        let value_ptr = self.get_ref(&key, LookupMode::FLAT_STORAGE)?;
         if let Some(value_ptr) = value_ptr {
             debug_assert_eq!(
                 code_hash,
@@ -258,8 +239,8 @@ impl TrieUpdate {
         let TrieUpdate { trie, committed, contract_storage, .. } = self;
         let start_counts = trie.access_tracker.lock().unwrap().get_trie_nodes_count();
         let mut state_changes = Vec::with_capacity(committed.len());
-        let trie_changes =
-            trie.update(committed.into_iter().map(|(k, changes_with_trie_key)| {
+        let trie_changes = trie.update(
+            committed.into_iter().map(|(k, changes_with_trie_key)| {
                 let data = changes_with_trie_key
                     .changes
                     .last()
@@ -268,7 +249,9 @@ impl TrieUpdate {
                     .clone();
                 state_changes.push(changes_with_trie_key);
                 (k, data)
-            }))?;
+            }),
+            LookupMode::DEFAULT,
+        )?;
         let end_counts = trie.access_tracker.lock().unwrap().get_trie_nodes_count();
         if let Some(iops_delta) = end_counts.checked_sub(&start_counts) {
             span.record("mem_reads", iops_delta.mem_reads);
@@ -293,20 +276,6 @@ impl TrieUpdate {
 
     pub fn get_root(&self) -> &StateRoot {
         self.trie.get_root()
-    }
-
-    /// Returns a guard-style type that will reset the trie cache mode back to the initial state
-    /// once dropped.
-    ///
-    /// Only changes the cache mode if `mode` is `Some`. Will always restore the previous cache
-    /// mode upon drop. The type should not be `std::mem::forget`-ten, as it will leak memory.
-    pub fn with_trie_cache_mode(&self, mode: Option<TrieCacheMode>) -> TrieCacheModeGuard {
-        let switch = self.trie.access_tracker.lock().unwrap().enable_switch();
-        let previous = switch.enabled();
-        if let Some(mode) = mode {
-            switch.set(mode == TrieCacheMode::CachingChunk);
-        }
-        TrieCacheModeGuard(previous, switch, Default::default())
     }
 
     fn get_from_updates(
@@ -373,7 +342,10 @@ impl TrieUpdate {
         };
         let contract_ref = self
             .trie
-            .get_optimized_ref_no_side_effects(&trie_key.to_vec(), KeyLookupMode::FlatStorage)
+            .get_optimized_ref(
+                &trie_key.to_vec(),
+                LookupMode::FLAT_STORAGE.record_witness(false).track_access(false),
+            )
             .or_else(|err| {
                 // If the value for the trie key is not found, we treat it as if the contract does not exist.
                 // In this case, we ignore the error and skip recording the contract call below.
@@ -394,29 +366,17 @@ impl TrieUpdate {
 
 impl TrieAccess for TrieUpdate {
     fn get(&self, key: &TrieKey) -> Result<Option<Vec<u8>>, StorageError> {
-        self.get_from_updates(key, |k| self.trie.get(k))
+        self.get_from_updates(key, |k| self.trie.get(k, LookupMode::DEFAULT))
     }
 
-    fn get_no_side_effects(&self, key: &TrieKey) -> Result<Option<Vec<u8>>, StorageError> {
-        self.get_from_updates(key, |_| self.trie.get_no_side_effects(&key))
+    fn get_mode(&self, key: &TrieKey, mode: LookupMode) -> Result<Option<Vec<u8>>, StorageError> {
+        self.get_from_updates(key, |_| self.trie.get_mode(&key, mode))
     }
 
-    fn contains_key(&self, key: &TrieKey) -> Result<bool, StorageError> {
-        TrieUpdate::contains_key(&self, key)
+    fn contains_key(&self, key: &TrieKey, mode: LookupMode) -> Result<bool, StorageError> {
+        TrieUpdate::contains_key(&self, key, mode)
     }
 }
-
-pub struct TrieCacheModeGuard(
-    bool,
-    TrieAccessTrackerSwitch,
-    std::marker::PhantomData<std::sync::MutexGuard<'static, ()>>,
-);
-impl Drop for TrieCacheModeGuard {
-    fn drop(&mut self) {
-        self.1.set(self.0);
-    }
-}
-static_assertions::assert_not_impl_all!(TrieCacheModeGuard: Send);
 
 #[cfg(test)]
 mod tests {

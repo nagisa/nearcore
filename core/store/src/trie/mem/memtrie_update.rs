@@ -533,7 +533,7 @@ mod tests {
     use crate::trie::mem::lookup::memtrie_lookup;
     use crate::trie::mem::memtrie_update::GenericTrieUpdateInsertDelete;
     use crate::trie::mem::memtries::MemTries;
-    use crate::{KeyLookupMode, ShardTries, TrieChanges};
+    use crate::{LookupMode, ShardTries, TrieChanges};
     use near_primitives::hash::CryptoHash;
     use near_primitives::shard_layout::ShardUId;
     use near_primitives::state::{FlatStateValue, ValueRef};
@@ -602,7 +602,7 @@ mod tests {
             changes: Vec<(Vec<u8>, Option<Vec<u8>>)>,
         ) -> TrieChanges {
             let trie = self.disk.get_trie_for_shard(ShardUId::single_shard(), self.state_root);
-            trie.update(changes).unwrap()
+            trie.update(changes, LookupMode::TRIE).unwrap()
         }
 
         fn check_consistency_across_all_changes_and_apply(
@@ -651,7 +651,7 @@ mod tests {
                     self.disk.get_trie_for_shard(ShardUId::single_shard(), self.state_root);
                 let memtrie_result =
                     memtrie_root.and_then(|memtrie_root| memtrie_lookup(memtrie_root, key, None));
-                let disk_result = disk_trie.get_optimized_ref(key, KeyLookupMode::Trie).unwrap();
+                let disk_result = disk_trie.get_optimized_ref(key, LookupMode::TRIE).unwrap();
                 if let Some(value_ref) = value_ref {
                     let memtrie_value_ref = memtrie_result
                         .unwrap_or_else(|| {

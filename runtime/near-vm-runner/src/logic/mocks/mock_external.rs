@@ -1,7 +1,7 @@
 use crate::ContractCode;
 use crate::logic::dependencies::{Result, TrieNodesCount};
 use crate::logic::types::ReceiptIndex;
-use crate::logic::{External, StorageGetMode, ValuePtr};
+use crate::logic::{External, StorageMode, ValuePtr};
 use near_primitives_core::hash::{CryptoHash, hash};
 use near_primitives_core::types::{AccountId, Balance, Gas, GasWeight};
 use std::collections::HashMap;
@@ -128,7 +128,7 @@ impl External for MockedExternal {
         Ok(())
     }
 
-    fn storage_get(&self, key: &[u8], _mode: StorageGetMode) -> Result<Option<Box<dyn ValuePtr>>> {
+    fn storage_get(&self, key: &[u8], _mode: StorageMode) -> Result<Option<Box<dyn ValuePtr>>> {
         Ok(self
             .fake_trie
             .get(key)
@@ -145,7 +145,7 @@ impl External for MockedExternal {
         Ok(())
     }
 
-    fn storage_has_key(&mut self, key: &[u8], _mode: StorageGetMode) -> Result<bool> {
+    fn storage_has_key(&mut self, key: &[u8], _mode: StorageMode) -> Result<bool> {
         Ok(self.fake_trie.contains_key(key))
     }
 

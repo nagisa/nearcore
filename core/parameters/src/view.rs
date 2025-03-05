@@ -218,7 +218,7 @@ pub struct VMConfigView {
     pub discard_custom_sections: bool,
 
     /// See [VMConfig::storage_get_mode](crate::vm::Config::storage_get_mode).
-    pub storage_get_mode: crate::vm::StorageGetMode,
+    pub storage_mode: crate::vm::StorageMode,
     /// See [VMConfig::fix_contract_loading_cost](crate::vm::Config::fix_contract_loading_cost).
     pub fix_contract_loading_cost: bool,
     /// See [VMConfig::implicit_account_creation](crate::vm::Config::implicit_account_creation).
@@ -252,7 +252,7 @@ impl From<crate::vm::Config> for VMConfigView {
             disable_9393_fix: config.disable_9393_fix,
             discard_custom_sections: config.discard_custom_sections,
             limit_config: config.limit_config,
-            storage_get_mode: config.storage_get_mode,
+            storage_mode: config.storage_mode,
             fix_contract_loading_cost: config.fix_contract_loading_cost,
             implicit_account_creation: config.implicit_account_creation,
             math_extension: config.math_extension,
@@ -275,7 +275,7 @@ impl From<VMConfigView> for crate::vm::Config {
             disable_9393_fix: view.disable_9393_fix,
             discard_custom_sections: view.discard_custom_sections,
             limit_config: view.limit_config,
-            storage_get_mode: view.storage_get_mode,
+            storage_mode: view.storage_mode,
             fix_contract_loading_cost: view.fix_contract_loading_cost,
             implicit_account_creation: view.implicit_account_creation,
             math_extension: view.math_extension,

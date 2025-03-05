@@ -11,7 +11,7 @@ use crate::ProfileDataV3;
 use crate::bls12381_impl;
 use ExtCosts::*;
 use near_crypto::Secp256K1Signature;
-use near_parameters::vm::{Config, StorageGetMode};
+use near_parameters::vm::{Config, StorageMode};
 use near_parameters::{
     ActionCosts, ExtCosts, RuntimeFeesConfig, transfer_exec_fee, transfer_send_fee,
 };
@@ -3060,7 +3060,12 @@ bls12381_p2_decompress_base + bls12381_p2_decompress_element * num_elements`
         let nodes_before = self.ext.get_trie_nodes_count();
         // For storage write, we need to first perform a read on the key to calculate the TTN cost.
         // This storage_get must be performed through trie instead of through FlatStorage
-        let evicted_ptr = self.ext.storage_get(&key, StorageGetMode::Trie)?;
+        let mode = if let StorageMode::FlatStorage = self.config.storage_mode {
+            StorageMode::TrieWithNodeCache
+        } else {
+            self.config.storage_mode
+        };
+        let evicted_ptr = self.ext.storage_get(&key, mode)?;
         let evicted = Self::deref_value(
             &mut self.result_state.gas_counter,
             storage_write_evicted_byte,
@@ -3169,7 +3174,7 @@ bls12381_p2_decompress_base + bls12381_p2_decompress_element * num_elements`
         }
         self.result_state.gas_counter.pay_per(storage_read_key_byte, key.len() as u64)?;
         let nodes_before = self.ext.get_trie_nodes_count();
-        let read = self.ext.storage_get(&key, self.config.storage_get_mode);
+        let read = self.ext.storage_get(&key, self.config.storage_mode);
         let nodes_delta = self
             .ext
             .get_trie_nodes_count()
@@ -3256,7 +3261,12 @@ bls12381_p2_decompress_base + bls12381_p2_decompress_element * num_elements`
         let nodes_before = self.ext.get_trie_nodes_count();
         // To delete a key, we need to first perform a read on the key to calculate the TTN cost.
         // This storage_get must be performed through trie instead of through FlatStorage
-        let removed_ptr = self.ext.storage_get(&key, StorageGetMode::Trie)?;
+        let mode = if let StorageMode::FlatStorage = self.config.storage_mode {
+            StorageMode::TrieWithNodeCache
+        } else {
+            self.config.storage_mode
+        };
+        let removed_ptr = self.ext.storage_get(&key, mode)?;
         let removed = Self::deref_value(
             &mut self.result_state.gas_counter,
             storage_remove_ret_value_byte,
@@ -3332,7 +3342,7 @@ bls12381_p2_decompress_base + bls12381_p2_decompress_element * num_elements`
         }
         self.result_state.gas_counter.pay_per(storage_has_key_byte, key.len() as u64)?;
         let nodes_before = self.ext.get_trie_nodes_count();
-        let res = self.ext.storage_has_key(&key, self.config.storage_get_mode);
+        let res = self.ext.storage_has_key(&key, self.config.storage_mode);
         let nodes_delta = self
             .ext
             .get_trie_nodes_count()

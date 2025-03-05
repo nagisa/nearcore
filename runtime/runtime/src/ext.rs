@@ -10,10 +10,10 @@ use near_primitives::types::{AccountId, Balance, BlockHeight, EpochId, EpochInfo
 use near_primitives::utils::create_receipt_id_from_action_hash;
 use near_primitives::version::ProtocolVersion;
 use near_store::contract::ContractStorage;
-use near_store::{KeyLookupMode, TrieUpdate, TrieUpdateValuePtr, has_promise_yield_receipt};
+use near_store::{LookupMode, TrieUpdate, TrieUpdateValuePtr, has_promise_yield_receipt};
 use near_vm_runner::logic::errors::{AnyError, VMLogicError};
 use near_vm_runner::logic::types::ReceiptIndex;
-use near_vm_runner::logic::{External, StorageGetMode, ValuePtr};
+use near_vm_runner::logic::{External, StorageMode, ValuePtr};
 use near_vm_runner::{Contract, ContractCode};
 use near_wallet_contract::wallet_contract;
 use std::sync::Arc;
@@ -31,6 +31,7 @@ pub struct RuntimeExt<'a> {
     block_height: BlockHeight,
     epoch_info_provider: &'a dyn EpochInfoProvider,
     current_protocol_version: ProtocolVersion,
+    storage_mode: StorageMode,
 }
 
 /// Error used by `RuntimeExt`.
@@ -57,7 +58,7 @@ impl<'a> ValuePtr for RuntimeExtValuePtr<'a> {
     }
 
     fn deref(&self) -> ExtResult<Vec<u8>> {
-        self.0.deref_value().map_err(wrap_storage_error)
+        self.0.deref_value(LookupMode::FLAT_STORAGE.track_access(true)).map_err(wrap_storage_error)
     }
 }
 
@@ -74,6 +75,7 @@ impl<'a> RuntimeExt<'a> {
         block_height: BlockHeight,
         epoch_info_provider: &'a dyn EpochInfoProvider,
         current_protocol_version: ProtocolVersion,
+        storage_mode: StorageMode,
     ) -> Self {
         RuntimeExt {
             trie_update,
@@ -88,6 +90,7 @@ impl<'a> RuntimeExt<'a> {
             block_height,
             epoch_info_provider,
             current_protocol_version,
+            storage_mode,
         }
     }
 
@@ -121,6 +124,14 @@ fn wrap_storage_error(error: StorageError) -> VMLogicError {
 
 type ExtResult<T> = ::std::result::Result<T, VMLogicError>;
 
+fn convert_mode(mode: StorageMode) -> LookupMode {
+    match mode {
+        StorageMode::Trie => LookupMode::TRIE.track_access(false),
+        StorageMode::TrieWithNodeCache => LookupMode::TRIE.track_access(true),
+        StorageMode::FlatStorage => LookupMode::FLAT_STORAGE.track_access(true),
+    }
+}
+
 impl<'a> External for RuntimeExt<'a> {
     fn storage_set(&mut self, key: &[u8], value: &[u8]) -> ExtResult<()> {
         let storage_key = self.create_storage_key(key);
@@ -131,15 +142,11 @@ impl<'a> External for RuntimeExt<'a> {
     fn storage_get<'b>(
         &'b self,
         key: &[u8],
-        mode: StorageGetMode,
+        mode: StorageMode,
     ) -> ExtResult<Option<Box<dyn ValuePtr + 'b>>> {
         let storage_key = self.create_storage_key(key);
-        let mode = match mode {
-            StorageGetMode::FlatStorage => KeyLookupMode::FlatStorage,
-            StorageGetMode::Trie => KeyLookupMode::Trie,
-        };
         self.trie_update
-            .get_ref(&storage_key, mode)
+            .get_ref(&storage_key, convert_mode(mode))
             .map_err(wrap_storage_error)
             .map(|option| option.map(|ptr| Box::new(RuntimeExtValuePtr(ptr)) as Box<_>))
     }
@@ -150,14 +157,10 @@ impl<'a> External for RuntimeExt<'a> {
         Ok(())
     }
 
-    fn storage_has_key(&mut self, key: &[u8], mode: StorageGetMode) -> ExtResult<bool> {
+    fn storage_has_key(&mut self, key: &[u8], mode: StorageMode) -> ExtResult<bool> {
         let storage_key = self.create_storage_key(key);
-        let mode = match mode {
-            StorageGetMode::FlatStorage => KeyLookupMode::FlatStorage,
-            StorageGetMode::Trie => KeyLookupMode::Trie,
-        };
         self.trie_update
-            .get_ref(&storage_key, mode)
+            .get_ref(&storage_key, convert_mode(mode))
             .map(|x| x.is_some())
             .map_err(wrap_storage_error)
     }
@@ -250,8 +253,13 @@ impl<'a> External for RuntimeExt<'a> {
         data: Vec<u8>,
     ) -> Result<bool, VMLogicError> {
         // If the yielded promise was created by a previous transaction, we'll find it in the trie
-        if has_promise_yield_receipt(self.trie_update, self.account_id.clone(), data_id)
-            .map_err(wrap_storage_error)?
+        if has_promise_yield_receipt(
+            self.trie_update,
+            self.account_id.clone(),
+            data_id,
+            convert_mode(self.storage_mode),
+        )
+        .map_err(wrap_storage_error)?
         {
             self.receipt_manager.create_promise_resume_receipt(data_id, data)?;
             return Ok(true);

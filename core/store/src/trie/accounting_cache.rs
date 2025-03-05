@@ -4,19 +4,9 @@ use near_primitives::errors::StorageError;
 use near_primitives::hash::CryptoHash;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use std::sync::atomic;
 
-/// Switch that controls whether the `TrieAccountingCache` is enabled.
-pub struct TrieAccessTrackerSwitch(Arc<thread_local::ThreadLocal<atomic::AtomicBool>>);
-
-impl TrieAccessTrackerSwitch {
-    pub fn set(&self, enabled: bool) {
-        self.0.get_or(Default::default).store(enabled, atomic::Ordering::Relaxed);
-    }
-
-    pub fn enabled(&self) -> bool {
-        self.0.get_or(Default::default).load(atomic::Ordering::Relaxed)
-    }
+thread_local! {
+    pub static SHOULD_ACCOUNT: std::sync::atomic::AtomicBool = Default::default();
 }
 
 /// Deterministic cache to store trie nodes that have been accessed so far
@@ -50,8 +40,6 @@ impl TrieAccessTrackerSwitch {
 /// db read or mem read. It can also be a flat storage read, which is not
 /// tracked via TrieAccountingCache.
 pub struct TrieAccessTracker {
-    /// Whether the cache is enabled. By default it is not, but it can be turned on or off on the fly.
-    enable: TrieAccessTrackerSwitch,
     /// Cache of trie node hash -> trie node body, or a leaf value hash ->
     /// leaf value.
     keys: BTreeSet<CryptoHash>,
@@ -68,17 +56,11 @@ impl TrieAccessTracker {
     /// Constructs a new accounting cache. By default it is not enabled.
     /// The optional parameter is passed in if prometheus metrics are desired.
     pub fn new() -> Self {
-        let switch = TrieAccessTrackerSwitch(Default::default());
         Self {
-            enable: switch,
             keys: Default::default(),
             db_read_nodes: Default::default(),
             mem_read_nodes: Default::default(),
         }
-    }
-
-    pub fn enable_switch(&self) -> TrieAccessTrackerSwitch {
-        TrieAccessTrackerSwitch(Arc::clone(&self.enable.0))
     }
 
     /// Retrieve raw bytes from the cache if it exists, otherwise retrieve it
@@ -86,13 +68,14 @@ impl TrieAccessTracker {
     pub fn retrieve_raw_bytes_with_accounting(
         &mut self,
         hash: &CryptoHash,
+        insert: bool,
         storage: &dyn TrieStorage,
     ) -> Result<Arc<[u8]>, StorageError> {
-        let db_read = if self.enable.enabled() {
-            self.keys.insert(hash.clone())
-        } else {
-            !self.keys.contains(hash)
-        };
+        if SHOULD_ACCOUNT.with(|k| k.load(std::sync::atomic::Ordering::Acquire)) {
+            assert!(insert);
+        }
+        let db_read =
+            if insert { self.keys.insert(hash.clone()) } else { !self.keys.contains(hash) };
         if db_read {
             self.db_read_nodes += 1;
         } else {
@@ -104,12 +87,12 @@ impl TrieAccessTracker {
 
     /// Used to retroactively account for a node or value that was already accessed
     /// through other means (e.g. flat storage read).
-    pub fn retroactively_account(&mut self, hash: CryptoHash) {
-        let db_read = if self.enable.enabled() {
-            self.keys.insert(hash.clone())
-        } else {
-            !self.keys.contains(&hash)
-        };
+    pub fn retroactively_account(&mut self, hash: CryptoHash, insert: bool) {
+        if SHOULD_ACCOUNT.with(|k| k.load(std::sync::atomic::Ordering::Acquire)) {
+            assert!(insert);
+        }
+        let db_read =
+            if insert { self.keys.insert(hash.clone()) } else { !self.keys.contains(&hash) };
         if db_read {
             self.db_read_nodes += 1;
         } else {

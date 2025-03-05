@@ -37,7 +37,7 @@ use near_primitives::types::{AccountId, ProtocolVersion, ShardId, ShardIndex};
 use near_primitives::utils::compression::CompressedData;
 use near_store::flat::BlockInfo;
 use near_store::trie::ops::resharding::RetainMode;
-use near_store::{PartialStorage, Trie};
+use near_store::{LookupMode, PartialStorage, Trie};
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
@@ -737,7 +737,7 @@ pub fn validate_chunk_state_witness(
             ) => {
                 let old_root = *chunk_extra.state_root();
                 let partial_storage = PartialStorage { nodes: transition.base_state };
-                let parent_trie = Trie::from_recorded_storage(partial_storage, old_root, true);
+                let parent_trie = Trie::from_recorded_storage(partial_storage, old_root);
 
                 // Update the congestion info based on the parent shard. It's
                 // important to do this step before the `retain_split_shard`
@@ -758,7 +758,11 @@ pub fn validate_chunk_state_witness(
                     retain_mode,
                 )?;
 
-                let new_root = parent_trie.retain_split_shard(&boundary_account, retain_mode)?;
+                let new_root = parent_trie.retain_split_shard(
+                    &boundary_account,
+                    retain_mode,
+                    LookupMode::FLAT_STORAGE,
+                )?;
 
                 (child_shard_uid, new_root, child_congestion_info)
             }

@@ -27,7 +27,7 @@ use near_primitives::transaction::{
 use near_primitives::trie_key::TrieKey;
 use near_primitives::types::validator_stake::ValidatorStake;
 use near_primitives::types::{
-    AccountId, Balance, BlockHeight, EpochInfoProvider, Gas, StorageUsage, TrieCacheMode,
+    AccountId, Balance, BlockHeight, EpochInfoProvider, Gas, StorageUsage,
 };
 use near_primitives::utils::account_is_implicit;
 use near_primitives::version::{
@@ -35,9 +35,7 @@ use near_primitives::version::{
 };
 use near_primitives_core::account::id::AccountType;
 use near_store::{
-    StorageError, TrieUpdate, enqueue_promise_yield_timeout, get_access_key,
-    get_promise_yield_indices, remove_access_key, remove_account, set_access_key,
-    set_promise_yield_indices,
+    enqueue_promise_yield_timeout, get_access_key, get_promise_yield_indices, remove_access_key, remove_account, set_access_key, set_promise_yield_indices, LookupMode, StorageError, TrieUpdate
 };
 use near_vm_runner::logic::errors::{
     CompilationError, FunctionCallError, InconsistentStateError, VMRunnerError,
@@ -102,13 +100,15 @@ pub(crate) fn execute_function_call(
     // TODO (#5920): Consider using RAII for switching the state back
 
     near_vm_runner::reset_metrics();
-    let mode = match checked_feature!("stable", ChunkNodesCache, runtime_ext.protocol_version()) {
-        true => Some(TrieCacheMode::CachingChunk),
-        false => None,
+    let previous = if checked_feature!("stable", ChunkNodesCache, runtime_ext.protocol_version()) {
+        near_store::trie::accounting_cache::SHOULD_ACCOUNT
+            .with(|k| k.fetch_or(true, std::sync::atomic::Ordering::Release))
+    } else {
+        false
     };
-    let mode_guard = runtime_ext.trie_update.with_trie_cache_mode(mode);
     let result = near_vm_runner::run(contract, runtime_ext, &context, Arc::clone(&config.fees));
-    drop(mode_guard);
+    near_store::trie::accounting_cache::SHOULD_ACCOUNT
+        .with(|k| k.store(previous, std::sync::atomic::Ordering::Release));
     near_vm_runner::report_metrics(
         &apply_state.shard_id.to_string(),
         &apply_state.apply_reason.to_string(),
@@ -212,6 +212,7 @@ pub(crate) fn action_function_call(
         apply_state.block_height,
         epoch_info_provider,
         apply_state.current_protocol_version,
+        config.wasm_config.storage_mode,
     );
     let outcome = execute_function_call(
         contract,
@@ -678,7 +679,7 @@ pub(crate) fn action_use_global_contract(
 ) -> Result<(), RuntimeError> {
     let _span = tracing::debug_span!(target: "runtime", "action_use_global_contract").entered();
     let key = TrieKey::GlobalContractCode { identifier: action.contract_identifier.clone().into() };
-    if !state_update.contains_key(&key)? {
+    if !state_update.contains_key(&key, LookupMode::FLAT_STORAGE)? {
         result.result = Err(ActionErrorKind::GlobalContractDoesNotExist {
             identifier: action.contract_identifier.clone(),
         }

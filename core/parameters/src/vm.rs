@@ -45,9 +45,13 @@ impl VMKind {
 
 /// This enum represents if a storage_get call will be performed through flat storage or trie
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub enum StorageGetMode {
-    FlatStorage,
+pub enum StorageMode {
+    /// Protocol versions prior to 53.
     Trie,
+    /// Protocol versions [53, 61).
+    TrieWithNodeCache,
+    /// Protocol version 61 onwards (memtries are used implicitly...)
+    FlatStorage,
 }
 
 /// Describes limits for VM and Runtime.
@@ -166,7 +170,7 @@ pub struct Config {
 
     /// Set to `StorageGetMode::FlatStorage` in order to enable the `FlatStorageReads` protocol
     /// feature.
-    pub storage_get_mode: StorageGetMode,
+    pub storage_mode: StorageMode,
 
     /// Enable the `FixContractLoadingCost` protocol feature.
     pub fix_contract_loading_cost: bool,

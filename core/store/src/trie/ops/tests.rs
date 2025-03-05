@@ -8,6 +8,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 use near_primitives::{shard_layout::ShardUId, types::StateRoot};
 
+use crate::LookupMode;
 use crate::test_utils::TestTriesBuilder;
 use crate::trie::Trie;
 use crate::trie::mem::iter::{MemTrieIteratorInner, STMemTrieIterator};
@@ -82,7 +83,8 @@ fn retain_split_shard_custom_ranges_for_trie(
     retain_multi_ranges: &Vec<Range<Vec<u8>>>,
 ) -> CryptoHash {
     let mut trie_update = TrieStorageUpdate::new(trie);
-    let root_node = trie.move_node_to_mutable(&mut trie_update, &trie.root).unwrap();
+    let root_node =
+        trie.move_node_to_mutable(&mut trie_update, &trie.root, LookupMode::TRIE).unwrap();
     retain_split_shard_custom_ranges(&mut trie_update, retain_multi_ranges);
     let result = trie_update.flatten_nodes(&trie.root, root_node.0).unwrap();
     result.new_root
@@ -114,7 +116,7 @@ fn run(initial_entries: Vec<(Vec<u8>, Vec<u8>)>, retain_multi_ranges: Vec<Range<
     let proof = trie_recorder.recorded_storage();
 
     // Use proof to verify split
-    let partial_trie = Trie::from_recorded_storage(proof, initial_state_root, false);
+    let partial_trie = Trie::from_recorded_storage(proof, initial_state_root);
     let expected_proof_based_state_root =
         retain_split_shard_custom_ranges_for_trie(&partial_trie, &retain_multi_ranges);
 

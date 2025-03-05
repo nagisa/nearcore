@@ -41,10 +41,7 @@ use near_store::epoch_info_aggregator::EpochInfoAggregator;
 use near_store::flat::delta::KeyForFlatStateDelta;
 use near_store::flat::{FlatStateChanges, FlatStateDeltaMetadata, FlatStorageStatus};
 use near_store::{
-    CHUNK_TAIL_KEY, COLD_HEAD_KEY, DBCol, FINAL_HEAD_KEY, FORK_TAIL_KEY, GENESIS_JSON_HASH_KEY,
-    GENESIS_STATE_ROOTS_KEY, HEAD_KEY, HEADER_HEAD_KEY, LARGEST_TARGET_HEIGHT_KEY,
-    LATEST_KNOWN_KEY, NibbleSlice, RawTrieNode, RawTrieNodeWithSize, STATE_SNAPSHOT_KEY,
-    STATE_SYNC_DUMP_KEY, ShardUId, Store, TAIL_KEY,
+    DBCol, LookupMode, NibbleSlice, RawTrieNode, RawTrieNodeWithSize, ShardUId, Store, CHUNK_TAIL_KEY, COLD_HEAD_KEY, FINAL_HEAD_KEY, FORK_TAIL_KEY, GENESIS_JSON_HASH_KEY, GENESIS_STATE_ROOTS_KEY, HEADER_HEAD_KEY, HEAD_KEY, LARGEST_TARGET_HEIGHT_KEY, LATEST_KNOWN_KEY, STATE_SNAPSHOT_KEY, STATE_SYNC_DUMP_KEY, TAIL_KEY
 };
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -498,7 +495,7 @@ fn serialize_trie_node(
                 .copied()
                 .chain(extension_nibbles.0.iter())
                 .collect::<Vec<_>>();
-            let data = trie.retrieve_value(&value.hash)?;
+            let data = trie.retrieve_value(&value.hash, LookupMode::FLAT_STORAGE)?;
             entity_data.add_string("leaf_path", &TriePath::nibbles_to_hex(&leaf_nibbles));
             entity_data.add_string("value", &hex::encode(&data))
         }
@@ -515,7 +512,7 @@ fn serialize_trie_node(
             }
         }
         near_store::RawTrieNode::BranchWithValue(value, children) => {
-            let data = trie.retrieve_value(&value.hash)?;
+            let data = trie.retrieve_value(&value.hash, LookupMode::FLAT_STORAGE)?;
             entity_data.add_string("leaf_path", &TriePath::nibbles_to_hex(&trie_path.path));
             entity_data.add_string("value", &hex::encode(&data));
             for index in 0..16 {

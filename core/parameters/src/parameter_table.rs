@@ -5,7 +5,7 @@ use crate::cost::{
 };
 use crate::parameter::{FeeParameter, Parameter};
 use crate::vm::VMKind;
-use crate::vm::{Config, StorageGetMode};
+use crate::vm::{Config, StorageMode};
 use near_primitives_core::account::id::ParseAccountError;
 use near_primitives_core::types::AccountId;
 use num_rational::Rational32;
@@ -184,6 +184,23 @@ impl TryFrom<&ParameterValue> for VMKind {
     }
 }
 
+impl TryFrom<&ParameterValue> for StorageMode {
+    type Error = ValueConversionError;
+    fn try_from(value: &ParameterValue) -> Result<Self, Self::Error> {
+        Ok(match value {
+            ParameterValue::String(s) if s == "trie" => StorageMode::Trie,
+            ParameterValue::String(s) if s == "trie_with_node_cache" => {
+                StorageMode::TrieWithNodeCache
+            }
+            ParameterValue::String(s) if s == "flat_storage" => StorageMode::FlatStorage,
+            _ => return Err(ValueConversionError::ParseType(
+                std::any::type_name::<StorageMode>(),
+                value.clone(),
+            )),
+        })
+    }
+}
+
 fn format_number(mut n: u64) -> String {
     let mut parts = Vec::new();
     while n >= 1000 {
@@ -320,10 +337,7 @@ impl TryFrom<&ParameterTable> for RuntimeConfig {
                 limit_config: serde_yaml::from_value(params.yaml_map(Parameter::vm_limits()))
                     .map_err(InvalidConfigError::InvalidYaml)?,
                 fix_contract_loading_cost: params.get(Parameter::FixContractLoadingCost)?,
-                storage_get_mode: match params.get(Parameter::FlatStorageReads)? {
-                    true => StorageGetMode::FlatStorage,
-                    false => StorageGetMode::Trie,
-                },
+                storage_mode: params.get(Parameter::StorageMode)?,
                 implicit_account_creation: params.get(Parameter::ImplicitAccountCreation)?,
                 math_extension: params.get(Parameter::MathExtension)?,
                 ed25519_verify: params.get(Parameter::Ed25519Verify)?,

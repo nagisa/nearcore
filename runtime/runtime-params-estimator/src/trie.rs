@@ -249,7 +249,6 @@ fn read_node_from_accounting_cache_ext(
             // Create a new cache and load nodes into it as preparation.
             let caching_storage = testbed.trie_caching_storage();
             let mut accounting_cache = TrieAccessTracker::new();
-            accounting_cache.enable_switch().set(true);
             let _dummy_sum = read_raw_nodes_from_storage(
                 &caching_storage,
                 &mut accounting_cache,
@@ -298,8 +297,9 @@ fn read_raw_nodes_from_storage(
 ) -> usize {
     keys.iter()
         .map(|key| {
-            let bytes =
-                accounting_cache.retrieve_raw_bytes_with_accounting(key, caching_storage).unwrap();
+            let bytes = accounting_cache
+                .retrieve_raw_bytes_with_accounting(key, true, caching_storage)
+                .unwrap();
             near_store::estimator::decode_extension_node(&bytes).len()
         })
         .sum()

@@ -15,7 +15,7 @@ use near_primitives::version::ProtocolFeature;
 use near_primitives_core::types::BlockHeight;
 use near_store::adapter::StoreAdapter;
 use near_store::test_utils::create_test_store;
-use near_store::{KeyLookupMode, Store};
+use near_store::{LookupMode, Store};
 
 use crate::env::nightshade_setup::TestEnvNightshadeSetupExt;
 use crate::env::test_env::TestEnv;
@@ -159,7 +159,7 @@ fn test_not_supported_block() {
         if height == flat_head_height {
             env.produce_block(0, START_HEIGHT);
         }
-        get_ref_results.push(trie.get_optimized_ref(&trie_key_bytes, KeyLookupMode::FlatStorage));
+        get_ref_results.push(trie.get_optimized_ref(&trie_key_bytes, LookupMode::FLAT_STORAGE));
     }
 
     // The first result should be FlatStorageError, because we can't read from first chunk view anymore.

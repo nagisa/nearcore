@@ -5,11 +5,11 @@ extern crate core;
 use crate::db::{DBIterator, DBOp, DBSlice, DBTransaction, Database, StoreStatistics, refcount};
 pub use crate::trie::update::{TrieUpdate, TrieUpdateIterator, TrieUpdateValuePtr};
 pub use crate::trie::{
-    ApplyStatePartResult, KeyForStateChanges, KeyLookupMode, NibbleSlice, PartialStorage,
-    PrefetchApi, PrefetchError, RawTrieNode, RawTrieNodeWithSize, STATE_SNAPSHOT_COLUMNS,
-    ShardTries, StateSnapshot, StateSnapshotConfig, Trie, TrieAccess, TrieCache,
-    TrieCachingStorage, TrieChanges, TrieConfig, TrieDBStorage, TrieStorage, WrappedTrieChanges,
-    estimator, resharding_v2,
+    ApplyStatePartResult, KeyForStateChanges, LookupMode, NibbleSlice, PartialStorage, PrefetchApi,
+    PrefetchError, RawTrieNode, RawTrieNodeWithSize, STATE_SNAPSHOT_COLUMNS, ShardTries,
+    StateSnapshot, StateSnapshotConfig, Trie, TrieAccess, TrieCache, TrieCachingStorage,
+    TrieChanges, TrieConfig, TrieDBStorage, TrieStorage, WrappedTrieChanges, estimator,
+    resharding_v2,
 };
 use adapter::{StoreAdapter, StoreUpdateAdapter};
 use borsh::{BorshDeserialize, BorshSerialize};
@@ -798,7 +798,7 @@ pub fn get_pure<T: BorshDeserialize>(
     trie: &dyn TrieAccess,
     key: &TrieKey,
 ) -> Result<Option<T>, StorageError> {
-    match trie.get_no_side_effects(key)? {
+    match trie.get_mode(key, LookupMode::FLAT_STORAGE.track_access(false).record_witness(false))? {
         None => Ok(None),
         Some(data) => match T::try_from_slice(&data) {
             Err(_err) => {
@@ -847,8 +847,9 @@ pub fn has_received_data(
     trie: &dyn TrieAccess,
     receiver_id: &AccountId,
     data_id: CryptoHash,
+    mode: LookupMode,
 ) -> Result<bool, StorageError> {
-    trie.contains_key(&TrieKey::ReceivedData { receiver_id: receiver_id.clone(), data_id })
+    trie.contains_key(&TrieKey::ReceivedData { receiver_id: receiver_id.clone(), data_id }, mode)
 }
 
 pub fn set_postponed_receipt(state_update: &mut TrieUpdate, receipt: &Receipt) {
@@ -965,8 +966,9 @@ pub fn has_promise_yield_receipt(
     trie: &dyn TrieAccess,
     receiver_id: AccountId,
     data_id: CryptoHash,
+    mode: LookupMode,
 ) -> Result<bool, StorageError> {
-    trie.contains_key(&TrieKey::PromiseYieldReceipt { receiver_id, data_id })
+    trie.contains_key(&TrieKey::PromiseYieldReceipt { receiver_id, data_id }, mode)
 }
 
 pub fn get_buffered_receipt_indices(

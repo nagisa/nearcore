@@ -40,8 +40,8 @@ use near_store::adapter::{StoreAdapter, StoreUpdateAdapter};
 use near_store::flat::FlatStorageManager;
 use near_store::metadata::DbKind;
 use near_store::{
-    ApplyStatePartResult, COLD_HEAD_KEY, DBCol, ShardTries, StateSnapshotConfig, Store, Trie,
-    TrieConfig, TrieUpdate, WrappedTrieChanges,
+    ApplyStatePartResult, COLD_HEAD_KEY, DBCol, LookupMode, ShardTries, StateSnapshotConfig, Store,
+    Trie, TrieConfig, TrieUpdate, WrappedTrieChanges,
 };
 use near_vm_runner::ContractCode;
 use near_vm_runner::{ContractRuntimeCache, precompile_contract};
@@ -632,15 +632,12 @@ impl RuntimeAdapter for NightshadeRuntime {
                 // If there is no flat storage on disk, use trie but simulate costs with enabled
                 // flat storage by not charging gas for trie nodes.
                 // WARNING: should never be used in production! Consider this option only for debugging or replaying blocks.
-                let mut trie = self.tries.get_trie_for_shard(shard_uid, storage_config.state_root);
-                trie.set_charge_gas_for_trie_node_access(false);
+                let trie = self.tries.get_trie_for_shard(shard_uid, storage_config.state_root);
                 trie
             }
-            StorageDataSource::Recorded(storage) => Trie::from_recorded_storage(
-                storage,
-                storage_config.state_root,
-                storage_config.use_flat_storage,
-            ),
+            StorageDataSource::Recorded(storage) => {
+                Trie::from_recorded_storage(storage, storage_config.state_root)
+            }
         };
         // StateWitnessSizeLimit: We need to start recording reads if the stateless validation is
         // enabled in the next epoch. We need to save the state transition data in the current epoch
@@ -863,20 +860,17 @@ impl RuntimeAdapter for NightshadeRuntime {
                 // If there is no flat storage on disk, use trie but simulate costs with enabled
                 // flat storage by not charging gas for trie nodes.
                 // WARNING: should never be used in production! Consider this option only for debugging or replaying blocks.
-                let mut trie = self.get_trie_for_shard(
+                let trie = self.get_trie_for_shard(
                     shard_id,
                     &block.prev_block_hash,
                     storage_config.state_root,
                     false,
                 )?;
-                trie.set_charge_gas_for_trie_node_access(false);
                 trie
             }
-            StorageDataSource::Recorded(storage) => Trie::from_recorded_storage(
-                storage,
-                storage_config.state_root,
-                storage_config.use_flat_storage,
-            ),
+            StorageDataSource::Recorded(storage) => {
+                Trie::from_recorded_storage(storage, storage_config.state_root)
+            }
         };
         let next_epoch_id =
             self.epoch_manager.get_next_epoch_id_from_prev_block(&block.prev_block_hash)?;
@@ -1154,7 +1148,7 @@ impl RuntimeAdapter for NightshadeRuntime {
         let shard_uid = self.get_shard_uid_from_epoch_id(shard_id, &epoch_id)?;
         self.tries
             .get_view_trie_for_shard(shard_uid, *state_root)
-            .retrieve_root_node()
+            .retrieve_root_node(LookupMode::FLAT_STORAGE)
             .map_err(Into::into)
     }
 

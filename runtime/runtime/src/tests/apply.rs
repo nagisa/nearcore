@@ -40,8 +40,7 @@ use near_primitives::version::{PROTOCOL_VERSION, ProtocolFeature};
 use near_store::test_utils::TestTriesBuilder;
 use near_store::trie::receipts_column_helper::ShardsOutgoingReceiptBuffer;
 use near_store::{
-    MissingTrieValueContext, ShardTries, StorageError, Trie, get_account, set_access_key,
-    set_account,
+    get_account, set_access_key, set_account, LookupMode, MissingTrieValueContext, ShardTries, StorageError, Trie
 };
 use near_vm_runner::{ContractCode, FilesystemContractRuntimeCache};
 use std::collections::{HashMap, HashSet};
@@ -1224,15 +1223,15 @@ fn test_main_storage_proof_size_soft_limit() {
 
     // Since contracts are excluded from the partial state, we will get missing trie error below.
     let partial_storage = apply_result.proof.unwrap();
-    let storage = Trie::from_recorded_storage(partial_storage, root, false);
+    let storage = Trie::from_recorded_storage(partial_storage, root);
     let code_key = TrieKey::ContractCode { account_id: alice_account() };
     assert_matches!(
-        storage.get(&code_key.to_vec()),
+        storage.get(&code_key.to_vec(), LookupMode::TRIE.track_access(true)),
         Err(StorageError::MissingTrieValue(MissingTrieValueContext::TrieMemoryPartialStorage, _))
     );
     let code_key = TrieKey::ContractCode { account_id: bob_account() };
     assert_matches!(
-        storage.get(&code_key.to_vec()),
+        storage.get(&code_key.to_vec(), LookupMode::TRIE.track_access(true)),
         Err(StorageError::MissingTrieValue(MissingTrieValueContext::TrieMemoryPartialStorage, _))
     );
 }
@@ -1342,15 +1341,15 @@ fn test_exclude_contract_code_from_witness() {
     assert!(total_size < CONTRACT_SIZE);
 
     // Check that both contracts are excluded from the storage proof.
-    let storage = Trie::from_recorded_storage(partial_storage, root, false);
+    let storage = Trie::from_recorded_storage(partial_storage, root);
     let code_key = TrieKey::ContractCode { account_id: alice_account() };
     assert_matches!(
-        storage.get(&code_key.to_vec()),
+        storage.get(&code_key.to_vec(), LookupMode::TRIE.track_access(true)),
         Err(StorageError::MissingTrieValue(MissingTrieValueContext::TrieMemoryPartialStorage, _))
     );
     let code_key = TrieKey::ContractCode { account_id: bob_account() };
     assert_matches!(
-        storage.get(&code_key.to_vec()),
+        storage.get(&code_key.to_vec(), LookupMode::TRIE.track_access(true)),
         Err(StorageError::MissingTrieValue(MissingTrieValueContext::TrieMemoryPartialStorage, _))
     );
 }
@@ -1447,15 +1446,15 @@ fn test_exclude_contract_code_from_witness_with_failed_call() {
 
     // Check that both contracts are excluded from the storage proof.
     let partial_storage = apply_result.proof.unwrap();
-    let storage = Trie::from_recorded_storage(partial_storage, root, false);
+    let storage = Trie::from_recorded_storage(partial_storage, root);
     let code_key = TrieKey::ContractCode { account_id: alice_account() };
     assert_matches!(
-        storage.get(&code_key.to_vec()),
+        storage.get(&code_key.to_vec(), LookupMode::TRIE.track_access(true)),
         Err(StorageError::MissingTrieValue(MissingTrieValueContext::TrieMemoryPartialStorage, _))
     );
     let code_key = TrieKey::ContractCode { account_id: bob_account() };
     assert_matches!(
-        storage.get(&code_key.to_vec()),
+        storage.get(&code_key.to_vec(), LookupMode::TRIE),
         Err(StorageError::MissingTrieValue(MissingTrieValueContext::TrieMemoryPartialStorage, _))
     );
 }

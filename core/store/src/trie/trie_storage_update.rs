@@ -8,8 +8,8 @@ use super::ops::interface::{
     GenericTrieValue, GenericUpdatedTrieNode, GenericUpdatedTrieNodeWithSize, UpdatedNodeId,
 };
 use super::{
-    Children, RawTrieNode, RawTrieNodeWithSize, StorageHandle, StorageValueHandle, Trie,
-    TrieChanges, TrieRefcountDeltaMap, ValueHandle,
+    Children, LookupMode, RawTrieNode, RawTrieNodeWithSize, StorageHandle, StorageValueHandle,
+    Trie, TrieChanges, TrieRefcountDeltaMap, ValueHandle,
 };
 
 const INVALID_STORAGE_HANDLE: &str = "invalid storage handle";
@@ -95,9 +95,10 @@ impl<'a> GenericTrieUpdate<'a, TrieStorageNodePtr, ValueHandle> for TrieStorageU
         node: GenericNodeOrIndex<TrieStorageNodePtr>,
     ) -> Result<UpdatedNodeId, StorageError> {
         match node {
-            GenericNodeOrIndex::Old(node_hash) => {
-                self.trie.move_node_to_mutable(self, &node_hash).map(|handle| handle.0)
-            }
+            GenericNodeOrIndex::Old(node_hash) => self
+                .trie
+                .move_node_to_mutable(self, &node_hash, LookupMode::DEFAULT)
+                .map(|handle| handle.0),
             GenericNodeOrIndex::Updated(node_id) => Ok(node_id),
         }
     }

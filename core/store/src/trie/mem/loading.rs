@@ -191,7 +191,7 @@ mod tests {
     use crate::trie::mem::lookup::memtrie_lookup;
     use crate::trie::mem::nibbles_utils::{all_two_nibble_nibbles, multi_hex_to_nibbles};
     use crate::trie::update::TrieUpdateResult;
-    use crate::{DBCol, KeyLookupMode, NibbleSlice, ShardTries, Store, Trie, TrieUpdate};
+    use crate::{DBCol, LookupMode, NibbleSlice, ShardTries, Store, Trie, TrieUpdate};
     use near_primitives::bandwidth_scheduler::BandwidthRequests;
     use near_primitives::congestion_info::CongestionInfo;
     use near_primitives::hash::CryptoHash;
@@ -241,8 +241,6 @@ mod tests {
             &CryptoHash::default(),
             false,
         ));
-        let _mode_guard = trie_update
-            .with_trie_cache_mode(Some(near_primitives::types::TrieCacheMode::CachingChunk));
         let trie = trie_update.trie();
         let root = in_memory_trie.get_root(&state_root).unwrap();
 
@@ -252,14 +250,15 @@ mod tests {
             let mut nodes_accessed = Vec::new();
             let actual_value_ref = memtrie_lookup(root, key, Some(&mut nodes_accessed))
                 .map(|v| v.to_optimized_value_ref());
-            let expected_value_ref =
-                trie.get_optimized_ref(key, KeyLookupMode::FlatStorage).unwrap();
+            let expected_value_ref = trie
+                .get_optimized_ref(key, LookupMode::FLAT_STORAGE.record_witness(false))
+                .unwrap();
             assert_eq!(actual_value_ref, expected_value_ref, "{:?}", NibbleSlice::new(key));
 
             // Do another access with the trie to see how many nodes we're supposed to
             // have accessed.
             let temp_trie = shard_tries.get_trie_for_shard(shard_uid, state_root);
-            temp_trie.get_optimized_ref(key, KeyLookupMode::Trie).unwrap();
+            temp_trie.get_optimized_ref(key, LookupMode::TRIE.record_witness(false)).unwrap();
             assert_eq!(
                 temp_trie.get_trie_nodes_count().db_reads,
                 nodes_accessed.len() as u64,
@@ -269,7 +268,7 @@ mod tests {
             // Check that the accessed nodes are consistent with those from disk.
             for (node_hash, serialized_node) in nodes_accessed {
                 let expected_serialized_node =
-                    trie.internal_retrieve_trie_node(&node_hash, false, true).unwrap();
+                    trie.internal_retrieve_trie_node(&node_hash, LookupMode::TRIE).unwrap();
                 assert_eq!(expected_serialized_node, serialized_node);
             }
         }

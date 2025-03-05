@@ -2,8 +2,9 @@ use crate::adapter::StoreUpdateAdapter;
 use crate::flat::FlatStateChanges;
 use crate::trie::update::TrieUpdateResult;
 use crate::{
-    ShardTries, TrieUpdate, get_account, has_received_data, set, set_access_key, set_account,
-    set_delayed_receipt, set_postponed_receipt, set_promise_yield_receipt, set_received_data,
+    LookupMode, ShardTries, TrieUpdate, get_account, has_received_data, set, set_access_key,
+    set_account, set_delayed_receipt, set_postponed_receipt, set_promise_yield_receipt,
+    set_received_data,
 };
 
 use near_chain_configs::Genesis;
@@ -281,8 +282,13 @@ impl GenesisStateApplier {
                     let mut pending_data_count: u32 = 0;
                     for data_id in &action_receipt.input_data_ids {
                         storage.modify(|state_update| {
-                            if !has_received_data(state_update, account_id, *data_id)
-                                .expect("Genesis storage error")
+                            if !has_received_data(
+                                state_update,
+                                account_id,
+                                *data_id,
+                                LookupMode::FLAT_STORAGE,
+                            )
+                            .expect("Genesis storage error")
                             {
                                 pending_data_count += 1;
                                 set(

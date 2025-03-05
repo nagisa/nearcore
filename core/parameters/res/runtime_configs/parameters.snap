@@ -197,7 +197,7 @@ account_id_validity_rules_version                          1
 yield_timeout_length_in_blocks                           200
 max_yield_payload_size                                 1_024
 disable_9393_fix                        false
-flat_storage_reads                      true
+storage_mode                            flat_storage
 implicit_account_creation               true
 fix_contract_loading_cost               false
 math_extension                          true

@@ -2,7 +2,7 @@
 use super::VMLogicError;
 use super::types::ReceiptIndex;
 use near_crypto::PublicKey;
-use near_parameters::vm::StorageGetMode;
+use near_parameters::vm::StorageMode;
 use near_primitives_core::hash::CryptoHash;
 use near_primitives_core::types::{AccountId, Balance, Gas, GasWeight, Nonce};
 use std::borrow::Cow;
@@ -176,7 +176,7 @@ pub trait External {
     fn storage_get<'a>(
         &'a self,
         key: &[u8],
-        mode: StorageGetMode,
+        mode: StorageMode,
     ) -> Result<Option<Box<dyn ValuePtr + 'a>>>;
 
     /// Removes the `key` from the storage trie associated with the current account.
@@ -253,7 +253,7 @@ pub trait External {
     /// // Returns None if there was no value
     /// assert_eq!(external.storage_has_key(b"no_value_key", StorageGetMode::Trie), Ok(false));
     /// ```
-    fn storage_has_key(&mut self, key: &[u8], mode: StorageGetMode) -> Result<bool>;
+    fn storage_has_key(&mut self, key: &[u8], mode: StorageMode) -> Result<bool>;
 
     fn generate_data_id(&mut self) -> CryptoHash;
 

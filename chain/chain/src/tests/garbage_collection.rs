@@ -21,7 +21,7 @@ use near_primitives::test_utils::{TestBlockBuilder, create_test_signer};
 use near_primitives::types::{BlockHeight, NumBlocks, StateRoot};
 use near_primitives::validator_signer::ValidatorSigner;
 use near_store::test_utils::gen_changes;
-use near_store::{DBCol, ShardTries, Trie, WrappedTrieChanges};
+use near_store::{DBCol, LookupMode, ShardTries, Trie, WrappedTrieChanges};
 
 // Build a chain of num_blocks on top of prev_block
 fn do_fork(
@@ -112,7 +112,8 @@ fn do_fork(
             let trie_changes_data = gen_changes(&mut rng, max_changes);
             let state_root = prev_state_roots[shard_id as usize];
             let trie = tries.get_trie_for_shard(shard_uid, state_root);
-            let trie_changes = trie.update(trie_changes_data.iter().cloned()).unwrap();
+            let trie_changes =
+                trie.update(trie_changes_data.iter().cloned(), LookupMode::FLAT_STORAGE).unwrap();
             if verbose {
                 println!("state new {:?} {:?}", block.header().height(), trie_changes_data);
             }
@@ -225,7 +226,10 @@ fn gc_fork_common(simple_chains: Vec<SimpleChain>, max_changes: usize) {
             // Apply to Trie 2 the same changes (changes1) as applied to Trie 1
             let trie_changes2 = tries2
                 .get_trie_for_shard(shard_uid, state_root2)
-                .update(changes1[shard_to_check_trie as usize].iter().cloned())
+                .update(
+                    changes1[shard_to_check_trie as usize].iter().cloned(),
+                    LookupMode::FLAT_STORAGE,
+                )
                 .unwrap();
             // i == gc_height is the only height should be processed here
             let mut update2 = tries2.store_update();
