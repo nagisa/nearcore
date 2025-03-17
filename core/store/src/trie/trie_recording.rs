@@ -485,7 +485,7 @@ mod trie_recording_tests {
             )
         } else {
             let mut trie = tries.get_trie_for_shard(shard_uid, state_root);
-            trie.charge_gas_for_trie_node_access = true;
+            trie.set_use_accounting_cache(true);
             trie
         }
     }
@@ -530,6 +530,7 @@ mod trie_recording_tests {
             let lookup_mode =
                 if use_flat_storage { KeyLookupMode::FlatStorage } else { KeyLookupMode::Trie };
             let memtrie_lookup_counts_before = MEMTRIE_NUM_LOOKUPS.get();
+            println!("{:?}", lookup_mode);
 
             // Check that while using flat storage counters are all zero.
             // Only use get_optimized_ref(), because get() will actually
@@ -550,7 +551,10 @@ mod trie_recording_tests {
             let trie = get_trie_for_shard(&tries, shard_uid, state_root, use_flat_storage);
             trie.accounting_cache.lock().unwrap().enable_switch().set(enable_accounting_cache);
             for key in &keys_to_get {
-                assert_eq!(trie.get(key).unwrap(), data_in_trie.get(key).cloned());
+                assert_eq!(
+                    trie.get_mode(key, lookup_mode).unwrap(),
+                    data_in_trie.get(key).cloned()
+                );
             }
             for key in &keys_to_get_ref {
                 assert_eq!(
@@ -570,7 +574,10 @@ mod trie_recording_tests {
                 .recording_reads_new_recorder();
             trie.accounting_cache.lock().unwrap().enable_switch().set(enable_accounting_cache);
             for key in &keys_to_get {
-                assert_eq!(trie.get(key).unwrap(), data_in_trie.get(key).cloned());
+                assert_eq!(
+                    trie.get_mode(key, lookup_mode).unwrap(),
+                    data_in_trie.get(key).cloned()
+                );
             }
             for key in &keys_to_get_ref {
                 assert_eq!(
@@ -595,7 +602,10 @@ mod trie_recording_tests {
                 .recording_reads_new_recorder();
             trie.accounting_cache.lock().unwrap().enable_switch().set(enable_accounting_cache);
             for key in &keys_to_get {
-                assert_eq!(trie.get(key).unwrap(), data_in_trie.get(key).cloned());
+                assert_eq!(
+                    trie.get_mode(key, lookup_mode).unwrap(),
+                    data_in_trie.get(key).cloned()
+                );
             }
             for key in &keys_to_get_ref {
                 assert_eq!(
@@ -621,7 +631,10 @@ mod trie_recording_tests {
                 Trie::from_recorded_storage(partial_storage.clone(), state_root, use_flat_storage);
             trie.accounting_cache.lock().unwrap().enable_switch().set(enable_accounting_cache);
             for key in &keys_to_get {
-                assert_eq!(trie.get(key).unwrap(), data_in_trie.get(key).cloned());
+                assert_eq!(
+                    trie.get_mode(key, lookup_mode).unwrap(),
+                    data_in_trie.get(key).cloned()
+                );
             }
             for key in &keys_to_get_ref {
                 assert_eq!(
@@ -639,7 +652,10 @@ mod trie_recording_tests {
                 .recording_reads_new_recorder();
             trie.accounting_cache.lock().unwrap().enable_switch().set(enable_accounting_cache);
             for key in &keys_to_get {
-                assert_eq!(trie.get(key).unwrap(), data_in_trie.get(key).cloned());
+                assert_eq!(
+                    trie.get_mode(key, lookup_mode).unwrap(),
+                    data_in_trie.get(key).cloned()
+                );
             }
             for key in &keys_to_get_ref {
                 assert_eq!(

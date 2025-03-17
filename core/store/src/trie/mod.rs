@@ -36,6 +36,7 @@ use ops::interface::{GenericNodeOrIndex, GenericTrieNode, GenericTrieUpdate};
 use ops::interface::{GenericTrieValue, UpdatedNodeId};
 use ops::resharding::{GenericTrieUpdateRetain, RetainMode};
 pub use raw_node::{Children, RawTrieNode, RawTrieNodeWithSize};
+use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write;
 use std::hash::Hash;
@@ -91,10 +92,41 @@ pub struct TrieCosts {
 }
 
 /// Whether a key lookup will be performed through flat storage or through iterating the trie
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum KeyLookupMode {
-    FlatStorage,
-    Trie,
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KeyLookupSource {
+    /// Try memtrie first, if loaded. If not, then go straight to on-disk trie.
+    MemTrieOrTrie,
+    /// Trie memtrie first, if loaded. Then try flat storage if available.
+    /// Otherwise fall-back to the on-disk trie.
+    ///
+    /// NOTE: whether the flat storage is loaded or not can affect protocol! In
+    /// particular operations with the flat storage do not affect TTN, but the
+    /// fallback to Trie might (e.g. if `use_accounting_cache` is set to `true`!)
+    MemTrieOrFlatStorageOrTrie,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct KeyLookupMode {
+    source: KeyLookupSource,
+    /// Whether TTN counters should be modified to reflect the trie lookups.
+    ///
+    /// This is only relevant for `MemTrie` and `Trie` sources, but not
+    /// `FlatStorage`. If `FlatStorage` serves the lookup, no TTNs will change
+    /// regardless of this setting.
+    use_accounting_cache: bool,
+}
+
+#[allow(non_upper_case_globals)]
+impl KeyLookupMode {
+    pub const Trie: Self =
+        KeyLookupMode { source: KeyLookupSource::MemTrieOrTrie, use_accounting_cache: true };
+    pub const FlatStorage: Self =
+        KeyLookupMode { source: KeyLookupSource::MemTrieOrFlatStorageOrTrie, use_accounting_cache: false };
+
+    pub fn use_accounting_cache(mut self, on: bool) -> KeyLookupMode {
+        self.use_accounting_cache = on;
+        self
+    }
 }
 
 const TRIE_COSTS: TrieCosts = TrieCosts { byte_of_key: 2, byte_of_value: 1, node_cost: 50 };
@@ -213,7 +245,8 @@ pub struct Trie {
     /// affect the accounting cache. Value accesses always charge gas no matter
     /// what, and lookups done via get_ref with `KeyLookupMode::Trie` will
     /// also charge gas no matter what.
-    charge_gas_for_trie_node_access: bool,
+    use_accounting_cache: bool,
+    use_accounting_cache_set_at: Backtrace,
 }
 
 /// Trait for reading data from a trie.
@@ -549,17 +582,18 @@ impl Trie {
             }
             None => TrieAccountingCache::new(None),
         };
-        // Technically the charge_gas_for_trie_node_access should be set based
-        // on the flat storage protocol feature. When flat storage is enabled
-        // the trie node access should be free and the charge flag should be set
-        // to false.
-        let charge_gas_for_trie_node_access = false;
+        // Technically the use_accounting_cache should be set based on the flat storage protocol
+        // feature. When flat storage is enabled the trie node access should be free and the charge
+        // flag should be set to false.
+        let use_accounting_cache = false;
+        let use_accounting_cache_set_at = Backtrace::capture();
         Trie {
             storage,
             memtries,
             children_memtries,
             root,
-            charge_gas_for_trie_node_access,
+            use_accounting_cache,
+            use_accounting_cache_set_at,
             flat_storage_chunk_view,
             accounting_cache: Mutex::new(accounting_cache),
             recorder: None,
@@ -572,8 +606,9 @@ impl Trie {
     }
 
     /// Helper to simulate gas costs as if flat storage was present.
-    pub fn set_charge_gas_for_trie_node_access(&mut self, value: bool) {
-        self.charge_gas_for_trie_node_access = value;
+    pub fn set_use_accounting_cache(&mut self, value: bool) {
+        self.use_accounting_cache = value;
+        self.use_accounting_cache_set_at = Backtrace::capture();
     }
 
     /// Makes a new trie that has everything the same except that access
@@ -600,7 +635,7 @@ impl Trie {
             self.flat_storage_chunk_view.clone(),
         );
         trie.recorder = Some(recorder);
-        trie.charge_gas_for_trie_node_access = self.charge_gas_for_trie_node_access;
+        trie.set_use_accounting_cache(self.use_accounting_cache);
         trie
     }
 
@@ -656,7 +691,7 @@ impl Trie {
         let recorded_storage = nodes.into_iter().map(|value| (hash(&value), value)).collect();
         let storage = Arc::new(TrieMemoryPartialStorage::new(recorded_storage));
         let mut trie = Self::new(storage, root, None);
-        trie.charge_gas_for_trie_node_access = !flat_storage_used;
+        trie.set_use_accounting_cache(!flat_storage_used);
         trie
     }
 
@@ -1208,16 +1243,12 @@ impl Trie {
     fn lookup_from_state_column(
         &self,
         mut key: NibbleSlice<'_>,
-        charge_gas_for_trie_node_access: bool,
+        use_accounting_cache: bool,
         side_effects: bool,
     ) -> Result<Option<ValueRef>, StorageError> {
         let mut hash = self.root;
         loop {
-            let node = match self.retrieve_raw_node(
-                &hash,
-                charge_gas_for_trie_node_access,
-                side_effects,
-            )? {
+            let node = match self.retrieve_raw_node(&hash, use_accounting_cache, side_effects)? {
                 None => return Ok(None),
                 Some((_bytes, node)) => node.node,
             };
@@ -1399,17 +1430,25 @@ impl Trie {
     /// This method is guaranteed to not inspect the value stored for this key, which would
     /// otherwise have potential gas cost implications.
     pub fn contains_key_mode(&self, key: &[u8], mode: KeyLookupMode) -> Result<bool, StorageError> {
-        let charge_gas_for_trie_node_access =
-            mode == KeyLookupMode::Trie || self.charge_gas_for_trie_node_access;
+        let use_accounting_cache =
+            mode.source == KeyLookupSource::MemTrieOrTrie || self.use_accounting_cache;
         if self.memtries.is_some() {
-            return Ok(self
-                .lookup_from_memory(key, charge_gas_for_trie_node_access, true, |_| ())?
-                .is_some());
+            assert!(
+                use_accounting_cache == mode.use_accounting_cache,
+                "self = {:?}, arg = {:?}, lookup_source = {:?}, self_set = {:?}",
+                self.use_accounting_cache,
+                mode.use_accounting_cache,
+                mode.source,
+                self.use_accounting_cache_set_at,
+            );
+            return Ok(self.lookup_from_memory(key, use_accounting_cache, true, |_| ())?.is_some());
         }
 
         'flat: {
-            let KeyLookupMode::FlatStorage = mode else { break 'flat };
+            let KeyLookupSource::MemTrieOrFlatStorageOrTrie = mode.source else { break 'flat };
             let Some(flat_storage_chunk_view) = &self.flat_storage_chunk_view else { break 'flat };
+            // FIXME(nagisa): is it really necessary to lookup in flat storage before going to trie
+            // anyway? (if state witness recording is enabled, which it is.)
             let value = flat_storage_chunk_view.contains_key(key)?;
             if self.recorder.is_some() {
                 // If recording, we need to look up in the trie as well to record the trie nodes,
@@ -1423,8 +1462,16 @@ impl Trie {
             return Ok(value);
         }
 
+        assert!(
+            use_accounting_cache == mode.use_accounting_cache,
+            "self = {:?}, arg = {:?}, lookup_source = {:?}, self_set = {:?}",
+            self.use_accounting_cache,
+            mode.use_accounting_cache,
+            mode.source,
+            self.use_accounting_cache_set_at,
+        );
         Ok(self
-            .lookup_from_state_column(NibbleSlice::new(key), charge_gas_for_trie_node_access, true)?
+            .lookup_from_state_column(NibbleSlice::new(key), use_accounting_cache, true)?
             .is_some())
     }
 
@@ -1445,14 +1492,33 @@ impl Trie {
         mode: KeyLookupMode,
     ) -> Result<Option<OptimizedValueRef>, StorageError> {
         let charge_gas_for_trie_node_access =
-            mode == KeyLookupMode::Trie || self.charge_gas_for_trie_node_access;
+            mode.source == KeyLookupSource::MemTrieOrTrie || self.use_accounting_cache;
         if self.memtries.is_some() {
+            assert!(
+                charge_gas_for_trie_node_access == mode.use_accounting_cache,
+                "self = {:?}, arg = {:?}, lookup_source = {:?}, self_set_at = {:?}",
+                self.use_accounting_cache,
+                mode.use_accounting_cache,
+                mode.source,
+                self.use_accounting_cache_set_at,
+            );
             self.lookup_from_memory(key, charge_gas_for_trie_node_access, true, |v| {
                 v.to_optimized_value_ref()
             })
-        } else if mode == KeyLookupMode::FlatStorage && self.flat_storage_chunk_view.is_some() {
+        } else if mode.source == KeyLookupSource::MemTrieOrFlatStorageOrTrie
+            // FIXME: honestly, why? This makes the logic so, so, SO much harder to reason about :/
+            && self.flat_storage_chunk_view.is_some()
+        {
             self.lookup_from_flat_storage(key, true)
         } else {
+            assert!(
+                charge_gas_for_trie_node_access == mode.use_accounting_cache,
+                "self = {:?}, arg = {:?}, lookup_source = {:?}, self_set_at = {:?}",
+                self.use_accounting_cache,
+                mode.use_accounting_cache,
+                mode.source,
+                self.use_accounting_cache_set_at,
+            );
             Ok(self
                 .lookup_from_state_column(
                     NibbleSlice::new(key),
@@ -1473,7 +1539,9 @@ impl Trie {
     ) -> Result<Option<OptimizedValueRef>, StorageError> {
         if self.memtries.is_some() {
             self.lookup_from_memory(&key, false, false, |v| v.to_optimized_value_ref())
-        } else if mode == KeyLookupMode::FlatStorage && self.flat_storage_chunk_view.is_some() {
+        } else if mode.source == KeyLookupSource::MemTrieOrFlatStorageOrTrie
+            && self.flat_storage_chunk_view.is_some()
+        {
             self.lookup_from_flat_storage(&key, false)
         } else {
             Ok(self
@@ -1508,11 +1576,20 @@ impl Trie {
     }
 
     /// Retrieves the full value for the given key.
-    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
-        match self.get_optimized_ref(key, KeyLookupMode::FlatStorage)? {
+    pub fn get_mode(
+        &self,
+        key: &[u8],
+        mode: KeyLookupMode,
+    ) -> Result<Option<Vec<u8>>, StorageError> {
+        match self.get_optimized_ref(key, mode)? {
             Some(optimized_ref) => Ok(Some(self.deref_optimized(&optimized_ref)?)),
             None => Ok(None),
         }
+    }
+
+    /// Retrieves the full value for the given key.
+    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, StorageError> {
+        self.get_mode(key, KeyLookupMode::FlatStorage)
     }
 
     pub fn update<I>(&self, changes: I) -> Result<TrieChanges, StorageError>
@@ -2166,11 +2243,10 @@ mod tests {
         let partial_storage = trie2.recorded_storage();
 
         let trie3 = Trie::from_recorded_storage(partial_storage.unwrap(), root, false);
-
-        assert_eq!(trie3.get(b"dog"), Ok(Some(b"puppy".to_vec())));
-        assert_eq!(trie3.get(b"horse"), Ok(Some(b"stallion".to_vec())));
+        assert_eq!(trie3.get_mode(b"dog", KeyLookupMode::Trie), Ok(Some(b"puppy".to_vec())));
+        assert_eq!(trie3.get_mode(b"horse", KeyLookupMode::Trie), Ok(Some(b"stallion".to_vec())));
         assert_matches!(
-            trie3.get(b"doge"),
+            trie3.get_mode(b"doge", KeyLookupMode::Trie),
             Err(StorageError::MissingTrieValue(
                 MissingTrieValueContext::TrieMemoryPartialStorage,
                 _

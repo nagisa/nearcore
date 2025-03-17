@@ -7,6 +7,7 @@ use near_chain_configs::MIN_GAS_PRICE;
 use near_crypto::{PublicKey, Signer};
 use near_jsonrpc_primitives::errors::ServerError;
 use near_parameters::RuntimeConfig;
+use near_parameters::vm::StorageGetMode;
 use near_primitives::apply::ApplyChunkReason;
 use near_primitives::bandwidth_scheduler::BlockBandwidthRequests;
 use near_primitives::congestion_info::{BlockCongestionInfo, ExtendedCongestionInfo};
@@ -95,6 +96,17 @@ impl RuntimeUser {
         let mut txs = transactions;
         loop {
             let mut client = self.client.write().expect(POISONED_LOCK_ERR);
+            let storage_get_mode =
+                if use_flat_storage { StorageGetMode::FlatStorage } else { StorageGetMode::Trie };
+            let wasm_config = near_parameters::vm::Config {
+                storage_get_mode,
+                ..near_parameters::vm::Config::clone(&apply_state.config.wasm_config)
+            };
+            let config = near_parameters::RuntimeConfig {
+                wasm_config: wasm_config.into(),
+                ..near_parameters::RuntimeConfig::clone(&apply_state.config)
+            };
+            apply_state.config = Arc::new(config);
             let trie = if use_flat_storage {
                 client.tries.get_trie_with_block_hash_for_shard(
                     ShardUId::single_shard(),
@@ -104,9 +116,7 @@ impl RuntimeUser {
                 )
             } else {
                 let shard_uid = ShardUId::single_shard();
-                let mut trie = client.tries.get_trie_for_shard(shard_uid, client.state_root);
-                trie.set_charge_gas_for_trie_node_access(true);
-                trie
+                client.tries.get_trie_for_shard(shard_uid, client.state_root)
             };
             let apply_result = client
                 .runtime

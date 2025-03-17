@@ -145,7 +145,7 @@ fn test_reads_with_incomplete_storage() {
 #[cfg(test)]
 mod nodes_counter_tests {
     use super::*;
-    use crate::trie::nibble_slice::NibbleSlice;
+    use crate::{KeyLookupMode, trie::nibble_slice::NibbleSlice};
 
     fn create_trie_key(nibbles: &[u8]) -> Vec<u8> {
         NibbleSlice::encode_nibbles(&nibbles, false).into_vec()
@@ -166,7 +166,13 @@ mod nodes_counter_tests {
             .iter()
             .map(|(key, value)| {
                 let initial_count = trie.get_trie_nodes_count().db_reads;
-                let got_value = trie.get(key).unwrap();
+                let got_value = trie
+                    // FIXME(nagisa): in what way does this make any sense (flat + TAC)??
+                    .get_optimized_ref(key, KeyLookupMode::FlatStorage.use_accounting_cache(true))
+                    .unwrap()
+                    .map(|v| trie.deref_optimized(&v))
+                    .transpose()
+                    .unwrap();
                 assert_eq!(*value, got_value);
                 trie.get_trie_nodes_count().db_reads - initial_count
             })
@@ -184,7 +190,7 @@ mod nodes_counter_tests {
             (create_trie_key(&[1, 0, 0]), Some(vec![2])),
         ];
         let mut trie = create_trie(&trie_items);
-        trie.charge_gas_for_trie_node_access = true;
+        trie.set_use_accounting_cache(true);
         assert_eq!(get_touched_nodes_numbers(&trie, &trie_items), vec![5, 5, 4]);
     }
 
@@ -199,7 +205,7 @@ mod nodes_counter_tests {
             (create_trie_key(&[1, 1]), Some(vec![1])),
         ];
         let mut trie = create_trie(&trie_items);
-        trie.charge_gas_for_trie_node_access = true;
+        trie.set_use_accounting_cache(true);
         assert_eq!(get_touched_nodes_numbers(&trie, &trie_items), vec![4, 4]);
     }
 }
